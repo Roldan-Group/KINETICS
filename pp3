@@ -1,0 +1,18 @@
+sigma ()
+{
+	echo -ne "$1\t"
+	grep -i reached $1 | tail -1 
+
+}
+
+
+#-------------------------------------------------------------------------------- running jobs
+    if [ $@ ]; then
+        a=$@
+    else
+        a=$(find . -name "*OUTCA*" -print)
+   fi
+
+for i in $a; do
+	sigma $i
+done
