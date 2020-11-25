@@ -1,0 +1,36 @@
+
+
+    REQUIRES:  ( >> Do PreInstall << )
+        - To have ASE and Python3 installed and configured.
+        - To have SciPy (including NumPy) installed and configured.
+##        - To have Keras and a backend (TensorFlow) installed and configured.
+
+        *** sudo apt-get install python3.7 python3-pip python3-dev python-opencv
+        *** sudo apt-get install build-essential cmake git unzip pkg-config libopenblas-dev liblapack-dev
+        *** sudo apt-get install python-numpy python-scipy python-matplotlib python-yaml
+        *** sudo apt-get install libhdf5-serial-dev python-h5py graphviz python3-tk 
+        *** pip3 install pydot-ng
+##	*** pip3 install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow_cpu-2.1.0-cp37-cp37m-manylinux2010_x86_64.whl
+##	*** pip3 install keras
+##        *** pip3 install -U scikit-learn scipy matplotlib
+##	*** pip3 install keras-tuner
+
+
+	1.- Edit GetData.py from ~/NeuralNetwork/ folder
+		update the cluster elements, eleNames
+		update the support
+		update the input files for geometry and energy
+
+	2.- On the directory with the "trainig" data set execute :: runGetData.sh
+		it will execute GetData.py
+			extract the data from the x*y*z* folders into Data.dat
+			generate a matrix of plots with each parameter	:: RelationPlots.pdf
+			produce a 3D plot for Eb vs. XXX and XXX 	:: Eb3D.pdf
+
+	3.- Edit Predicting.py
+		update the cluster elements, eleNames, support
+		it will read the structure parameters and predict the system's energy
+		it will write a Predicted.dat and OUTCAR data
+
+	4.- Edit and run runPredicting.sh
+	    it will execute the genetic algorithm evaluating the energy through Predicting
