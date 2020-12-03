@@ -17,8 +17,6 @@ from ase.io import read, write
 
 Parameters = ["SYSTEM", "SYSPATH","FREQPATH", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE", "RCOVERAGE","END"]
 
-#print("\n")
-
 
 def Common_Properties(system, name):
 
@@ -37,50 +35,49 @@ def Common_Properties(system, name):
 
 #..............................................................................................................
 
-def System_Properties(File, system, ssites):
+def System_Properties(File, system, ssites, software):
 	del system.constraints
 	symmetry_factor = None
 	Area = None
 
+	system_check = []
 	system_type = "Molecule"
 # Decide if the system is a naked SURFACE through SSites
-	for i in range(3):
-		if min(Atoms(system).get_scaled_positions()[:, i]) < 0.1 and \
-				max(Atoms(system).get_scaled_positions()[:, i]) > 0.9:
-			if ssites is not None:
-				system_type = "Surface"
+	for i in range(2):
+		i_max = max(system.get_positions()[:, i])
+		i_min = min(system.get_positions()[:, i])
+		if i_max > 1:
+			i_max -= 1
+		if i_min < 0:
+			i_min += 1
+		if system.get_cell()[i][i] > 0 and i_max - i_min > 0.5*system.get_cell()[i][i]:
+			system_check.append(["surf_cat"])
+	if len(system_check) == 2:
+		if ssites is not None:
+			system_type = "Surface"
 # Decide if the system combines adsorbate + adsorbent (CATALYSTS)
-			else:
-				system_type = "Catalyst"
+		else:
+			system_type = "Catalyst"
 
-	if system_type == "Molecule":
-		pos = [1 for i in system.get_scaled_positions() if i[0] == 0. and i[1] == 0. and i[2] == 0.]
-		if len(pos) > 1:
-			if ssites is not None:
-				system_type = "Surface"
-# Decide if the system combines adsorbate + adsorbent (CATALYSTS)
-			else:
-				system_type = "Catalyst"
-#		answer = input("Is " + name +" an isolated molecule? ")
-#		if answer.startswith('y') is True or answer.startswith('Y') is True:
-#			system_type = "Molecule"
 
 # Searches for the symmetry of the Molecule
 	if system_type == "Molecule":
-
 		output = open(File,"r")
 # if File is from VASP (OUTCAR) ----------------------------------------------------------------- not completed
-		try:
-			out = [out.strip() for out in output if re.search("The static configuration has the point symmetry",out) is not None][-1]
-			symmetry_factor = float(out[-3])    ##### CHECK!
-		except:
-			symmetry_factor = input("What's the symmetry factor for " + name +"? ")
+		if software == "VASP":
+			try:
+				out = [out.strip() for out in output if re.search("The static configuration has the point symmetry",out) is not None][-1]
+				symmetry_factor = float(out[-3])    ##### CHECK!
+			except:
+				symmetry_factor = input("What's the symmetry factor for " + name +"? ")
+
 # if File is from FHI-AIMS
-		try:
-			out = [out.strip() for out in output if re.search("Space group",out) is not None][-1]
-			symmetry_factor = float(out[-3])    ##### CHECK!
-		except:
-			symmetry_factor = input("What's the symmetry factor for " + name +"? ")
+		if software == "FHI-aims":
+			try:
+				out = [out.strip() for out in output if re.search("Space group",out) is not None][-1]
+				symmetry_factor = float(out[-3])    ##### CHECK!
+			except:
+				symmetry_factor = input("What's the symmetry factor for " + name +"? ")
 
 
 # Decide if the system is a naked SURFACE through SSites
@@ -121,7 +118,7 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 			elif len(words) > 6 and "f/i" in words[1] and 'THz' in words[3] and 'cm-1' in words[7]:
 				frequencies.append(-float(words[6]))
 				if system_type == "Molecule":
-					freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1])
+					freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1], software)
 					if freq_2D > 0:
 						frequencies_2D.append(freq_2D)
 			nline += 1
@@ -132,7 +129,7 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 			unconstrained_natoms = int(word)
 		except ValueError:
 			unconstrained_natoms = 0
-			print("   "+system_type+" is not a valid for Frequecies!")
+			print("   "+system_type+" is not valid for Frequecies!")
 		if unconstrained_natoms > 0:
 			lines = ff.readlines()
 			nline = 1
@@ -145,30 +142,36 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 					if words[4].endswith('i') is True:
 						words[4] = float(words[4].rstrip("i")) * -1
 					frequencies += [float(words[4])]
-
 # Looking for frequency displacements and freq2D from jmol (FHI-Aims)
-					positions = []
-					new_positions = []
-					unconstrained_elements = []
-					words = [i.strip() for i in lines[nline].split() if i]
-					nline += 1
-					if system_type == "Molecule" and len(words) == 7 and words[0] in chemical_symbols:
-						unconstrained_elements.append(words[0])
-						positions.append([float(words[j]) for j in range(1,4)])
-						new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
-						for i in range(unconstrained_natoms -1):
-							words = [i.strip() for i in lines[nline].split() if i]
-							nline += 1
-							unconstrained_elements.append(words[0])
-							positions.append([float(words[j]) for j in range(1,4)])
-							new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
+					if system_type == "Molecule":
+						freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1], software)
+						if freq_2D > 0:
+							frequencies_2D.append(freq_2D)
 
-						system = Atoms(unconstrained_elements, positions=positions, pbc=[True,True,True])
-						new_system = Atoms(unconstrained_elements, positions=new_positions, pbc=[True,True,True])
-						shift = new_system.get_center_of_mass() - system.get_center_of_mass()
-						shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
-						if shift_module > 0.001:
-							frequencies_2D += [abs(frequencies[-1])]
+
+
+#					positions = []
+#					new_positions = []
+#					unconstrained_elements = []
+#					words = [i.strip() for i in lines[nline].split() if i]
+#					nline += 1
+#					if system_type == "Molecule" and len(words) == 7 and words[0] in chemical_symbols:
+#						unconstrained_elements.append(words[0])
+#						positions.append([float(words[j]) for j in range(1,4)])
+#						new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
+#						for i in range(unconstrained_natoms -1):
+#							words = [i.strip() for i in lines[nline].split() if i]
+#							nline += 1
+#							unconstrained_elements.append(words[0])
+#							positions.append([float(words[j]) for j in range(1,4)])
+#							new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
+#
+#						system = Atoms(unconstrained_elements, positions=positions, pbc=[True,True,True])
+#						new_system = Atoms(unconstrained_elements, positions=new_positions, pbc=[True,True,True])
+#						shift = new_system.get_center_of_mass() - system.get_center_of_mass()
+#						shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
+#						if shift_module > 0.001:
+#							frequencies_2D += [abs(frequencies[-1])]
 
 # try to get the Infrared Spectrum
 #		if len(frequencies) > 0:
@@ -197,14 +200,18 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 
 	return frequencies,frequencies_2D
 
-def Frequency_2D(lines, nline, chemical_symbols, frequency):
+def Frequency_2D(lines, nline, chemical_symbols, frequency, software):
 	freq_2D = 0
-	nline = nline + 2   # for the X Y Z dx dy dz heading
+	if software == "VASP":
+		nline += 2   # for the X Y Z dx dy dz heading
 	z_shift = []
 	total_mass = 0
 	for i in range(len(chemical_symbols)):
 		words = [j.strip() for j in lines[nline + i].split() if j]
+		if words[0] in chemical_symbols:		# in FHI-aims, displacements start with the symbol
+			words.pop(0)
 		atom = Atom(chemical_symbols[i], position=(float(words[0]), float(words[1]), float(words[2])))
+		print(atom)
 		z_shift.append(np.abs(float(words[5])*atom.mass))
 		total_mass += atom.mass
 	if max(z_shift)/total_mass < 0.1:
@@ -273,11 +280,6 @@ for line in lines:
 # seeks for common and system properties
 		try:
 			fd = open(File)
-			system = read(File, index=-1)
-			xyzPath, mag = Common_Properties(system, name)
-			system_type, symmetry_factor, Area = System_Properties(File, system, ssites)
-			Inertia_moments = system.get_moments_of_inertia()
-
 			software = None
 			while software == None:
 				line = fd.readline().split(" ")
@@ -288,11 +290,16 @@ for line in lines:
 					elif word.startswith('vasp') is True:
 						software = "VASP"
 
+			system = read(File, index=-1)
+			xyzPath, mag = Common_Properties(system, name)
+			system_type, symmetry_factor, Area = System_Properties(File, system, ssites, software)
+			Inertia_moments = system.get_moments_of_inertia()
+
 		except IOError:
 			raise Exception("   "+File+" is not a valid file!")
 
 # Works out the 3D and 2D frequencies
-		if FreqFile is None and software == "VASP":
+		if FreqFile is None: # and software == "VASP":
 			FreqFile = File
 		try:
 			frequencies, frequencies_2D = Frequencies(FreqFile, system_type, system.get_chemical_symbols(), software)
