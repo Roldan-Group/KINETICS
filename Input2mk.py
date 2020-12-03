@@ -12,7 +12,7 @@ import subprocess
 import sys
 import numpy as np
 # from numbers import Number
-from ase import Atoms
+from ase import Atoms, Atom
 from ase.io import read, write
 
 Parameters = ["SYSTEM", "SYSPATH","FREQPATH", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE", "RCOVERAGE","END"]
@@ -111,29 +111,20 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 		frequencies_2D = []
 		while nline <= len(lines)-1:
 			words = [i.strip() for i in lines[nline].split() if i]
-			nline += 1
 # Looking for frequencies from VASP
 			if len(words) > 7 and "f" in words[1] and 'THz' in words[4] and 'cm-1' in words[8]:
 				frequencies.append(float(words[7]))
+				if system_type == "Molecule":
+					freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1])
+					if freq_2D > 0:
+						frequencies_2D.append(freq_2D)
 			elif len(words) > 6 and "f/i" in words[1] and 'THz' in words[3] and 'cm-1' in words[7]:
 				frequencies.append(-float(words[6]))
-# Looking for frequency displacements and freq2D from VASP
-				nline += 1
-				positions = []
-				new_positions = []
 				if system_type == "Molecule":
-					for i in range(len(chemical_symbols)):
-						words = [ i.strip() for i in lines[nline].split() if i]
-						nline += 1
-						positions.append([float(words[j]) for j in range(3)])
-						new_positions.append([float(words[j]) + float(words[j+3]) for j in range(3)])
-
-					system = Atoms(chemical_symbols, positions = positions, pbc=[True,True,True])
-					new_system = Atoms(chemical_symbols, positions = new_positions, pbc=[True,True,True])
-					shift = new_system.get_center_of_mass() - system.get_center_of_mass()
-					shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
-					if shift_module > 0.1:
-						frequencies_2D += [frequencies[-1]]
+					freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1])
+					if freq_2D > 0:
+						frequencies_2D.append(freq_2D)
+			nline += 1
 
 	elif software == "FHI-aims":
 		word = [i.strip() for i in ff.readline().split(" ") if i][-1]
@@ -172,8 +163,8 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 							positions.append([float(words[j]) for j in range(1,4)])
 							new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
 
-						system = Atoms(unconstrained_elements, positions = positions, pbc=[True,True,True])
-						new_system = Atoms(unconstrained_elements, positions = new_positions, pbc=[True,True,True])
+						system = Atoms(unconstrained_elements, positions=positions, pbc=[True,True,True])
+						new_system = Atoms(unconstrained_elements, positions=new_positions, pbc=[True,True,True])
 						shift = new_system.get_center_of_mass() - system.get_center_of_mass()
 						shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
 						if shift_module > 0.001:
@@ -188,8 +179,8 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 
 
 # Frequencies
-	frequencies_2D.sort(reverse = True)
-	frequencies.sort(reverse = True)
+	frequencies_2D.sort(reverse=True)
+	frequencies.sort(reverse=True)
 
 # Adjust the number of freq to 3N-6 for molecules
 	if system_type == "Molecule":
@@ -205,6 +196,22 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 		frequencies_2D = []
 
 	return frequencies,frequencies_2D
+
+def Frequency_2D(lines, nline, chemical_symbols, frequency):
+	freq_2D = 0
+	nline = nline + 2   # for the X Y Z dx dy dz heading
+	z_shift = []
+	total_mass = 0
+	for i in range(len(chemical_symbols)):
+		words = [j.strip() for j in lines[nline + i].split() if j]
+		atom = Atom(chemical_symbols[i], position=(float(words[0]), float(words[1]), float(words[2])))
+		z_shift.append(np.abs(float(words[5])*atom.mass))
+		total_mass += atom.mass
+	if max(z_shift)/total_mass < 0.1:
+		freq_2D = frequency
+
+	return freq_2D
+
 
 #############################################################################################################
 
