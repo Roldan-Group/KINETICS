@@ -148,38 +148,12 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 						if freq_2D > 0:
 							frequencies_2D.append(freq_2D)
 
-
-
-#					positions = []
-#					new_positions = []
-#					unconstrained_elements = []
-#					words = [i.strip() for i in lines[nline].split() if i]
-#					nline += 1
-#					if system_type == "Molecule" and len(words) == 7 and words[0] in chemical_symbols:
-#						unconstrained_elements.append(words[0])
-#						positions.append([float(words[j]) for j in range(1,4)])
-#						new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
-#						for i in range(unconstrained_natoms -1):
-#							words = [i.strip() for i in lines[nline].split() if i]
-#							nline += 1
-#							unconstrained_elements.append(words[0])
-#							positions.append([float(words[j]) for j in range(1,4)])
-#							new_positions.append([float(words[j]) + float(words[j+3]) for j in range(1,4)])
-#
-#						system = Atoms(unconstrained_elements, positions=positions, pbc=[True,True,True])
-#						new_system = Atoms(unconstrained_elements, positions=new_positions, pbc=[True,True,True])
-#						shift = new_system.get_center_of_mass() - system.get_center_of_mass()
-#						shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
-#						if shift_module > 0.001:
-#							frequencies_2D += [abs(frequencies[-1])]
-
 # try to get the Infrared Spectrum
 #		if len(frequencies) > 0:
 #				print("infrared spectrum for",File,"not available!")
 #                               system.get_dipole_moment()
 #                               ir = Infrared(system)
 #                               print (ir.summary())
-
 
 # Frequencies
 	frequencies_2D.sort(reverse=True)
@@ -211,7 +185,6 @@ def Frequency_2D(lines, nline, chemical_symbols, frequency, software):
 		if words[0] in chemical_symbols:		# in FHI-aims, displacements start with the symbol
 			words.pop(0)
 		atom = Atom(chemical_symbols[i], position=(float(words[0]), float(words[1]), float(words[2])))
-		print(atom)
 		z_shift.append(np.abs(float(words[5])*atom.mass))
 		total_mass += atom.mass
 	if max(z_shift)/total_mass < 0.1:
@@ -332,24 +305,23 @@ for line in lines:
 						ifile.write (" %.1f" %(float(freq2D)))
 				ifile.write ("\n")
 			ifile.write (" IMASS =")
-			masses = []
-			n_masses = [0]*len(system.get_masses())
-			n=-1
-			for mass in system.get_masses():
-				if mass not in masses:
-					masses.append(mass)
-					n += 1
-					n_masses[n] = 1
-				else:
-					n_masses[n] += 1
-			for mass in masses:
-				ifile.write (" %.3f" %(float(mass)))
+
+			masses = list(system.get_masses())
+			print(masses)
+			n_masses = []
+			for mass in set(masses):
+				ifile.write(" %.3f" % (float(mass)))
+				n_masses.append(masses.count(mass))
 			ifile.write ("   # amu\n")
 			ifile.write (" INATOMS =")
 			for n in n_masses:
-				if n > 0:
-					ifile.write (" %d " %(int(n)))
+				ifile.write (" %d " %(int(n)))
 			ifile.write ("\n")
+
+
+
+
+
 			ifile.write (" SYMFACTOR = %d\n" %(int(symmetry_factor)))
 			ifile.write (" INERTIA =")
 			for IM in Inertia_moments:
