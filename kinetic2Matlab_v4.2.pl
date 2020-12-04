@@ -90,12 +90,24 @@ print "Reading thermodynamics";
                     @imafr{$nsys[$nsystems]}="@imafreq"; };
             if (@tag[0] eq 'FREQ2D') { $t=2; @ifreq=''; while (($tag[$t] ne '#') and ($tag[$t])) { push(@ifreq,$tag[$t]); $t++; };
                                         @freq2D = sort {$b <=> $a} @ifreq;
-                                        @freq2D{$nsys[$nsystems]}="@freq";
+                                        @freq2D{$nsys[$nsystems]}="@freq2D";
 					push(@molecules,@nsys[$nsystems]); };
-
-
 #---------------------------------------------------------------------------------------------------------------------------------molecule
             if (@molecules[$#molecules] eq @nsys[$nsystems]) {
+
+
+
+
+
+
+
+print"$mol --\tfreq = @freq{$nsys[$nsystems]}\n\tfreq2D = @freq2D{$nsys[$nsystems]}\n";
+
+
+
+
+
+
                if (@tag[0] eq 'IMASS') { $t=2; $Av=6.022139922973909E+023; @iimass='';
                   while ((@tag[$t] ne '#') and (@tag[$t])) { push(@iimass,@tag[$t]/($Av*1000)); $t++; };
                                                 @imass{@nsys[$nsystems]}="@iimass"; };
@@ -124,7 +136,6 @@ print "Reading thermodynamics";
 
 
  };
-
                if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
                   foreach $t (@tmp) { if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tmp=@Nline; @Nline=();
                   if ( @tmp[0] =~ /^[0-9]+$/) { @nsitetype{@nsys[$nsystems]}=@tmp[0];
@@ -542,7 +553,7 @@ print "\t\t... done\n";
 	        if ($#ifreq2D >= 50) { $nqvib2D=int($#ifreq2D/50); }else{ $nqvib2D=0; };
                 if ($nqvib2D > 0) { $tmp=0;
 	    print OUT "\t\t\t%_____________2D Rotational Partition Function consider only frequencies that does not\n";
-            print OUT "\t\t\t%_____________shift the centre of mass along the reaction coordinate (Z)\n";
+            print OUT "\t\t\t%_____________move across the reaction coordinate (Z)\n";
                         while ( $tmp <= $nqvib2D ) {
                                 print OUT "     qvib2D$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
