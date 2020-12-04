@@ -1368,18 +1368,18 @@ print "\t\t... done\n";
         if ($exp eq "const_TEMP") { if ($nVext) { print OUT "fclose(fileID2);\n";}; };
 	print OUT "\n\n";
       close OUT;
-      open OUT, ">>plot.sh";
-  	if ($exp eq "const_TEMP") { 
-#  	  	print OUT "\n\n\nperl ~/software/KINETICS/IRPlotting.pl $exp";
-		foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
-	        foreach $s (@su) { $n=4+@y{$s};
-	       	if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
-	if ($exp ne "TPR") {
-#		print OUT "\n\nperl ~/software/KINETICS/PlotConcentrations.pl $exp";
-                foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
-                foreach $s (@su) { $n=4+@y{$s};
-                if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
-      close OUT;
+#      open OUT, ">>Systems_to_Plot.txt";
+#  	if ($exp eq "const_TEMP") {
+##  	  	print OUT "\n\n\nperl ~/software/KINETICS/IRPlotting.pl $exp";
+#		foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
+#	        foreach $s (@su) { $n=4+@y{$s};
+#	       	if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
+#	if ($exp ne "TPR") {
+##		print OUT "\n\nperl ~/software/KINETICS/PlotConcentrations.pl $exp";
+#                foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
+#                foreach $s (@su) { $n=4+@y{$s};
+#                if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
+#      close OUT;
     return();
   }; #--> sub ODE_pringing
 #==============================================================================================================================
