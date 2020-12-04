@@ -65,11 +65,11 @@ def System_Properties(File, system, ssites, software):
 		output = open(File,"r")
 # if File is from VASP (OUTCAR) ----------------------------------------------------------------- not completed
 		if software == "VASP":
-			try:
-				out = [out.strip() for out in output if re.search("The static configuration has the point symmetry",out) is not None][-1]
-				symmetry_factor = float(out[-3])    ##### CHECK!
-			except:
-				symmetry_factor = input("What's the symmetry factor for " + name +"? ")
+#			try:
+#				out = [out.strip() for out in output if re.search("The static configuration has the point symmetry",out) is not None][-1]
+#				symmetry_factor = float(out[-3])    ##### CHECK!
+#			except:
+			symmetry_factor = input("What's the symmetry factor for " + name +"? ")
 
 # if File is from FHI-AIMS
 		if software == "FHI-aims":
