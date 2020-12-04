@@ -52,17 +52,18 @@ def System_Properties(File, system, ssites, software):
 			i_min += 1
 		if system.get_cell()[i][i] > 0 and i_max - i_min > 0.5*system.get_cell()[i][i]:
 			system_check.append(["surf_cat"])
-	if len(system_check) == 2:
+# for frequency calculations, the support is commonly frozen and get_positions gives [0, 0, 0]
+	pos = [1 for i in system.get_positions() if i[0] == 0. and i[1] == 0. and i[2] == 0.]
+	if len(system_check) > 0 or len(pos) > 1:
 		if ssites is not None:
 			system_type = "Surface"
 # Decide if the system combines adsorbate + adsorbent (CATALYSTS)
 		else:
 			system_type = "Catalyst"
 
-
 # Searches for the symmetry of the Molecule
 	if system_type == "Molecule":
-		output = open(File,"r")
+		output = open(File, "r")
 # if File is from VASP (OUTCAR) ----------------------------------------------------------------- not completed
 		if software == "VASP":
 #			try:
