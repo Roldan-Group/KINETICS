@@ -305,9 +305,7 @@ for line in lines:
 						ifile.write (" %.1f" %(float(freq2D)))
 				ifile.write ("\n")
 			ifile.write (" IMASS =")
-
 			masses = list(system.get_masses())
-			print(masses)
 			n_masses = []
 			for mass in set(masses):
 				ifile.write(" %.3f" % (float(mass)))
@@ -317,11 +315,6 @@ for line in lines:
 			for n in n_masses:
 				ifile.write (" %d " %(int(n)))
 			ifile.write ("\n")
-
-
-
-
-
 			ifile.write (" SYMFACTOR = %d\n" %(int(symmetry_factor)))
 			ifile.write (" INERTIA =")
 			for IM in Inertia_moments:
