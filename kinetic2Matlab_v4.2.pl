@@ -95,20 +95,6 @@ print "Reading thermodynamics";
 					push(@molecules,@nsys[$nsystems]); };
 #---------------------------------------------------------------------------------------------------------------------------------molecule
             if (@molecules[$#molecules] eq @nsys[$nsystems]) {
-
-
-
-
-
-
-
-print"$mol --\tfreq = @freq{$nsys[$nsystems]}\n\tfreq2D = @freq2D{$nsys[$nsystems]}\n";
-
-
-
-
-
-
                if (@tag[0] eq 'IMASS') { $t=2; $Av=6.022139922973909E+023; @iimass='';
                   while ((@tag[$t] ne '#') and (@tag[$t])) { push(@iimass,@tag[$t]/($Av*1000)); $t++; };
                                                 @imass{@nsys[$nsystems]}="@iimass"; };
