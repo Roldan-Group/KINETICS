@@ -112,7 +112,7 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 			if len(words) > 7 and "f" in words[1] and 'THz' in words[4] and 'cm-1' in words[8]:
 				frequencies.append(float(words[7]))
 				if system_type == "Molecule":
-					freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1])
+					freq_2D = Frequency_2D(lines, nline, chemical_symbols, frequencies[-1], software)
 					if freq_2D > 0:
 						frequencies_2D.append(freq_2D)
 			elif len(words) > 6 and "f/i" in words[1] and 'THz' in words[3] and 'cm-1' in words[7]:
