@@ -524,9 +524,8 @@ print "\t\t... done\n";
 			while ( $tmp <= $nqvib ) {
 				print OUT "     qvib3D$sys$tmp="; $nf=0;
 				for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-				       if (($k < 49+50*$tmp) and ( $nf< $#ifreq)) {
-                                       		print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++; }else{ if (@ifreq[$k]) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
+				       if ($nf < $#ifreq) {	    print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++;
+                       }elsif (@ifreq[$k]) { print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
 				$tmp++; };
 			print OUT "  qvib3D$sys="; for ($k=0; $k<=$nqvib-1; $k++) {
 						print OUT "qvib3D$sys$k*"; };
@@ -542,9 +541,8 @@ print "\t\t... done\n";
                         while ( $tmp <= $nqvib2D ) {
                                 print OUT "     qvib2D$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq2D)) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)))*"; $nf++; }else{ if (@ifreq2D[$k]) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)));\n"; $nf++; };};};
+                                       if ($nf < $#ifreq2D) { print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)))*"; $nf++;
+                                       }elsif (@ifreq2D[$k]) {print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)));\n"; $nf++; };};};
                                 $tmp++; };
                         print OUT "  qvib2D$sys="; for ($k=0; $k<=$nqvib2D-1; $k++) {
                                                 print OUT "qvib2D$sys$k*"; };
@@ -564,7 +562,7 @@ print "\t\t... done\n";
                         while ( $tmp <= $nqvib ) {
                                 print OUT "     qvib3D$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) { if (@ifreq[$k]) {
-                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq)) {
+                                       if ($nf < $#ifreq) {
                                                 print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++; }else{
                                                 print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
                                 $tmp++; };
@@ -592,9 +590,9 @@ print "\t\t... done\n";
              print OUT "\t\t\t%_____________indirect adsorption mode.\n";
                                 print OUT "     ZPE2D$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($k < 49+50*$tmp) and ( $nf< $#ifreq2D)) { 
+                                       if ($nf< $#ifreq2D)) {
  					        print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)))*";
-					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; }else{ if (@ifreq2D[$k]) {
+					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; }elsif (@ifreq2D[$k]) {
 					        print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)));\n";
 					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; };};};
 				$tmp++; };
@@ -614,9 +612,9 @@ print "\t\t... done\n";
         	while ( $tmp <= $nqvib ) {
                 	print OUT "     ZPE$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq)) { 
+                                       if ($nf < $#ifreq)) {
                                                 print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)))*";
-                                                $fsum=$fsum+$ifreq[$k]; $nf++; }else{ if (@ifreq[$k]) {
+                                                $fsum=$fsum+$ifreq[$k]; $nf++; }elsif (@ifreq[$k]) {
                                                 print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)));\n";
                                                 $fsum=$fsum+$ifreq[$k]; $nf++; };};};
                                 $tmp++; };
