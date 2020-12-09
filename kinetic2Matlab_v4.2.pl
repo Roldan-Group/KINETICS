@@ -827,6 +827,8 @@ print "\t\t... done\n";
 #	    print OUT "    IR$sys=readtable(\'./IRs/originals/$sys/intensities/IRSPECTRA\');\n";
 	   foreach $mol (@molecules) { if ($sys eq $mol) {
 	       print OUT "q3Dnotrans$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3Dnotrans$sys.dat\');\n";
+	       print OUT "qe$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qelec$sys.dat\');\n";
+	       print OUT "qr$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qrot3D$sys.dat\');\n";
 	       print OUT "qt$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans2D$sys.dat\');\n";
 	       print OUT "qv$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib2D$sys.dat\');\n";
 	       print OUT "ZPE2D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE2D$sys.dat\');\n";
@@ -1007,13 +1009,15 @@ print "\t\t... done\n";
 		  foreach $mol (@molecules) { if ($R eq $mol) { @do{$R}="yes"; };};
 		    if (@do{$R} eq "yes") { print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
 			                    print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-				            print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; 
+				            print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n";
+				            print OUT " qrot3D$R=qr$R\{j,2}; qelec$R=qe$R\{j,2};\n";
 		                }else{      print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="yes"; };};}; #foreach PR
              foreach $TS (@PTS) {           print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
              foreach $P (@PP) { if (@do{$P} eq "no") {
 		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
                     if (@do{$P} eq "yes") { print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; 
+				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n";
+				            print OUT " qrot3D$P=qr$P\{j,2}; qelec$P=qe$P\{j,2};\n";
 		                }else{      print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PR
              foreach $TS (@PTS) {           print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
              foreach $P (@PP) { if (@do{$P} eq "no") {
@@ -1021,6 +1025,8 @@ print "\t\t... done\n";
                     if (@do{$P} eq "yes") { print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
 		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
 				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n";
+				            print OUT " qrot3D$P=qr$P\{j,2}; qelec$P=qe$P\{j,2};\n";
+
 			        }else{	    print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PP
 		if (($typeP eq 'A') or ($typeP eq 'a')) {
                  print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
