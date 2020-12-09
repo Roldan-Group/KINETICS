@@ -907,6 +907,7 @@ print "\t\t... done\n";
                 }else{ if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
           }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
 	        foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
+# change desorption to mobile TS
 	         if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$P*qtrans2D$P*qrot3D$P*qelec$P)^stoichio$pr$P"); push(@Qsyms,"qvib2D$P qtrans2D$P qrot3D$P qelec$P");
 	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; }; };
 	      }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
