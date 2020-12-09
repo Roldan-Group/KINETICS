@@ -887,27 +887,33 @@ print "\t\t... done\n";
    sub ProcessQ_sub {
 	  ($typeP,$pr)=@_;
            @Qtmp=(); @Qsyms=();
+# reactants
        if (($typeP eq 'A') or ($typeP eq 'a')) {
           foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-             if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
+# Adsorption : Concepts of Modern Catalysis and Kinetics, page 119
+# 12/2020             if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
+            if ($go eq 'yes') { push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");
              }else{ if (@en{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
        }else{ foreach $R (@PR) { if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};};
+# products (TS)
        if (@PTS) { @Qtmp2=();
           foreach $TS (@PTS) { if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}"); }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };};
        }elsif (!@PTS) { @Qtmp2=();
           if (($typeP eq 'A') or ($typeP eq 'a')) {
              foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
+# Adsorption : Concepts of Modern Catalysis and Kinetics, page 119
+# 12/2020                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
+             if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$R*qtrans2D$R*qrot3D$R*qelec$R)^stoichio$pr$R"); push(@Qsyms,"qvib2D$R qtrans2D$R qrot3D$R qelec$R");
                 }else{ if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
           }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
-	      foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+	        foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
+	         if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$P*qtrans2D$P*qrot3D$P*qelec$P)^stoichio$pr$P"); push(@Qsyms,"qvib2D$P qtrans2D$P qrot3D$P qelec$P");
 	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; }; };
-	  }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
-	      foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R"); }; };                 
-	      foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+	      }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
+	        foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
+	         if ($go eq 'yes') { push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
+	        foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
+	         if ($go eq 'yes') { push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P");
 	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};};};
        open OUT, ">>processes.m";
            print OUT "syms"; foreach $s (@Qsyms) { print OUT " $s"; }; print OUT "\n";
