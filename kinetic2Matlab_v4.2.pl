@@ -909,8 +909,7 @@ print "\t\t... done\n";
                 }else{ if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
           }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
 	        foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-# change desorption to mobile TS
-	         if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$P*qtrans2D$P*qrot3D$P*qelec$P)^stoichio$pr$P"); push(@Qsyms,"qvib2D$P qtrans2D$P qrot3D$P qelec$P");
+	         if ($go eq 'yes') { push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P");
 	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; }; };
 	      }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
 	        foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
@@ -1009,14 +1008,15 @@ print "\t\t... done\n";
 		  foreach $mol (@molecules) { if ($R eq $mol) { @do{$R}="yes"; };};
 		    if (@do{$R} eq "yes") { print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
 			                    print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-				            print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n";
+				            print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};";
 				            print OUT " qrot3D$R=qr$R\{j,2}; qelec$R=qe$R\{j,2};\n";
 		                }else{      print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="yes"; };};}; #foreach PR
              foreach $TS (@PTS) {           print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
              foreach $P (@PP) { if (@do{$P} eq "no") {
 		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
                     if (@do{$P} eq "yes") { print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n";
+                            print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
+				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};";
 				            print OUT " qrot3D$P=qr$P\{j,2}; qelec$P=qe$P\{j,2};\n";
 		                }else{      print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PR
              foreach $TS (@PTS) {           print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
@@ -1024,7 +1024,7 @@ print "\t\t... done\n";
 		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
                     if (@do{$P} eq "yes") { print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
 		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n";
+				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};";
 				            print OUT " qrot3D$P=qr$P\{j,2}; qelec$P=qe$P\{j,2};\n";
 
 			        }else{	    print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PP
