@@ -28,29 +28,26 @@ def read_gulp(filename, atom_type_list=[]):
     fd.close()
     positions = []
     symbols = []
+    a = (1, 0, 0)
+    b = (0, 1, 0)
+    c = (0, 0, 1)
+    pbc = False
 
     for i, line in enumerate(lines):
-
-
-        if line.find("Final Cartesian lattice vectors") != -1:
-            s = i + 1
-            print(line)
+# looking for the cell
+        if line.find('Final Cartesian lattice vectors') != -1:
+            s = i + 2
             a = (float(lines[s].split()[0]), float(lines[s].split()[1]), float(lines[s].split()[2]))
-            s = i + 1
+            s = s + 1
             b = (float(lines[s].split()[0]), float(lines[s].split()[1]), float(lines[s].split()[2]))
-            s = i + 1
+            s = s + 1
             c = (float(lines[s].split()[0]), float(lines[s].split()[1]), float(lines[s].split()[2]))
-
-            atoms.set_cell
-
-
-
+# looking for periodic conditions
         if line.find('Dimensionality') != -1:
             if int(line[19]) == 3:
-                atoms.set_pbc((True, True, True))
-            else:
-                atoms.set_pbc((False, False, False))
-
+                pbc = True
+#                print(pbc)
+# looking for atomic positions
         if line.find('Final fractional coordinates of atoms') != -1:
             s = i + 5
             while(True):
@@ -65,19 +62,21 @@ def read_gulp(filename, atom_type_list=[]):
                 positions.append([x, y, z])
                 symbols.append(lines[s].split()[1])
             positions = np.array(positions)
-            break
-
-    atoms.set_scaled_positions(positions)
-
+# looking for chemical symbols
     try:
-        atoms.set_chemical_symbols(symbols)
+        atoms = Atoms(symbols)
     except KeyError:
         for i in range(len(symbols)):
             for types in atom_type_list:
                 if symbols[i] in types[1:]:
                     symbols[i] = types[0]
-                    break
-        atoms.set_chemical_symbols(symbols)
+        atoms = Atoms(symbols)
+
+# setting Atoms
+    atoms.set_cell([a, b, c])
+    atoms.set_pbc((pbc, pbc, pbc))
+    atoms.set_scaled_positions(positions)
+#    atoms.set_positions(positions)
 
     return atoms
 ################################################################
