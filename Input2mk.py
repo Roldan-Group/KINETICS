@@ -300,7 +300,7 @@ for line in lines:
 		if FreqFile is not None:
 			ifile.write ("FREQPATH = %s\n" %(FreqFile))
 		ifile.write (" E0 = %f\n" %(system.get_total_energy()))
-		ifile.write (" DEGENERATION = %d\n" %(round(mag)))
+		ifile.write (" DEGENERATION = %d\n" %(np.abs(round(mag))))
 		if frequencies:
 			ifile.write (" FREQ =")
 			for freq in frequencies:
