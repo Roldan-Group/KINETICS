@@ -40,7 +40,7 @@ echo " $file $software"
        ~/Software/KINETICS/kinetic2Mathematica_v4.2.pl $file
    elif  [ $software = "Matlab" ]; then
        python3 ~/Software/KINETICS/Input2mk.py $file
-       ~/Software/KINETICS/kinetic2Matlab_v4.2.pl $file.mk.in
+       ~/Software/KINETICS/kinetic2Matlab_v4.3.pl $file.mk.in
        rm .m
    fi
 
