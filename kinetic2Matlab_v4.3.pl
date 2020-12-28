@@ -992,28 +992,24 @@ print "\t\t... done\n";
 	                if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
         	        }else{          print OUT "j=1;\nT=$itemp;\n"; };
 		$done="no";
-	     foreach $R (@PR) { @do{$R}="no"; }; foreach $P (@PP) { @do{$P}="no"; };  	
-             foreach $R (@PR) { if ($done eq "no") { if ($ttemp) { 
-				     	    print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };
-	     if (@do{$R} eq "no") {     
-		  foreach $mol (@molecules) { if ($R eq $mol) { @do{$R}="yes"; };};
-		    if (@do{$R} eq "yes") { print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
-			                    print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-				            print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; 
-		                }else{      print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="yes"; };};}; #foreach PR
-             foreach $TS (@PTS) {           print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
-             foreach $P (@PP) { if (@do{$P} eq "no") {
-		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
-                    if (@do{$P} eq "yes") { print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; 
-		                }else{      print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PR
-             foreach $TS (@PTS) {           print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
-             foreach $P (@PP) { if (@do{$P} eq "no") {
-		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
-                    if (@do{$P} eq "yes") { print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n";
-			        }else{	    print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PP
+	     foreach $R (@PR) { @do{$R}="yes"; }; foreach $P (@PP) { @do{$P}="yes"; };  foreach $TS (@PTS) { @do{$TS}="yes"; };
+         foreach $R (@PR) { if ($done eq "no") { if ($ttemp) {
+				     	    print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };};
+
+         foreach $R (@PR) { if (@do{$R} eq "yes") { $qmol="no";
+		        foreach $mol (@molecules) { if ($R eq $mol) { $qmol="yes" };};
+                if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
+			                            print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
+				                        print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
+		                        }else{  print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};}; #foreach PR
+         foreach $TS (@PTS) { if (@do{$TS} eq "yes") {
+                                        print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no";};}; #foreach PTS
+#         foreach $P (@PP) { if (@do{$P} eq "yes") { $qmol="no";
+#		     foreach $mol (@molecules) { if ($P eq $mol) { $qmol="yes" };};
+#             if ($qmol eq "yes") {      print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
+#    		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
+#            				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
+#    		                    }else{  print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no"; };};}; #foreach PR
 		if (($typeP eq 'A') or ($typeP eq 'a')) {
                  print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
              }else{ 
