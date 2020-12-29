@@ -24,6 +24,7 @@
 #
 eval '(exit $?0)' && eval 'exec perl -S $0 ${1+"$@"}' && eval 'exec perl -S $0 $argv:q' if 0;
 
+
 use Math::Trig;
  use Cwd;
  use Term::ANSIColor qw( colored );
@@ -89,8 +90,10 @@ print "Reading thermodynamics";
                     @imafr{$nsys[$nsystems]}="@imafreq"; };
             if (@tag[0] eq 'FREQ2D') { $t=2; @ifreq=''; while (($tag[$t] ne '#') and ($tag[$t])) { push(@ifreq,$tag[$t]); $t++; };
                                         @freq2D = sort {$b <=> $a} @ifreq;
-                                        @freq2D{$nsys[$nsystems]}="@freq2D";
+                                        @freq2D{$nsys[$nsystems]}="@freq";
 					push(@molecules,@nsys[$nsystems]); };
+
+
 #---------------------------------------------------------------------------------------------------------------------------------molecule
             if (@molecules[$#molecules] eq @nsys[$nsystems]) {
                if (@tag[0] eq 'IMASS') { $t=2; $Av=6.022139922973909E+023; @iimass='';
@@ -121,6 +124,7 @@ print "Reading thermodynamics";
 
 
  };
+
                if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
                   foreach $t (@tmp) { if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tmp=@Nline; @Nline=();
                   if ( @tmp[0] =~ /^[0-9]+$/) { @nsitetype{@nsys[$nsystems]}=@tmp[0];
@@ -524,10 +528,9 @@ print "\t\t... done\n";
 			while ( $tmp <= $nqvib ) {
 				print OUT "     qvib3D$sys$tmp="; $nf=0;
 				for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-				       if (($nf < 49+50*$tmp) and ($ifreq[$k+1])) {
-                           print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++;
-                       }elsif ($ifreq[$k]) {
-                           print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};
+				       if (($k < 49+50*$tmp) and ( $nf< $#ifreq)) {
+                                       		print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++; }else{ if (@ifreq[$k]) {
+                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
 				$tmp++; };
 			print OUT "  qvib3D$sys="; for ($k=0; $k<=$nqvib-1; $k++) {
 						print OUT "qvib3D$sys$k*"; };
@@ -539,14 +542,13 @@ print "\t\t... done\n";
 	        if ($#ifreq2D >= 50) { $nqvib2D=int($#ifreq2D/50); }else{ $nqvib2D=0; };
                 if ($nqvib2D > 0) { $tmp=0;
 	    print OUT "\t\t\t%_____________2D Rotational Partition Function consider only frequencies that does not\n";
-            print OUT "\t\t\t%_____________move across the reaction coordinate (Z)\n";
+            print OUT "\t\t\t%_____________shift the centre of mass along the reaction coordinate (Z)\n";
                         while ( $tmp <= $nqvib2D ) {
                                 print OUT "     qvib2D$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($nf < 49+50*$tmp) and ($ifreq2D[$k+1])) {
-                                           print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)))*"; $nf++;
-                                       }elsif ($ifreq2D[$k]) {
-                                           print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)));\n"; $nf++; };};
+                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq2D)) {
+                                                print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)))*"; $nf++; }else{ if (@ifreq2D[$k]) {
+                                                print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)));\n"; $nf++; };};};
                                 $tmp++; };
                         print OUT "  qvib2D$sys="; for ($k=0; $k<=$nqvib2D-1; $k++) {
                                                 print OUT "qvib2D$sys$k*"; };
@@ -561,15 +563,14 @@ print "\t\t... done\n";
              print OUT "\t\t\t%_____________In case of an existent TS defined, it will use it to model direct adsorptions.\n";
              print OUT "  Q3Dnotrans$sys=qvib3D$sys*qrot3D$sys;\n";   #------------ no *qelec@nsys[$i] because qelec(#)=qelec(gas)
 	         push(@variable,"Q3Dnotrans$sys");
-         }else{  # --- no molecule
+         }else{
                 if ($nqvib > 0) { $tmp=0;
                         while ( $tmp <= $nqvib ) {
                                 print OUT "     qvib3D$sys$tmp="; $nf=0;
-                                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($nf < 49+50*$tmp) and ($ifreq[$k+1])) {
-                                           print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++;
-                                       }elsif ($ifreq[$k]) {
-                                           print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};
+                                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) { if (@ifreq[$k]) {
+                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq)) {
+                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++; }else{
+                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
                                 $tmp++; };
                         print OUT "  qvib3D$sys="; for ($k=0; $k<=$nqvib-1; $k++) {
                                                 print OUT "qvib3D$sys$k*"; };
@@ -595,12 +596,11 @@ print "\t\t... done\n";
              print OUT "\t\t\t%_____________indirect adsorption mode.\n";
                                 print OUT "     ZPE2D$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($nf < 49+50*$tmp) and ($ifreq2D[$k+1])) {
-                                           print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)))*";
-                                           $fsum2=$fsum2+$ifreq2D[$k]; $nf++;
-                                       }elsif ($ifreq2D[$k]) {
-                                           print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)));\n";
-                                           $fsum2=$fsum2+$ifreq2D[$k]; $nf++; };};
+                                       if (($k < 49+50*$tmp) and ( $nf< $#ifreq2D)) { 
+ 					        print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)))*";
+					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; }else{ if (@ifreq2D[$k]) {
+					        print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)));\n";
+					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; };};};
 				$tmp++; };
 			print OUT "  ZPE2D$sys=(kb*T/toeV)*log("; for ($k=0; $k<=$nqvib2D-1; $k++) {
                                                 print OUT "ZPE2D$sys$k*"; };
@@ -618,12 +618,11 @@ print "\t\t... done\n";
         	while ( $tmp <= $nqvib ) {
                 	print OUT "     ZPE$sys$tmp="; $nf=0;
                                 for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($nf < 49+50*$tmp) and ($ifreq[$k+1])) {
+                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq)) { 
                                                 print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)))*";
-                                                $fsum=$fsum+$ifreq[$k]; $nf++;
-                                       }elsif ($ifreq[$k]) {
+                                                $fsum=$fsum+$ifreq[$k]; $nf++; }else{ if (@ifreq[$k]) {
                                                 print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)));\n";
-                                                $fsum=$fsum+$ifreq[$k]; $nf++; };};
+                                                $fsum=$fsum+$ifreq[$k]; $nf++; };};};
                                 $tmp++; };
                         print OUT "  ZPE$sys=(kb*T/toeV)*log(";for ($k=0; $k<=$nqvib-1; $k++) {
                                                 print OUT "ZPE$sys$k*"; };
@@ -827,8 +826,6 @@ print "\t\t... done\n";
 #	    print OUT "    IR$sys=readtable(\'./IRs/originals/$sys/intensities/IRSPECTRA\');\n";
 	   foreach $mol (@molecules) { if ($sys eq $mol) {
 	       print OUT "q3Dnotrans$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3Dnotrans$sys.dat\');\n";
-	       print OUT "qe$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qelec$sys.dat\');\n";
-	       print OUT "qr$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qrot3D$sys.dat\');\n";
 	       print OUT "qt$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans2D$sys.dat\');\n";
 	       print OUT "qv$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib2D$sys.dat\');\n";
 	       print OUT "ZPE2D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE2D$sys.dat\');\n";
@@ -889,33 +886,27 @@ print "\t\t... done\n";
    sub ProcessQ_sub {
 	  ($typeP,$pr)=@_;
            @Qtmp=(); @Qsyms=();
-# reactants
        if (($typeP eq 'A') or ($typeP eq 'a')) {
           foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-# Adsorption : Concepts of Modern Catalysis and Kinetics, page 119
-# 12/2020             if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
-            if ($go eq 'yes') { push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");
+             if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
              }else{ if (@en{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
        }else{ foreach $R (@PR) { if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};};
-# products (TS)
        if (@PTS) { @Qtmp2=();
           foreach $TS (@PTS) { if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}"); }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };};
        }elsif (!@PTS) { @Qtmp2=();
           if (($typeP eq 'A') or ($typeP eq 'a')) {
              foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-# Adsorption : Concepts of Modern Catalysis and Kinetics, page 119
-# 12/2020                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
-             if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$R*qtrans2D$R*qrot3D$R*qelec$R)^stoichio$pr$R"); push(@Qsyms,"qvib2D$R qtrans2D$R qrot3D$R qelec$R");
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
                 }else{ if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
           }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
-	        foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P");
+	      foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
+	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
 	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; }; };
-	      }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
-	        foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
-	        foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P");
+	  }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
+	      foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
+	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R"); }; };                 
+	      foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
+	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
 	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};};};
        open OUT, ">>processes.m";
            print OUT "syms"; foreach $s (@Qsyms) { print OUT " $s"; }; print OUT "\n";
@@ -1001,35 +992,24 @@ print "\t\t... done\n";
 	                if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
         	        }else{          print OUT "j=1;\nT=$itemp;\n"; };
 		$done="no";
-	     foreach $R (@PR) { @do{$R}="no"; }; foreach $P (@PP) { @do{$P}="no"; };  	
-             foreach $R (@PR) { if ($done eq "no") { if ($ttemp) { 
-				     	            print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };
-	     if (@do{$R} eq "no") {     
-		  foreach $mol (@molecules) { if ($R eq $mol) { @do{$R}="yes"; };};
-		    if (@do{$R} eq "yes") { print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
-			                        print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-				                    print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};";
-				                    print OUT " qrot3D$R=qr$R\{j,2}; qelec$R=qe$R\{j,2};\n";
-		                }else{      print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="yes"; };};}; #foreach PR
-             foreach $TS (@PTS) {   print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
-             foreach $P (@PP) { if (@do{$P} eq "no") {
-		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
-                    if (@do{$P} eq "yes") {
-                                    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-                                    print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-        				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};";
-		        		            print OUT " qrot3D$P=qr$P\{j,2}; qelec$P=qe$P\{j,2};\n";
-		                }else{      print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PR
-             foreach $TS (@PTS) {   print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; }; #foreach PTS
-             foreach $P (@PP) { if (@do{$P} eq "no") {
-		     foreach $mol (@molecules) { if ($P eq $mol) { @do{$P}="yes"; };};
-                    if (@do{$P} eq "yes") {
-                                    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-        				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};";
-		        		            print OUT " qrot3D$P=qr$P\{j,2}; qelec$P=qe$P\{j,2};\n";
+	     foreach $R (@PR) { @do{$R}="yes"; }; foreach $P (@PP) { @do{$P}="yes"; };  foreach $TS (@PTS) { @do{$TS}="yes"; };
+         foreach $R (@PR) { if ($done eq "no") { if ($ttemp) {
+				     	    print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };};
 
-			        }else{	    print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="yes"; };};}; #foreach PP
+         foreach $R (@PR) { if (@do{$R} eq "yes") { $qmol="no";
+		        foreach $mol (@molecules) { if ($R eq $mol) { $qmol="yes" };};
+                if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
+			                            print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
+				                        print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
+		                        }else{  print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};}; #foreach PR
+         foreach $TS (@PTS) { if (@do{$TS} eq "yes") {
+                                        print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no";};}; #foreach PTS
+#         foreach $P (@PP) { if (@do{$P} eq "yes") { $qmol="no";
+#		     foreach $mol (@molecules) { if ($P eq $mol) { $qmol="yes" };};
+#             if ($qmol eq "yes") {      print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
+#    		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
+#            				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
+#    		                    }else{  print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no"; };};}; #foreach PR
 		if (($typeP eq 'A') or ($typeP eq 'a')) {
                  print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
              }else{ 
@@ -1386,18 +1366,18 @@ print "\t\t... done\n";
         if ($exp eq "const_TEMP") { if ($nVext) { print OUT "fclose(fileID2);\n";}; };
 	print OUT "\n\n";
       close OUT;
-#      open OUT, ">>Systems_to_Plot.txt";
-#  	if ($exp eq "const_TEMP") {
-##  	  	print OUT "\n\n\nperl ~/software/KINETICS/IRPlotting.pl $exp";
-#		foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
-#	        foreach $s (@su) { $n=4+@y{$s};
-#	       	if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
-#	if ($exp ne "TPR") {
-##		print OUT "\n\nperl ~/software/KINETICS/PlotConcentrations.pl $exp";
-#                foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
-#                foreach $s (@su) { $n=4+@y{$s};
-#                if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
-#      close OUT;
+      open OUT, ">>plot.sh";
+  	if ($exp eq "const_TEMP") { 
+#  	  	print OUT "\n\n\nperl ~/software/KINETICS/IRPlotting.pl $exp";
+		foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
+	        foreach $s (@su) { $n=4+@y{$s};
+	       	if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
+	if ($exp ne "TPR") {
+#		print OUT "\n\nperl ~/software/KINETICS/PlotConcentrations.pl $exp";
+                foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
+                foreach $s (@su) { $n=4+@y{$s};
+                if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
+      close OUT;
     return();
   }; #--> sub ODE_pringing
 #==============================================================================================================================

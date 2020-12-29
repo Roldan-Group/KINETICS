@@ -25,7 +25,25 @@ Av = 6.0221409e23
 
 # Plot styles
 imarker = ['o',"s","v","H","X","*","^","<",">","p","P","h","1","2","3","4","d","+"]
-icolour = ["k","b","r","g","c","m"]
+icolour = ["k", "b", "r", "g", "c", "m"]
+
+
+def Line_colour():
+	icolour = ["black", "blue", "red", "green", "cyan", "magenta", "yellow"]
+	print("Which line colour would you like? One number.\n")
+	n = 0
+	for i, c in enumerate(icolour):
+		if i/3 < 1*(1+n):
+			print(" [%d] %-15s" % (i, c), end='', flush=True)
+		else:
+			n += 1
+			print(" [%d] %-15s" % (i, c))
+	answer = input("\n")
+	while int(answer) > len(icolour):
+		print("Select a single line colour.")
+		answer = input("Which line colour would you like? One number.\n")
+
+	return str(icolour[int(answer)])
 
 # Library containing the parameters fitting the Shomate equations from NIST
 def Library (system):
@@ -220,11 +238,17 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 								y[labels_species[spec]].append(species[i, spec])
 	if experiment != "TPR":
 		plt.ylabel("$\\chi_{i}$ (a.u.)", size="16")
-		plt.subplots_adjust(left=0.1, right=0.75, top=0.9, bottom=0.15)
+		plt.yticks(np.arange(0, 1, step=0.1))
+		plt.subplots_adjust(left=0.15, right=0.75, top=0.9, bottom=0.15)
 		for spec in y:
-			plt.plot(x, y[spec], ls="-", label=spec + "$_{" + plot_ini_species + "}$")
+			if len(y) > 1:
+				plt.plot(x, y[spec], ls="-", label=spec + "$_{" + plot_ini_species + "}$")
+			else:
+				line_color = Line_colour()
+				plt.plot(x, y[spec], ls="-", color=line_color, label=spec + "$_{" + plot_ini_species + "}$")
 	else:
 		plt.ylabel("$\\frac{\\delta P_{i}}{\\delta T}$ (a.u.)", size="16")
+		plt.yticks([])
 		plt.subplots_adjust(left=0.2, right=0.75, top=0.9, bottom=0.15)
 		for spec in y:
 			y_tpr = []
@@ -240,6 +264,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 						y_tpr = []
 						y_tpr.append(0)
 						comment = str(spec) + "= " + str(round(y[spec][j], 2))
+	plt.ylim(-0.01, 1.01)
 	plt.title(name)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".png",
@@ -730,7 +755,7 @@ if experiment != "TPR":
 			for i, c in enumerate(initial_compositions):
 				print(" [%d] %-15s" % (i, c))
 			answer = input("Which initial composition do you want to include in the plot? One number.\n")
-			while int(answer) > 1:
+			while int(answer) > len(initial_compositions):
 				print("Select a single initial composition")
 				answer = input("Which conditions do you want to include in the plot? One number.\n")
 			plot_ini_composition = initial_compositions[int(answer)]
