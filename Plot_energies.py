@@ -32,7 +32,6 @@ print(popt, r2)
 plt.plot(np.linspace(min(x)-np.abs(min(x))*0.1, max(x)+np.abs(max(x))*0.1, 101),
          trendline(np.linspace(min(x)-np.abs(min(x))*0.1, max(x)+np.abs(max(x))*0.1, 101), *popt), "b:")# , label=label_trend)
 
-
 plt.plot(x, y, "ko")
 plt.plot(x2, y2, "ro", fillstyle="none")
 #plt.plot(np.linspace(min(x), max(x)), np.linspace(min(x), max(x)), "b:")
