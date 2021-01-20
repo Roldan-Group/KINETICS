@@ -16,6 +16,7 @@ y = data[:, 1]
 plt.plot(x, y, "ko", ms=1, label=output)
 plt.plot(np.linspace(min(x), max(x)), np.linspace(min(x), max(x)), "b:")
 #plt.xlabel(r'ω /$cm^{-1}$',fontsize=14)
+
 #plt.ylabel("Intensity /a.u.", fontsize=14)
 #plt.xticks(np.arange(Xmin,Xmax,Xstep))   # Xmin,Xmax,Xstep
 #plt.xlim([Xmin,Xmax])
