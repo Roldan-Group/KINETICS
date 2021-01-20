@@ -3,6 +3,9 @@
 	read input.mk.in to know the species
 		by Alberto Roldan
 			08/2020
+
+
+	USAGE: Plot_v.py file.mk.in
 '''
 
 
@@ -123,7 +126,7 @@ def Thermodynamics(syst):
 		plt.title(syst)
 		plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 		plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-		plt.savefig("./THERMODYNAMICS/PLOTS/" + syst + "/" + var + syst + ".png",
+		plt.savefig("./THERMODYNAMICS/PLOTS/" + syst + "/" + var + syst + ".svg",
 				dpi=300, orientation='portrait', transparent=True)
 		plt.show()
 
@@ -150,21 +153,21 @@ def Reaction_Constants(processes):
 		plt.ylabel("$log(\\sigma)$")
 	plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PROCESS/Sticky.png", dpi=300, orientation='landscape', transparent=True)
+	plt.savefig("./KINETICS/PROCESS/Sticky.svg", dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 	for n, Y in arrhenius:
 		plt.plot(temperature, np.log(Y), label=str("process" + str(n+1)))
 		plt.ylabel("$log(A)$")
 	plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PROCESS/Arrhenius.png", dpi=300, orientation='landscape', transparent=True)
+	plt.savefig("./KINETICS/PROCESS/Arrhenius.svg", dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 	for n, Y in r_constant:
 		plt.plot(temperature, np.log(Y), label=str("process" + str(n+1)))
 		plt.ylabel("$log(K)$")
 	plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PROCESS/RConstants.png", dpi=300, orientation='landscape', transparent=True)
+	plt.savefig("./KINETICS/PROCESS/RConstants.svg", dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 
 
@@ -237,7 +240,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 							else:
 								y[labels_species[spec]].append(species[i, spec])
 	if experiment != "TPR":
-		plt.ylabel("$\\chi_{i}$ (a.u.)", size="16")
+		plt.ylabel("$\\theta_{i}$ (a.u.)", size="16")
 		plt.yticks(np.arange(0, 1, step=0.1))
 		plt.subplots_adjust(left=0.15, right=0.75, top=0.9, bottom=0.15)
 		for spec in y:
@@ -267,7 +270,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 	plt.ylim(-0.01, 1.01)
 	plt.title(name)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".png",
+	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 	if experiment != "TPR":
@@ -323,7 +326,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 #	ax.scatter3D(x, y, z, cmap="viridis")
 	ax.set_xlabel(r'Temperature (K)', rotation=0, fontsize=16)
 	ax.set_ylabel(r'time (s)', rotation=0, fontsize=16)
-	ax.set_zlabel("$\\chi_{%s}$" % labels_species[int(plot_species[0])], fontsize=16)
+	ax.set_zlabel("$\\theta_{%s}$" % labels_species[int(plot_species[0])], fontsize=16)
 	ax.zaxis.set_ticklabels([])
 #	ax.zaxis.labelpad = 5
 	ax.zaxis._axinfo['label']['space_factor'] = 0.5
@@ -331,7 +334,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 #	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
 	ax.view_init(azim=-45, elev=20)
 	ax.set_title(name)
-	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".png",
+	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 
@@ -359,7 +362,7 @@ def IR_3D(experiment, plot_temp, plot_time, x, y, z, spec_names):
 #	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
 	ax.view_init(azim=-45, elev=20)
 	ax.set_title(name)
-	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".png",
+	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 
@@ -673,7 +676,7 @@ if tem is None:
 		plot_temp = temp_range[:-1]
 else:
 	if tem == "ALL" or tem == "all" or tem == "All":
-		plot_temp = temp_range[:-1]
+		plot_temp = temp_range[:]
 	else:
 		plot_temp = float(tem)
 
