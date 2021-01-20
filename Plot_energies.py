@@ -53,8 +53,6 @@ plt.annotate("$Au_{6} + 1$", xy=(x2[2], y2[2]), xycoords="data",# size=14,
                     horizontalalignment="right", verticalalignment="top")
 
 
-
-
 plt.xlabel("$E_{r}$ (eV)", size=14)
 #plt.xlabel("$Au_{n}$", size=14)
 plt.ylabel("$E_{a}$ (eV)", size=14)
