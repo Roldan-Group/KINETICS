@@ -266,7 +266,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 						y_tpr.append(0)
 						comment = str(spec) + "= " + str(round(y[spec][j], 2))
 	plt.ylim(-0.01, 1.01)
-	plt.title(name)
+#	plt.title(name)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
@@ -338,14 +338,14 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 #	ax.scatter3D(x, y, z, cmap="viridis")
 	ax.set_xlabel(r'Temperature (K)', rotation=0, fontsize=16)
 	ax.set_ylabel(r'time (s)', rotation=0, fontsize=16)
-	ax.set_zlabel("$\\theta_{%s}$ (ML)" % labels_species[int(plot_species[0])], fontsize=16)
+	ax.set_zlabel("$\\theta_{i}$ (ML)", fontsize=16) #  % labels_species[int(plot_species[0])], fontsize=16)
 #	ax.zaxis.set_ticklabels([])
 #	ax.zaxis.labelpad = 5
-	ax.zaxis._axinfo['label']['space_factor'] = 0.5
+	ax.zaxis._axinfo['label']['space_factor'] = 1.0
 #	ax.zaxis.set_major_locator(LinearLocator(5))
 	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
-	ax.view_init(azim=-45, elev=20)
-	ax.set_title(name)
+	ax.view_init(azim=-155, elev=15)
+#	ax.set_title(name)
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.ion()
