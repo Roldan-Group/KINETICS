@@ -21,10 +21,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 from termcolor import colored
 
-
-# Constants
-from termcolor import colored
-
 Joules = 1.6021766208e-19
 Av = 6.0221409e23
 
@@ -274,7 +270,9 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+	plt.ion()
 	plt.show()
+	SaveFig(experiment)
 	if experiment != "TPR":
 		ir_z_spectra = []
 		frequencies = ir[spec][:, 0]
@@ -328,7 +326,8 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	z = list(map(float, z))
 	grid_x, grid_y = np.mgrid[min(x):max(x):200j, min(y):max(y):200j]
 	grid_z = griddata((x, y), z, (grid_x, grid_y), method='cubic')
-	surface = ax.plot_surface(grid_x, grid_y, grid_z, cmap="viridis", alpha=0.7, edgecolor='none', linewidth=0, antialiased=False)
+	surface = ax.plot_surface(grid_x, grid_y, grid_z, cmap="plasma", alpha=0.7, edgecolor='none', linewidth=0, antialiased=False)
+	surface.set_clim(min(z), max(z)*1.2)
 
 #	surface = ax.plot_trisurf(x, y, z, cmap="viridis", edgecolor='none', linewidth=0, antialiased=False)
 	figure.colorbar(surface, shrink=0.5, aspect=8)
@@ -345,9 +344,19 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	ax.set_title(name)
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+	plt.ion()
 	plt.show()
+	SaveFig(experiment)
 	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
 						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
+
+def SaveFig(experiment):
+	answer = str(input("Would you like to save the figure (y/n)?\n"))
+	if answer == "y":
+		figure_out_name = "KINETICS/PLOTS/" + experiment + "/" + str(input("What would it be the figure name (a word)?\n"))
+		plt.savefig(figure_out_name + ".svg",
+					bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+
 
 def IR_3D(experiment, plot_temp, plot_time, x, y, z, spec_names):
 	z_max = 0
@@ -374,8 +383,8 @@ def IR_3D(experiment, plot_temp, plot_time, x, y, z, spec_names):
 	ax.set_title(name)
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+	SaveFig(experiment)
 	plt.show()
-
 
 def Species(molecules, surface_species):
 	labels_spe = []
@@ -478,7 +487,6 @@ def	Extract_numeric_data(experiment, labels_species, conditions, species, time_r
 						if type(plot_time) is list and time in plot_time or type(plot_time) is float and time == plot_time:
 							data_out.write("{:> 9.2f} {:> 3.6f}" .format(temp, time))
 							for spec in plot_species:
-								print("caca",plot_species, "nnn", species)
 								data_out.write(" {: 2.16g}" .format(species[i, spec]))
 							data_out.write("\n")
 		data_out.close()
