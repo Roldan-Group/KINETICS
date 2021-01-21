@@ -37,17 +37,17 @@ plt.plot(x2, y2, "ro", fillstyle="none")
 #plt.plot(np.linspace(min(x), max(x)), np.linspace(min(x), max(x)), "b:")
 
 for i, m in enumerate(n):
-    plt.annotate("$Au_{" + str(int(m)) + "} + 1$", xy=(x[i], y[i]), xycoords="data",# size=14,
-                        xytext=(x[i]-0.07, y[i]+0.01), textcoords="data",
+    plt.annotate("$Au_{" + str(int(m)) + "+ 1}$", xy=(x[i], y[i]), xycoords="data",# size=14,
+                        xytext=(x[i]-0.03, y[i]+0.01), textcoords="data",
 #                        arrowprops=dict(arrowstyle="->", fc="0.6"),
                         horizontalalignment="right", verticalalignment="top")
-plt.annotate("$Au_{2} + 1$", xy=(x2[0], y2[0]), xycoords="data",# size=14,
+plt.annotate("$Au_{2+1}$", xy=(x2[0], y2[0]), xycoords="data",# size=14,
                     xytext=(x2[0]-0.03, y2[0]+0.01), textcoords="data",
                     horizontalalignment="right", verticalalignment="top")
-plt.annotate("$Au_{4} + 1$", xy=(x2[1], y2[1]), xycoords="data",# size=14,
+plt.annotate("$Au_{4+1}$", xy=(x2[1], y2[1]), xycoords="data",# size=14,
                     xytext=(x2[1]-0.03, y2[1]+0.01), textcoords="data",
                     horizontalalignment="right", verticalalignment="top")
-plt.annotate("$Au_{6} + 1$", xy=(x2[2], y2[2]), xycoords="data",# size=14,
+plt.annotate("$Au_{6+1}$", xy=(x2[2], y2[2]), xycoords="data",# size=14,
                     xytext=(x2[2]-0.03, y2[2]+0.01), textcoords="data",
                     horizontalalignment="right", verticalalignment="top")
 
