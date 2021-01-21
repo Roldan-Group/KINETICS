@@ -13,6 +13,8 @@ import sys, os
 import subprocess
 import numpy as np
 from scipy.interpolate import griddata
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d
 from mpl_toolkits.mplot3d import Axes3D
@@ -294,7 +296,8 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 		ir_z_spectra = np.reshape(ir_z_spectra, (len(frequencies), len(new_x)), order="F")
 
 		IR_3D(experiment, plot_temp, plot_time, frequencies, new_x, ir_z_spectra, [i for i in y])
-
+	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
+						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
 
 def	Species_3D(experiment, labels_species, conditions, species, time_range,
 					   plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species):
@@ -343,7 +346,8 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
-
+	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
+						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
 
 def IR_3D(experiment, plot_temp, plot_time, x, y, z, spec_names):
 	z_max = 0
@@ -381,12 +385,13 @@ def Species(molecules, surface_species):
 		labels_spe.append(i)
 	print("\nThe species in the system are:")
 	n = 1
-	for i in range(1, len(labels_spe)+1):
+	for i in range(1, len(labels_spe)):
 		if i/4 < n:
 			print(" [%d] %-15s\t" % (i-1, labels_spe[i-1]), end='', flush=True)
 		else:
 			n += 1
 			print(" [%d] %-15s" % (i-1, labels_spe[i-1]))
+	print(" [%d] %-15s" % (len(labels_spe), labels_spe[-1]))
 	print(colored("\n [%d] %s" % (len(labels_spe), "ALL Molecules"), "green"))
 	print(colored(" [%d] %s" % (len(labels_spe)+1, "ALL Surface Species"), "red"))
 	print(colored(" [%d] %s" % (len(labels_spe)+2, "ALL"), "blue"))
@@ -446,6 +451,39 @@ def IRs(freq_path, plot_species):
 		else:
 			ir[i] = np.loadtxt("./IRs/originals/" + i + ".dat")
 	return ir
+
+
+def	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
+					   plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species):
+	answer = str(input("Would you like to extract numeric data from the previous selection (y/n)?\n"))
+	if answer == "y":
+		data_out_name = "KINETICS/DATA/" + experiment + "/" + str(input("What would it be the output file name (a word)?\n"))
+		data_out = open(data_out_name, "w+")
+		data_out.write("# v=" + str(plot_v) + " ph=" + str(plot_ph) + " " + experiment + "\n")
+		data_out.write("#\t temp\ttime")
+		for spec in plot_species:
+			data_out.write("\t{:s}" .format(labels_species[spec]))
+
+		for i in range(len(conditions)):
+			v, ph, temp, time = conditions[i]
+			if v == plot_v and ph == plot_ph:
+				if time == min(time_range[:-1]) and experiment == "const_TEMP" or \
+					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
+					label_comment = ''
+					for j in range(len(labels_species)):
+						if species[i, j] != 0:
+							label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
+				if label_comment == plot_ini_species:
+					if type(plot_temp) is list and temp in plot_temp or type(plot_temp) is float and temp == plot_temp:
+						if type(plot_time) is list and time in plot_time or type(plot_time) is float and time == plot_time:
+							data_out.write("{:> 9.2f} {:> 3.6f}" .format(temp, time))
+							print("caca",plot_species, "nnn", species)
+							for spec in plot_species:
+								print("caca",plot_species, "nnn", species)
+								data_out.write(" {: 2.16g}" .format(species[i, spec]))
+							data_out.write("\n")
+		data_out.close()
+
 
 #####################################################################################################################
 ######################################################################################################################
