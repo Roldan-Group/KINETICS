@@ -468,7 +468,7 @@ def IRs(freq_path, plot_species):
 
 def	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
 					   plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species):
-	answer = str(input("Would you like to extract numeric data from the previous selection (y/n)?\n"))
+	answer = str(input("Would you like to extract numeric data from the previous plot (y/n)?\n"))
 	if answer == "y":
 		data_out_name = "KINETICS/DATA/" + experiment + "/" + str(input("What would it be the output file name (a word)?\n"))
 		data_out = open(data_out_name + ".dat", "w+")
