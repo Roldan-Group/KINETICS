@@ -273,6 +273,8 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 	plt.ion()
 	plt.show()
 	SaveFig(experiment)
+	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
+						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
 	if experiment != "TPR":
 		ir_z_spectra = []
 		frequencies = ir[spec][:, 0]
@@ -294,8 +296,10 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 		ir_z_spectra = np.reshape(ir_z_spectra, (len(frequencies), len(new_x)), order="F")
 
 		IR_3D(experiment, plot_temp, plot_time, frequencies, new_x, ir_z_spectra, [i for i in y])
-	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
+		Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
 						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
+
+
 
 def	Species_3D(experiment, labels_species, conditions, species, time_range,
 					   plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species):
@@ -467,7 +471,7 @@ def	Extract_numeric_data(experiment, labels_species, conditions, species, time_r
 	answer = str(input("Would you like to extract numeric data from the previous selection (y/n)?\n"))
 	if answer == "y":
 		data_out_name = "KINETICS/DATA/" + experiment + "/" + str(input("What would it be the output file name (a word)?\n"))
-		data_out = open(data_out_name, "w+")
+		data_out = open(data_out_name + ".dat", "w+")
 		data_out.write("# v=" + str(plot_v) + " ph=" + str(plot_ph) + " " + experiment + "\n")
 		data_out.write("#\t temp\ttime")
 		for spec in plot_species:
