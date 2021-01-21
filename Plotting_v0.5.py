@@ -238,7 +238,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 							else:
 								y[labels_species[spec]].append(species[i, spec])
 	if experiment != "TPR":
-		plt.ylabel("$\\theta_{i}$ (a.u.)", size="16")
+		plt.ylabel("$\\theta_{i}$ (ML)", size="16")
 		plt.yticks(np.arange(0, 1, step=0.1))
 		plt.subplots_adjust(left=0.15, right=0.75, top=0.9, bottom=0.15)
 		for spec in y:
@@ -338,7 +338,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 #	ax.scatter3D(x, y, z, cmap="viridis")
 	ax.set_xlabel(r'Temperature (K)', rotation=0, fontsize=16)
 	ax.set_ylabel(r'time (s)', rotation=0, fontsize=16)
-	ax.set_zlabel("$\\theta_{%s}$" % labels_species[int(plot_species[0])], fontsize=16)
+	ax.set_zlabel("$\\theta_{%s}$ (ML)" % labels_species[int(plot_species[0])], fontsize=16)
 #	ax.zaxis.set_ticklabels([])
 #	ax.zaxis.labelpad = 5
 	ax.zaxis._axinfo['label']['space_factor'] = 0.5
@@ -357,7 +357,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 def SaveFig(experiment):
 	answer = str(input("Would you like to save the figure (y/n)?\n"))
 	if answer == "y":
-		figure_out_name = "KINETICS/PLOTS/" + experiment + "/" + str(input("What would it be the figure name (a word)?\n"))
+		figure_out_name = "KINETICS/PLOTS/" + experiment + "/" + str(input("What would it be the figure name (a word & no format)?\n"))
 		plt.savefig(figure_out_name + ".svg",
 					bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 
