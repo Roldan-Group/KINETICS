@@ -476,6 +476,7 @@ def	Extract_numeric_data(experiment, labels_species, conditions, species, time_r
 		data_out.write("#\t temp\ttime")
 		for spec in plot_species:
 			data_out.write("\t{:s}" .format(labels_species[spec]))
+		data_out.write("\n")
 
 		for i in range(len(conditions)):
 			v, ph, temp, time = conditions[i]
