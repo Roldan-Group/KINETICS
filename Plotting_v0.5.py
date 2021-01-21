@@ -306,7 +306,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 		v, ph, temp, time = conditions[i]
 		if v == plot_v and ph == plot_ph:
 			if time == min(time_range[:-1]) and experiment == "const_TEMP" or\
-					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
+					time == min(time_range) and temp == min(temp_range) and experiment == "variable_TEMP":
 				label_comment = ''
 				for j in range(len(labels_species[:-1])):
 					if species[i, j] != 0:
@@ -318,9 +318,15 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 						y.append(time)
 						z.append(species[i, spec])
 
-	figure = plt.figure(figsize=(11.69, 16.53), clear=True)
+	figure = plt.figure(figsize=(12, 10), clear=True)
 	ax = figure.add_subplot(111, projection='3d')
-	surface = ax.plot_trisurf(x, y, z, cmap="viridis", edgecolor='none', linewidth=0, antialiased=False)
+
+	z = list(map(float, z))
+	grid_x, grid_y = np.mgrid[min(x):max(x):200j, min(y):max(y):200j]
+	grid_z = griddata((x, y), z, (grid_x, grid_y), method='cubic')
+	surface = ax.plot_surface(grid_x, grid_y, grid_z, cmap="plama", alpha=0.7, edgecolor='none', linewidth=0, antialiased=False)
+
+#	surface = ax.plot_trisurf(x, y, z, cmap="viridis", edgecolor='none', linewidth=0, antialiased=False)
 	figure.colorbar(surface, shrink=0.5, aspect=8)
 #	ax.scatter3D(x, y, z, cmap="viridis")
 	ax.set_xlabel(r'Temperature (K)', rotation=0, fontsize=16)
