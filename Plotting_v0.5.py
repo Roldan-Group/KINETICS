@@ -12,6 +12,7 @@
 import sys, os
 import subprocess
 import numpy as np
+from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d
 from mpl_toolkits.mplot3d import Axes3D
@@ -125,8 +126,8 @@ def Thermodynamics(syst):
 		plt.title(syst)
 		plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 		plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-		plt.savefig("./THERMODYNAMICS/PLOTS/" + syst + "/" + var + syst + ".svg",
-				dpi=300, orientation='portrait', transparent=True)
+#		plt.savefig("./THERMODYNAMICS/PLOTS/" + syst + "/" + var + syst + ".svg",
+#				dpi=300, orientation='portrait', transparent=True)
 		plt.show()
 
 
@@ -152,21 +153,21 @@ def Reaction_Constants(processes):
 		plt.ylabel("$log(\\sigma)$")
 	plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PROCESS/Sticky.svg", dpi=300, orientation='landscape', transparent=True)
+#	plt.savefig("./KINETICS/PROCESS/Sticky.svg", dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 	for n, Y in arrhenius:
 		plt.plot(temperature, np.log(Y), label=str("process" + str(n+1)))
 		plt.ylabel("$log(A)$")
 	plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PROCESS/Arrhenius.svg", dpi=300, orientation='landscape', transparent=True)
+#	plt.savefig("./KINETICS/PROCESS/Arrhenius.svg", dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 	for n, Y in r_constant:
 		plt.plot(temperature, np.log(Y), label=str("process" + str(n+1)))
 		plt.ylabel("$log(K)$")
 	plt.subplots_adjust(left=0.15, right=0.8, top=0.9, bottom=0.1)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PROCESS/RConstants.svg", dpi=300, orientation='landscape', transparent=True)
+#	plt.savefig("./KINETICS/PROCESS/RConstants.svg", dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 
 
@@ -269,8 +270,8 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 	plt.ylim(-0.01, 1.01)
 	plt.title(name)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
-	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
-				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+#	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
+#				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 	if experiment != "TPR":
 		ir_z_spectra = []
@@ -306,9 +307,9 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 		v, ph, temp, time = conditions[i]
 		if v == plot_v and ph == plot_ph:
 			if time == min(time_range[:-1]) and experiment == "const_TEMP" or\
-					time == min(time_range) and temp == min(temp_range) and experiment == "variable_TEMP":
+					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
 				label_comment = ''
-				for j in range(len(labels_species[:-1])):
+				for j in range(len(labels_species)):
 					if species[i, j] != 0:
 						label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
 			if label_comment == plot_ini_species:
@@ -324,7 +325,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	z = list(map(float, z))
 	grid_x, grid_y = np.mgrid[min(x):max(x):200j, min(y):max(y):200j]
 	grid_z = griddata((x, y), z, (grid_x, grid_y), method='cubic')
-	surface = ax.plot_surface(grid_x, grid_y, grid_z, cmap="plama", alpha=0.7, edgecolor='none', linewidth=0, antialiased=False)
+	surface = ax.plot_surface(grid_x, grid_y, grid_z, cmap="viridis", alpha=0.7, edgecolor='none', linewidth=0, antialiased=False)
 
 #	surface = ax.plot_trisurf(x, y, z, cmap="viridis", edgecolor='none', linewidth=0, antialiased=False)
 	figure.colorbar(surface, shrink=0.5, aspect=8)
@@ -332,15 +333,15 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	ax.set_xlabel(r'Temperature (K)', rotation=0, fontsize=16)
 	ax.set_ylabel(r'time (s)', rotation=0, fontsize=16)
 	ax.set_zlabel("$\\theta_{%s}$" % labels_species[int(plot_species[0])], fontsize=16)
-	ax.zaxis.set_ticklabels([])
+#	ax.zaxis.set_ticklabels([])
 #	ax.zaxis.labelpad = 5
 	ax.zaxis._axinfo['label']['space_factor'] = 0.5
 #	ax.zaxis.set_major_locator(LinearLocator(5))
-#	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
+	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
 	ax.view_init(azim=-45, elev=20)
 	ax.set_title(name)
-	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
-				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+#	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
+#				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 
 
@@ -367,8 +368,8 @@ def IR_3D(experiment, plot_temp, plot_time, x, y, z, spec_names):
 #	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
 	ax.view_init(azim=-45, elev=20)
 	ax.set_title(name)
-	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
-				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
+#	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
+#				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	plt.show()
 
 
@@ -380,7 +381,7 @@ def Species(molecules, surface_species):
 		labels_spe.append(i)
 	print("\nThe species in the system are:")
 	n = 1
-	for i in range(1, len(labels_spe)):
+	for i in range(1, len(labels_spe)+1):
 		if i/4 < n:
 			print(" [%d] %-15s\t" % (i-1, labels_spe[i-1]), end='', flush=True)
 		else:
