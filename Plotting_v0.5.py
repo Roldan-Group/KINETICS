@@ -404,7 +404,7 @@ def Species(molecules, surface_species):
 		else:
 			n += 1
 			print(" [%d] %-15s" % (i-1, labels_spe[i-1]))
-	print(" [%d] %-15s" % (len(labels_spe), labels_spe[-1]))
+	print(" [%d] %-15s" % (len(labels_spe)-1, labels_spe[-1]))
 	print(colored("\n [%d] %s" % (len(labels_spe), "ALL Molecules"), "green"))
 	print(colored(" [%d] %s" % (len(labels_spe)+1, "ALL Surface Species"), "red"))
 	print(colored(" [%d] %s" % (len(labels_spe)+2, "ALL"), "blue"))
