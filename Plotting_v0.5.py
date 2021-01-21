@@ -312,7 +312,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 			if time == min(time_range[:-1]) and experiment == "const_TEMP" or\
 					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
 				label_comment = ''
-				for j in range(len(labels_species)):
+				for j in range(len(labels_species)-1):
 					if species[i, j] != 0:
 						label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
 			if label_comment == plot_ini_species:
@@ -470,14 +470,13 @@ def	Extract_numeric_data(experiment, labels_species, conditions, species, time_r
 				if time == min(time_range[:-1]) and experiment == "const_TEMP" or \
 					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
 					label_comment = ''
-					for j in range(len(labels_species)):
+					for j in range(len(labels_species)-1):
 						if species[i, j] != 0:
 							label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
 				if label_comment == plot_ini_species:
 					if type(plot_temp) is list and temp in plot_temp or type(plot_temp) is float and temp == plot_temp:
 						if type(plot_time) is list and time in plot_time or type(plot_time) is float and time == plot_time:
 							data_out.write("{:> 9.2f} {:> 3.6f}" .format(temp, time))
-							print("caca",plot_species, "nnn", species)
 							for spec in plot_species:
 								print("caca",plot_species, "nnn", species)
 								data_out.write(" {: 2.16g}" .format(species[i, spec]))
