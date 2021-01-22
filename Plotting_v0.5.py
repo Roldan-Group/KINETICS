@@ -189,8 +189,8 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 		v, ph, temp, time = conditions[i]
 		if v == plot_v and ph == plot_ph:
 			if experiment != "TPR":
-				if time == min(time_range[:-1]) and experiment == "const_TEMP" or\
-					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
+				if time == min(time_range) and experiment == "const_TEMP" or\
+					time == min(time_range) and temp == min(temp_range) and experiment == "variable_TEMP":
 					label_comment = ''
 					for j in range(len(labels_species[:-1])):
 						if species[i, j] != 0:
@@ -265,7 +265,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 						y_tpr = []
 						y_tpr.append(0)
 						comment = str(spec) + "= " + str(round(y[spec][j], 2))
-	plt.ylim(-0.01, 1.01)
+#	plt.ylim(-0.01, 1.01)
 #	plt.title(name)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
@@ -311,8 +311,8 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	for i in range(len(conditions)):
 		v, ph, temp, time = conditions[i]
 		if v == plot_v and ph == plot_ph:
-			if time == min(time_range[:-1]) and experiment == "const_TEMP" or\
-					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
+			if time == min(time_range) and experiment == "const_TEMP" or\
+					time == min(time_range) and temp == min(temp_range) and experiment == "variable_TEMP":
 				label_comment = ''
 				for j in range(len(labels_species)-1):
 					if species[i, j] != 0:
@@ -329,9 +329,9 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 
 	z = list(map(float, z))
 	grid_x, grid_y = np.mgrid[min(x):max(x):200j, min(y):max(y):200j]
-	grid_z = griddata((x, y), z, (grid_x, grid_y), method='cubic')
+	grid_z = griddata((x, y), z, (grid_x, grid_y), method='nearest')	# better "cubic" but it generates Nan values
 	surface = ax.plot_surface(grid_x, grid_y, grid_z, cmap="plasma", alpha=0.7, edgecolor='none', linewidth=0, antialiased=False)
-	surface.set_clim(min(z), max(z)*1.2)
+	surface.set_clim(min(z), max(z))
 
 #	surface = ax.plot_trisurf(x, y, z, cmap="viridis", edgecolor='none', linewidth=0, antialiased=False)
 	figure.colorbar(surface, shrink=0.5, aspect=8)
@@ -339,11 +339,12 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	ax.set_xlabel(r'Temperature (K)', rotation=0, fontsize=16)
 	ax.set_ylabel(r'time (s)', rotation=0, fontsize=16)
 	ax.set_zlabel("$\\theta_{i}$ (ML)", fontsize=16) #  % labels_species[int(plot_species[0])], fontsize=16)
+#	ax.set_zlim([0, 0.11])
 #	ax.zaxis.set_ticklabels([])
 #	ax.zaxis.labelpad = 5
 	ax.zaxis._axinfo['label']['space_factor'] = 1.0
 #	ax.zaxis.set_major_locator(LinearLocator(5))
-	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
+	ax.zaxis.set_major_formatter(FormatStrFormatter("%.16g"))
 	ax.view_init(azim=-155, elev=15)
 #	ax.set_title(name)
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
@@ -481,8 +482,8 @@ def	Extract_numeric_data(experiment, labels_species, conditions, species, time_r
 		for i in range(len(conditions)):
 			v, ph, temp, time = conditions[i]
 			if v == plot_v and ph == plot_ph:
-				if time == min(time_range[:-1]) and experiment == "const_TEMP" or \
-					time == min(time_range[:-1]) and temp == min(temp_range[:-1]) and experiment == "variable_TEMP":
+				if time == min(time_range) and experiment == "const_TEMP" or \
+					time == min(time_range) and temp == min(temp_range) and experiment == "variable_TEMP":
 					label_comment = ''
 					for j in range(len(labels_species)-1):
 						if species[i, j] != 0:
