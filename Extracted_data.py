@@ -25,7 +25,7 @@ def SaveFig():
 					bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 
 
-def Plot_2D(x, data):
+def Plot_2D(x, data, n_i, i_label):
 	for i in range(2, len(data[0])):
 # ORIGINAL
 #		plt.plot(x, [j for j in data[:, i]], "o")
@@ -35,7 +35,11 @@ def Plot_2D(x, data):
 # SPLINES
 		spl = splrep(x, [j for j in data[:, i]], k=3)
 		y = splev(np.linspace(min(x), max(x), 150), spl)
-		plt.plot(np.linspace(min(x), max(x), 150), y, linestyle=iline[i-2], color=icolour[i-2], label="$Au_{" + str(i) + "}$")
+		plt.plot(np.linspace(min(x), max(x), 150), y,
+				linestyle=iline[n_i],
+#				linestyle=0,
+				color=icolour[n_i],
+				label="$Au_{" + str(i_label) + "}$")
 # ANNOTATE
 	plt.annotate("$\\theta_{Au_{1}}^{t=0}=0.5ML$", xy=(40, 0.001), xycoords="data", color=icolour[2], size=14,
 				 xytext=(40, 0.001), textcoords="data", horizontalalignment="right", verticalalignment="top")
@@ -46,12 +50,7 @@ def Plot_2D(x, data):
 #	plt.ylim([min(y), 0.1])
 #	plt.tick_params(axis='both', labelrotation=0, labelsize=16)               # custimise tick labels
 #	plt.grid(True)
-	plt.legend(loc='best')
 #	plt.title("$TM_{" + str(int(data[0,0])) + "}$ $dist_{" + str(sys.argv[2]) + "}$")
-	plt.tight_layout()
-	plt.ion()
-	plt.show()
-	SaveFig()
 
 
 def Plot_3D(x, y, data):
@@ -74,9 +73,6 @@ def Plot_3D(x, y, data):
 #	ax.zaxis.set_ticklabels([])
 #	ax.zaxis.set_major_formatter(FormatStrFormatter("%.2g"))
 	ax.view_init(azim=55, elev=10)
-	plt.ion()
-	plt.show()
-	SaveFig()
 
 
 
@@ -85,17 +81,46 @@ def Plot_3D(x, y, data):
 
 name = sys.argv[1][:-4]
 data = np.loadtxt(sys.argv[1], comments="#")
-
 temp = data[:, 0]
 time = data[:, 1]
+
 if len(set(temp)) > 1 and len(set(time)) > 1:
+	for i_sys in range(1, len(sys.argv)):
+		data = np.loadtxt(sys.argv[i_sys], comments="#")
+		temp = data[:, 0]
+		time = data[:, 1]
+		Plot_3D(temp, time, data)
+	plt.ion()
+	plt.show()
+	SaveFig()
+
+elif len(set(temp)) > 1 and len(set(time)) == 1:
+	for i_sys in range(1, len(sys.argv)):
+		data = np.loadtxt(sys.argv[i_sys], comments="#")
+		temp = data[:, 0]
+		time = data[:, 1]
+		Plot_2D(temp, data, i_sys-1, sys.argv[i_sys][-5])
 	plt.xlabel("Temperature (K)", fontsize=14)
-	plt.xlabel("time (s)", fontsize=14)
-	Plot_3D(temp, time, data)
-elif len(set(temp)) > 1 and len(set(time)) == 0:
-	plt.xlabel("Temperature (K)", fontsize=14)
-	Plot_2D(temp, data)
+	plt.legend(loc='best')
+	plt.tight_layout()
+	plt.ion()
+	plt.show()
+	SaveFig()
 elif len(set(temp)) == 0 and len(set(time)) > 1:
+	for i_sys in range(1, len(sys.argv)):
+		data = np.loadtxt(sys.argv[i_sys], comments="#")
+		temp = data[:, 0]
+		time = data[:, 1]
+		Plot_2D(temp, data, i_sys-1, sys.argv[i_sys][-5])
 	plt.xlabel("time (s)", fontsize=14)
-	Plot_2D(time, data)
+	plt.legend(loc='best')
+	plt.tight_layout()
+	plt.ion()
+	plt.show()
+	SaveFig()
+
+
+
+
+
 
