@@ -506,139 +506,164 @@ print "\t\t... done\n";
            }elsif (@linear{$sys} eq "no"){
              print OUT "    qrot3D$sys=(1/symmetry$sys)*(8*pi^2*kb*T/(h^2))^(3/2)*(sqrt(pi*inertia$sys));\n"; };
                  push(@variable,"qrot3D$sys");
-        }else{
+         }else{
            foreach $sur (@surfaces) { if (@sitetype{$sys} eq @sitetype{$sur}) {
              print OUT "area@sitetype{$sys}=@Acat{@sitetype{$sur}};\tfprintf(fileID, \'surface area = %.15E\\n\',area@sitetype{$sys});\n";
 	     $done=1; };
              print OUT "\t\t\t%_____________qtrans and qrots for a solid that does not move/rotate is one_____________\n";
              print OUT "    qtrans3D$sys=1;\n"; push(@variable,"qtrans3D$sys");  
      	     print OUT "    qrot3D$sys=1;\n";   push(@variable,"qrot3D$sys"); };
-        }; # if molecule
+         }; # if molecule
 	     print OUT "\t\t\t%_____________Electronic Partition Function (qelec) is the spin multiplicity\n";
              print OUT "\t\t\t%_____________qelec consideres that the working temperatures are small enough\n";
              print OUT "\t\t\t%_____________to neglect excited states. Qelec is the same in the gas and in the TS.\n";
              print OUT "    qelec$sys=@degeneration{$sys};\t\t\tfprintf(fileID, \'electronic ground state multiplicity = %f\\n\',@degeneration{$sys});\n";
 		     push(@variable,"qelec$sys");
+
+        print OUT "\t\t\t%_____________Vibrational Partition Function (qvib) as defined in DOI:10.1002/3527602658_____________\n";
+	    print OUT "\t\t\t%_____________qvib considers the temperature independent contribution as ZPE,\n";
+        print OUT "\t\t\t%_____________which is directly added to the Energy and removed from qvib\n";
         if ($#ifreq >= 50) { $nqvib=int($#ifreq/50); }else{ $nqvib=0; };
-	if ($imol eq "mol") {
-	     print OUT "\t\t\t%_____________Vibrational Partition Function (qvib) as defined in DOI:10.1002/3527602658_____________\n";
-	     print OUT "\t\t\t%_____________qvib considers the temperature independent contribution as ZPE,\n";
-             print OUT "\t\t\t%_____________which is directly added to the Energy and removed from qvib\n";
-		if ($nqvib > 0) { $tmp=0;
-			while ( $tmp <= $nqvib ) {
-				print OUT "     qvib3D$sys$tmp="; $nf=0;
-				for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-				       if (($k < 49+50*$tmp) and ( $nf< $#ifreq)) {
-                                       		print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++; }else{ if (@ifreq[$k]) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
-				$tmp++; };
-			print OUT "  qvib3D$sys="; for ($k=0; $k<=$nqvib-1; $k++) {
-						print OUT "qvib3D$sys$k*"; };
-						print OUT "qvib3D$sys$nqvib;\n";
-		}else{  print OUT "  qvib3D$sys="; $nf=0; foreach $f (@ifreq) { if ( $nf < $#ifreq) {
-                                                     print OUT "1/(1-exp(-h*c*$f/(kb*T)))*"; $nf++; }else{
-                                                     print OUT "1/(1-exp(-h*c*$f/(kb*T)));\n"; $nf++;};};};
-			                push(@variable,"qvib3D$sys");
-	        if ($#ifreq2D >= 50) { $nqvib2D=int($#ifreq2D/50); }else{ $nqvib2D=0; };
-                if ($nqvib2D > 0) { $tmp=0;
-	    print OUT "\t\t\t%_____________2D Rotational Partition Function consider only frequencies that does not\n";
-            print OUT "\t\t\t%_____________shift the centre of mass along the reaction coordinate (Z)\n";
-                        while ( $tmp <= $nqvib2D ) {
-                                print OUT "     qvib2D$sys$tmp="; $nf=0;
-                                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq2D)) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)))*"; $nf++; }else{ if (@ifreq2D[$k]) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)));\n"; $nf++; };};};
-                                $tmp++; };
-                        print OUT "  qvib2D$sys="; for ($k=0; $k<=$nqvib2D-1; $k++) {
-                                                print OUT "qvib2D$sys$k*"; };
-                                                print OUT "qvib2D$sys$nqvib;\n";
-		}else{  print OUT "  qvib2D$sys="; $nf=0; if (!$ifreq2D[0]) { print OUT "1;\n"; }else{
-	                                foreach $f (@ifreq2D) { if ($nf < $#ifreq2D) {
-	                                             print OUT "1/(1-exp(-h*c*$f/(kb*T)))*"; $nf++; }else{
-	                                             print OUT "1/(1-exp(-h*c*$f/(kb*T)));\n"; $nf++; };};};};
-					                push(@variable,"qvib2D$sys");  
-	     print OUT "\t\t\t%_____________Q3Dnotrans is for calculating molecules transition (TS) towards an\n";
-             print OUT "\t\t\t%_____________anchored site, i.e. a trasition state in indirect adsorption mode.\n";
-             print OUT "\t\t\t%_____________In case of an existent TS defined, it will use it to model direct adsorptions.\n";
-             print OUT "  Q3Dnotrans$sys=qvib3D$sys*qrot3D$sys;\n";   #------------ no *qelec@nsys[$i] because qelec(#)=qelec(gas)
-	         push(@variable,"Q3Dnotrans$sys");
-         }else{
-                if ($nqvib > 0) { $tmp=0;
-                        while ( $tmp <= $nqvib ) {
-                                print OUT "     qvib3D$sys$tmp="; $nf=0;
-                                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) { if (@ifreq[$k]) {
-                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq)) {
-                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++; }else{
-                                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};};
-                                $tmp++; };
-                        print OUT "  qvib3D$sys="; for ($k=0; $k<=$nqvib-1; $k++) {
-                                                print OUT "qvib3D$sys$k*"; };
-                                                print OUT "qvib3D$sys$nqvib;\n";
-                }else{  print OUT "  qvib3D$sys="; if ((!$ifreq[0]) or ($ifreq[0] == 0)) { print OUT "1;\n";
-			}else{ $nf=0; foreach $f (@ifreq) { if ($nf < $#ifreq) {
-                                                print OUT "1/(1-exp(-h*c*$f/(kb*T)))*"; $nf++; }else{
-                                                print OUT "1/(1-exp(-h*c*$f/(kb*T)));\n"; $nf++; };};};};
-                                        push(@variable,"qvib3D$sys");
-       	};
-             print OUT "\t\t\t%_____________The total partition function in the three dimensions (Q3D)\n";
-             print OUT "\t\t\t%_____________is the productory of previous q\n";
-             print OUT "  Q3D$sys=qvib3D$sys*qrot3D$sys*qtrans3D$sys*qelec$sys;\n";
-	        push(@variable,"Q3D$sys");
+        if ($imol eq "mol") {
+            if ($nqvib > 0) { $tmp=0;
+                while ( $tmp <= $nqvib ) {
+                    print OUT "     qvib3D$sys$tmp="; $nf=0;
+                    for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
+                        if (($k < 49+50*$tmp) and ( $nf< $#ifreq)) {print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++;
+                        }else{ if (@ifreq[$k]) { print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++;
+                        };};
+                    }; $tmp++;
+                };
+                print OUT "  qvib3D$sys=";
+                for ($k=0; $k<=$nqvib-1; $k++) { print OUT "qvib3D$sys$k*"; }; print OUT "qvib3D$sys$nqvib;\n";
+            }else{  print OUT "  qvib3D$sys="; $nf=0;
+                foreach $f (@ifreq) {
+                    if ( $nf < $#ifreq) { print OUT "1/(1-exp(-h*c*$f/(kb*T)))*"; $nf++;
+                    }else{ print OUT "1/(1-exp(-h*c*$f/(kb*T)));\n"; $nf++;};};
+            };
+            push(@variable,"qvib3D$sys");
+            if ($#ifreq2D >= 50) { $nqvib2D=int($#ifreq2D/50); }else{ $nqvib2D=0; };
+            if ($nqvib2D > 0) { $tmp=0;
+                print OUT "\t\t\t%_____________2D Rotational Partition Function consider only frequencies that does not\n";
+                print OUT "\t\t\t%_____________shift the centre of mass along the reaction coordinate (Z)\n";
+                while ( $tmp <= $nqvib2D ) { print OUT "     qvib2D$sys$tmp="; $nf=0;
+                    for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
+                        if (($k < 49+50*$tmp) and ( $nf < $#ifreq2D)) {
+                            print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)))*"; $nf++;
+                        }else{ if (@ifreq2D[$k]) {
+                            print OUT "1/(1-exp(-h*c*$ifreq2D[$k]/(kb*T)));\n"; $nf++; };};
+                    }; $tmp++;
+                };
+                print OUT "  qvib2D$sys=";
+                for ($k=0; $k<=$nqvib2D-1; $k++) { print OUT "qvib2D$sys$k*"; }; print OUT "qvib2D$sys$nqvib;\n";
+            }else{  print OUT "  qvib2D$sys="; $nf=0;
+                if (!$ifreq2D[0]) { print OUT "1;\n";
+                }else{
+                    foreach $f (@ifreq2D) {
+                        if ($nf < $#ifreq2D) { print OUT "1/(1-exp(-h*c*$f/(kb*T)))*"; $nf++;
+                        }else{ print OUT "1/(1-exp(-h*c*$f/(kb*T)));\n"; $nf++; };};
+                };
+            };
+            push(@variable,"qvib2D$sys");
+            print OUT "\t\t\t%_____________Q3Dnotrans is for calculating molecules transition (TS) towards an\n";
+            print OUT "\t\t\t%_____________anchored site, i.e. a trasition state in indirect adsorption mode.\n";
+            print OUT "\t\t\t%_____________In case of an existent TS defined, it will use it to model direct adsorptions.\n";
+            print OUT "  Q3Dnotrans$sys=qvib3D$sys*qrot3D$sys;\n";   #------------ no *qelec@nsys[$i] because qelec(#)=qelec(gas)
+            # 	         push(@variable,"Q3Dnotrans$sys");
+        }else{
+            if ($nqvib > 0) { $tmp=0;
+                while ( $tmp <= $nqvib ) {
+                    print OUT "     qvib3D$sys$tmp="; $nf=0;
+                    for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
+                        if (@ifreq[$k]) {
+                            if (($k < 49+50*$tmp) and ( $k < $#ifreq)) {
+                                print "nf$nf k$k .. $#ifreq| ";
+                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++;
+                            }else{
+                                print "nf$nf k$k >> $#ifreq| ";
+                                print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};
+                    }; $tmp++;
+                };
+                print OUT "  qvib3D$sys=";
+                for ($k=0; $k<=$nqvib-1; $k++) { print OUT "qvib3D$sys$k*"; }; print OUT "qvib3D$sys$nqvib;\n";
+            }else{  print OUT "  qvib3D$sys=";
+                if ((!$ifreq[0]) or ($ifreq[0] == 0)) { print OUT "1;\n";
+                }else{ $nf=0;
+                    foreach $f (@ifreq) {
+                        if ($nf < $#ifreq) { print OUT "1/(1-exp(-h*c*$f/(kb*T)))*"; $nf++;
+                        }else{ print OUT "1/(1-exp(-h*c*$f/(kb*T)));\n"; $nf++; };};};
+            };
+            push(@variable,"qvib3D$sys");
+        };
+        print OUT "\t\t\t%_____________The total partition function in the three dimensions (Q3D)\n";
+        print OUT "\t\t\t%_____________is the productory of previous q\n";
+        print OUT "  Q3D$sys=qvib3D$sys*qrot3D$sys*qtrans3D$sys*qelec$sys;\n";
+        push(@variable,"Q3D$sys");
 #-------------------------------------------------------------------------------------------------------------------------------- ZPE          
-	if ($imol eq "mol") {
-             $fsum2=0;
-                 if ($nqvib2D > 0) { $tmp=0;
-                        while ( $tmp <= $nqvib2D ) {
-             print OUT "\t\t\t%_____________The ZPE is the vibrational contribution to the energy at T=0K_____________\n";
-             print OUT "\t\t\t%_____________ZPE2D derives from these vibrations parallel to the adsorbent (X and Y)\n";
-             print OUT "\t\t\t%_____________as the third dimension (Z) correspond to the reaction coordinate of an\n";
-             print OUT "\t\t\t%_____________indirect adsorption mode.\n";
-                                print OUT "     ZPE2D$sys$tmp="; $nf=0;
-                                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($k < 49+50*$tmp) and ( $nf< $#ifreq2D)) { 
- 					        print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)))*";
-					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; }else{ if (@ifreq2D[$k]) {
-					        print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)));\n";
-					       	$fsum2=$fsum2+$ifreq2D[$k]; $nf++; };};};
-				$tmp++; };
-			print OUT "  ZPE2D$sys=(kb*T/toeV)*log("; for ($k=0; $k<=$nqvib2D-1; $k++) {
-                                                print OUT "ZPE2D$sys$k*"; };
-                                                print OUT "ZPE2D$sys$nqvib2D);\n";
-		}else{  print OUT "  ZPE2D$sys=(kb*T/toeV)*log(";
- 	     if (!$ifreq2D[0]) { print OUT "1);\n"; }else{ $nf=0; foreach $f (@ifreq2D) { if ($nf < $#ifreq2D) {
-                                                print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T)))*"; $fsum2=$fsum2+$f; $nf++; }else{
-                                                print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T))));\n"; $fsum2=$fsum2+$f; $nf++; };};};};
-             print OUT "\t\t\t%_____________ZPEClassic does not considers the Wigner Zero Point Correction as in DOI: 10.1063/1.2161193\n";
-   	     print OUT "  ZPE2Dclassic$sys=(1/2)*(h*c/toeV)*$fsum2;\n\t\t\t\t\tfprintf(fileID, \'  classic ZPE 2D = %.15E\\n\',ZPE2Dclassic$sys);\n"; 
-	     push(@variable,"ZPE2D$sys"); 
-     	};
-         $fsum=0;
-         if ($nqvib > 0) { $tmp=0;
-        	while ( $tmp <= $nqvib ) {
-                	print OUT "     ZPE$sys$tmp="; $nf=0;
-                                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
-                                       if (($k < 49+50*$tmp) and ( $nf < $#ifreq)) { 
-                                                print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)))*";
-                                                $fsum=$fsum+$ifreq[$k]; $nf++; }else{ if (@ifreq[$k]) {
-                                                print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)));\n";
-                                                $fsum=$fsum+$ifreq[$k]; $nf++; };};};
-                                $tmp++; };
-                        print OUT "  ZPE$sys=(kb*T/toeV)*log(";for ($k=0; $k<=$nqvib-1; $k++) {
-                                                print OUT "ZPE$sys$k*"; };
-                                                print OUT "ZPE$sys$nqvib);\n";
-                }else{  print OUT "  ZPE$sys=(kb*T/toeV)*log("; $fsum=0;
-		     if (!$ifreq[0]) { print OUT "1);\n"; }else{ $nf=0; foreach $f (@ifreq) { if ($nf < $#ifreq) {
-					        print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T)))*";
-					       	$fsum=$fsum+$f; $nf++; }else{
-           					print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T))));\n";
-					       	$fsum=$fsum+$f; $nf++; };};};};
-           push(@variable,"ZPE$sys");
-	   print OUT "  ZPEclassic$sys=(1/2)*(h*c/toeV)*$fsum;\n\t\t\t\t\tfprintf(fileID, \'  classic ZPE 3D = %.15E\\n\',ZPEclassic$sys);\n";   
+        if ($imol eq "mol"){ $fsum2=0;
+            if ($nqvib2D > 0) { $tmp=0;
+                while ( $tmp <= $nqvib2D ) {
+                    print OUT "\t\t\t%_____________The ZPE is the vibrational contribution to the energy at T=0K_____________\n";
+                    print OUT "\t\t\t%_____________ZPE2D derives from these vibrations parallel to the adsorbent (X and Y)\n";
+                    print OUT "\t\t\t%_____________as the third dimension (Z) correspond to the reaction coordinate of an\n";
+                    print OUT "\t\t\t%_____________indirect adsorption mode.\n";
+                    print OUT "     ZPE2D$sys$tmp="; $nf=0;
+                    for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
+                        if (($k < 49+50*$tmp) and ( $nf< $#ifreq2D)) {
+                            print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)))*";
+                            $fsum2=$fsum2+$ifreq2D[$k]; $nf++;
+                        }else{
+                            if (@ifreq2D[$k]) {
+                                print OUT "(sinh($ifreq2D[$k]*(h*c)/(2*kb*T))/($ifreq2D[$k]*(h*c)/(2*kb*T)));\n";
+                                $fsum2=$fsum2+$ifreq2D[$k]; $nf++; };};
+                    }; $tmp++;
+                };
+                print OUT "  ZPE2D$sys=(kb*T/toeV)*log(";
+                for ($k=0; $k<=$nqvib2D-1; $k++) { print OUT "ZPE2D$sys$k*"; };
+                print OUT "ZPE2D$sys$nqvib2D);\n";
+            }else{  print OUT "  ZPE2D$sys=(kb*T/toeV)*log(";
+                if (!$ifreq2D[0]) { print OUT "1);\n";
+                }else{ $nf=0;
+                    foreach $f (@ifreq2D) {
+                        if ($nf < $#ifreq2D) {
+                            print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T)))*"; $fsum2=$fsum2+$f; $nf++;
+                        }else{ print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T))));\n"; $fsum2=$fsum2+$f; $nf++;
+                        };};};
+            };
+            print OUT "\t\t\t%_____________ZPEClassic does not considers the Wigner Zero Point Correction as in DOI: 10.1063/1.2161193\n";
+            print OUT "  ZPE2Dclassic$sys=(1/2)*(h*c/toeV)*$fsum2;\n\t\t\t\t\tfprintf(fileID, \'  classic ZPE 2D = %.15E\\n\',ZPE2Dclassic$sys);\n";
+            push(@variable,"ZPE2D$sys");
+        };
+        $fsum=0;
+        if ($nqvib > 0) { $tmp=0;
+            while ( $tmp <= $nqvib ) {
+                print OUT "     ZPE$sys$tmp="; $nf=0;
+                for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
+                    if (($k < 49+50*$tmp) and ( $k < $#ifreq)) {
+                        print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)))*";
+                        $fsum=$fsum+$ifreq[$k]; $nf++;
+                    }else{
+                        if (@ifreq[$k]) {
+                            print OUT "(sinh($ifreq[$k]*(h*c)/(2*kb*T))/($ifreq[$k]*(h*c)/(2*kb*T)));\n";
+                            $fsum=$fsum+$ifreq[$k]; $nf++; };};
+                }; $tmp++;
+            };
+            print OUT "  ZPE$sys=(kb*T/toeV)*log(";
+            for ($k=0; $k<=$nqvib-1; $k++) { print OUT "ZPE$sys$k*"; }; print OUT "ZPE$sys$nqvib);\n";
+        }else{  print OUT "  ZPE$sys=(kb*T/toeV)*log("; $fsum=0;
+            if (!$ifreq[0]) { print OUT "1);\n";
+            }else{ $nf=0;
+                foreach $f (@ifreq) {
+                    if ($nf < $#ifreq) { print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T)))*";
+                        $fsum=$fsum+$f; $nf++;
+                    }else{ print OUT "(sinh($f*(h*c)/(2*kb*T))/($f*(h*c)/(2*kb*T))));\n"; $fsum=$fsum+$f; $nf++; };};};
+        };
+        push(@variable,"ZPE$sys");
+        print OUT "  ZPEclassic$sys=(1/2)*(h*c/toeV)*$fsum;\n\t\t\t\t\tfprintf(fileID, \'  classic ZPE 3D = %.15E\\n\',ZPEclassic$sys);\n";
 
 #-------------------------------------------------------------------------------------------------------------------------------- @S Entropy
 # pag 88; Chorkendorff, I. a. N., J. W. Concept... f Modern Catalysis and Kinetics; Wiley-VCH: Weinheim, 2005. ---> S={Kb*ln(Q)}
-           print OUT "\t\t\t%_____________Entroy (S) is S={Kb*ln(Q)} as as defined in DOI:10.1002/3527602658 (page 88)_____________\n";
+        print OUT "\t\t\t%_____________Entroy (S) is S={Kb*ln(Q)} as as defined in DOI:10.1002/3527602658 (page 88)_____________\n";
 #           print OUT "S$sys=(kb*log(Q3D$sys)+(kb*T*diff(log(Q3D$sys),T)))/toeV;\n";  # eV/K
 # re-Formulation from explicit derivatives:: https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
     if ($imol eq "mol") {
