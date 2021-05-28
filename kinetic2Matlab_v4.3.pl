@@ -76,96 +76,105 @@ print "Reading thermodynamics";
 #
       $nsystems=0; $nend=0; $nmolecules=0; $countersystems=0; $nprocess=0; 
 #==================================================================================================================================
-  foreach $line (@in) {  
+foreach $line (@in) {
     if ( $line ) { @tag=split(/\s+/,$line);
-      foreach $t (@tag) { if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tag=@Nline; @Nline=();
-            @eqtmp=split(/= /,$line); foreach $e (@eqtmp) { if ($t) { push(@Nline,$t); }; }; @eqtmp=@Nline; @Nline=();
-            if (@tag[0] eq 'SYSTEM') { @nsys[$nsystems]=@tag[2]; $countersystems++; };
-            if (@tag[0] eq 'XYZPATH') { @ixyz{@nsys[$nsystems]}=@tag[2]; };
-            if (@tag[0] eq 'E0') { $e0{@nsys[$nsystems]}=@tag[2]; };
-            if (@tag[0] eq 'DEGENERATION') { @degeneration{@nsys[$nsystems]}=@tag[2]; };
-            if (@tag[0] eq 'FREQ') { $t=2; @ifreq=''; @imafreq=''; while ((@tag[$t] ne '#') and (@tag[$t])) {
-                if (@tag[$t] > 0) { push(@ifreq,@tag[$t]) }else { push(@imafreq,@tag[$t]); }; $t++; };
-					@freq = sort {$b <=> $a} @ifreq; @freq{$nsys[$nsystems]}="@freq";
-                    @imafr{$nsys[$nsystems]}="@imafreq"; };
-            if (@tag[0] eq 'FREQ2D') { $t=2; @ifreq=''; while (($tag[$t] ne '#') and ($tag[$t])) { push(@ifreq,$tag[$t]); $t++; };
-                                        @freq2D = sort {$b <=> $a} @ifreq;
-                                        @freq2D{$nsys[$nsystems]}="@freq";
-					push(@molecules,@nsys[$nsystems]); };
-
-
+        foreach $t (@tag) {
+            if (($t) or (looks_like_number($t))) { push(@Nline,$t); };
+        };
+        @tag=@Nline; @Nline=(); @eqtmp=split(/= /,$line);
+        foreach $e (@eqtmp) {
+            if ($t) { push(@Nline,$t); };
+        }; @eqtmp=@Nline; @Nline=();
+        if (@tag[0] eq 'SYSTEM') { @nsys[$nsystems]=@tag[2]; $countersystems++; };
+        if (@tag[0] eq 'XYZPATH') { @ixyz{@nsys[$nsystems]}=@tag[2]; };
+        if (@tag[0] eq 'E0') { $e0{@nsys[$nsystems]}=@tag[2]; };
+        if (@tag[0] eq 'DEGENERATION') { @degeneration{@nsys[$nsystems]}=@tag[2]; };
+        if (@tag[0] eq 'FREQ') { $t=2; @ifreq=''; @imafreq='';
+            while ((@tag[$t] ne '#') and (@tag[$t])) {
+                if (@tag[$t] > 0) { push(@ifreq,@tag[$t]);
+                }else { push(@imafreq,@tag[$t]); }; $t++;
+            };
+            @freq = sort {$b <=> $a} @ifreq; @freq{$nsys[$nsystems]}="@freq";  @imafr{$nsys[$nsystems]}="@imafreq";
+        };
+        if (@tag[0] eq 'FREQ2D') { $t=2; @ifreq='';
+            while (($tag[$t] ne '#') and ($tag[$t])) { push(@ifreq,$tag[$t]); $t++;
+            };
+            @freq2D = sort {$b <=> $a} @ifreq; @freq2D{$nsys[$nsystems]}="@freq"; push(@molecules,@nsys[$nsystems]);
+        };
 #---------------------------------------------------------------------------------------------------------------------------------molecule
-            if (@molecules[$#molecules] eq @nsys[$nsystems]) {
-               if (@tag[0] eq 'IMASS') { $t=2; $Av=6.022139922973909E+023; @iimass='';
-                  while ((@tag[$t] ne '#') and (@tag[$t])) { push(@iimass,@tag[$t]/($Av*1000)); $t++; };
-                                                @imass{@nsys[$nsystems]}="@iimass"; };
-               if (@tag[0] eq 'INATOMS') { $t=2; @iiatoms=''; while ((@tag[$t] ne '#') and (@tag[$t])) {
-                                         push(@iiatoms,@tag[$t]); $t++; }; @inatoms{@nsys[$nsystems]}="@iiatoms";
-                                         $natom=0; ($natom+=$_) for @iiatoms; @Tnatoms{@nsys[$nsystems]}=$natom;
-                                         $iTmass=0;
-                                        if ($#iimass ne $#iiatoms) {
-                                        print "\n-- The number of atomic masses and number of atoms for @nsys[$nsystems] disagree --\n\n";
-                                                exit 0 ;
-                                        }else{  for ($i=0; $i<=$#iimass; $i++) {
-                                                $iTmass+=$iiatoms[$i]*$iimass[$i]; };};
-                                        @Tmass{@nsys[$nsystems]}=$iTmass; };
-               if (@tag[0] eq 'SYMFACTOR') { @sym{@nsys[$nsystems]}=@tag[2]; };
-               if (@tag[0] eq 'INERTIA') { $t=2; @iIM=(); while (@tag[$t] ne '#') { push(@iIM,@tag[$t]); $t++; };
-                                         if (($iIM[0] == $iIM[1]) or ($iIM[1] == $iIM[2])) { @linear{@nsys[$nsystems]}="yes";  
-					 }else{ @linear{@nsys[$nsystems]}="no"; };
-					 if (@linear{@nsys[$nsystems]} eq "yes") {  if ($iIM[1] >= $iIM[0]) { @inertia{@nsys[$nsystems]}=$iIM[1]; 
-						 			   }else{ @inertia{@nsys[$nsystems]}=$iIM[0]; };
-					 }else{ @inertia{@nsys[$nsystems]}=$iIM[0]*$iIM[1]*$iIM[2]; };
-
-
+        if (@molecules[$#molecules] eq @nsys[$nsystems]) {
+            if (@tag[0] eq 'IMASS') { $t=2; $Av=6.022139922973909E+023; @iimass='';
+                while ((@tag[$t] ne '#') and (@tag[$t])) { push(@iimass,@tag[$t]/($Av*1000)); $t++; };
+                @imass{@nsys[$nsystems]}="@iimass";
+            };
+            if (@tag[0] eq 'INATOMS') { $t=2; @iiatoms='';
+                while ((@tag[$t] ne '#') and (@tag[$t])) {
+                    push(@iiatoms,@tag[$t]); $t++;
+                };
+                @inatoms{@nsys[$nsystems]}="@iiatoms"; $natom=0; ($natom+=$_) for @iiatoms;
+                @Tnatoms{@nsys[$nsystems]}=$natom; $iTmass=0;
+                if ($#iimass ne $#iiatoms) {
+                    print "\n-- The number of atomic masses and number of atoms for @nsys[$nsystems] disagree --\n\n";
+                    exit 0 ;
+                }else{
+                    for ($i=0; $i<=$#iimass; $i++) { $iTmass+=$iiatoms[$i]*$iimass[$i]; };
+                };
+                @Tmass{@nsys[$nsystems]}=$iTmass;
+            };
+            if (@tag[0] eq 'SYMFACTOR') { @sym{@nsys[$nsystems]}=@tag[2]; };
+            if (@tag[0] eq 'INERTIA') { $t=2; @iIM=();
+                while (@tag[$t] ne '#') { push(@iIM,@tag[$t]); $t++; };
+                if (($iIM[0] == $iIM[1]) or ($iIM[1] == $iIM[2])) { @linear{@nsys[$nsystems]}="yes";
+                }else{ @linear{@nsys[$nsystems]}="no"; };
+                if (@linear{@nsys[$nsystems]} eq "yes") {
+                    if ($iIM[1] >= $iIM[0]) { @inertia{@nsys[$nsystems]}=$iIM[1];
+                    }else{ @inertia{@nsys[$nsystems]}=$iIM[0]; };
+                }else{ @inertia{@nsys[$nsystems]}=$iIM[0]*$iIM[1]*$iIM[2]; };
 # Alberto
 #print "system=@nsys[$nsystems]\t|||linear=@linear{@nsys[$nsystems]}\t||inertia=@inertia{@nsys[$nsystems]}\t||||\n";
-
-
-
- };
-
-               if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
-                  foreach $t (@tmp) { if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tmp=@Nline; @Nline=();
-                  if ( @tmp[0] =~ /^[0-9]+$/) { @nsitetype{@nsys[$nsystems]}=@tmp[0];
-                                                @sitetype{@nsys[$nsystems]}=@tmp[1];
-                                         }else{ @sitetype{@nsys[$nsystems]}=@tmp[0];
-                                                @nsitetype{@nsys[$nsystems]}=@tmp[1]; };
-                  if (!$nsitetype{@nsys[$nsystems]}) { @nsitetype{@nsys[$nsystems]}=1; }; };
-               if (@tag[0] eq 'IPRESSURE') { @pressure{@nsys[$nsystems]}=@tag[2]; };
-               if (@tag[0] eq 'RPRESSURE') { $ipressure{@nsys[$nsystems]}=@tag[2];
-                                             $fpressure{@nsys[$nsystems]}=@tag[3];
-                                             $spressure{@nsys[$nsystems]}=@tag[4]; };
-            }; #-->if molecules
+            };
+            if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
+                foreach $t (@tmp) {
+                    if (($t) or (looks_like_number($t))) { push(@Nline,$t); };
+                }; @tmp=@Nline; @Nline=();
+                if ( @tmp[0] =~ /^[0-9]+$/) { @nsitetype{@nsys[$nsystems]}=@tmp[0]; @sitetype{@nsys[$nsystems]}=@tmp[1];
+                }else{ @sitetype{@nsys[$nsystems]}=@tmp[0]; @nsitetype{@nsys[$nsystems]}=@tmp[1]; };
+                if (!$nsitetype{@nsys[$nsystems]}) { @nsitetype{@nsys[$nsystems]}=1; };
+            };
+            if (@tag[0] eq 'IPRESSURE') { @pressure{@nsys[$nsystems]}=@tag[2]; };
+            if (@tag[0] eq 'RPRESSURE') { $ipressure{@nsys[$nsystems]}=@tag[2]; $fpressure{@nsys[$nsystems]}=@tag[3];
+                $spressure{@nsys[$nsystems]}=@tag[4]; };
+        }; #-->if molecules
 #---------------------------------------------------------------------------------------------------------------------------------catalyst
-            if (@molecules[$#molecules] ne @nsys[$nsystems]) { 
-               if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
-		  foreach $t (@tmp) { if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tmp=@Nline; @Nline=();     
-                  if ( @tmp[0] =~ /^[0-9]+$/) { @nsitetype{@nsys[$nsystems]}=@tmp[0];
-		                                @sitetype{@nsys[$nsystems]}=@tmp[1];
-            		                 }else{ @sitetype{@nsys[$nsystems]}=@tmp[0];
-					        @nsitetype{@nsys[$nsystems]}=@tmp[1]; };
-	          if (!$nsitetype{@nsys[$nsystems]}) { @nsitetype{@nsys[$nsystems]}=1; }; };
-	       if (@tag[0] eq 'IACAT') { @Acat{@sitetype{@nsys[$nsystems]}}=@tag[2]; push(@surfaces,@nsys[$nsystems]); };
-               if (@tag[0] eq 'RCOVERAGE') { $icov{@nsys[$nsystems]}=@tag[2];
-                                             $fcov{@nsys[$nsystems]}=@tag[3];
-                                             $scov{@nsys[$nsystems]}=@tag[4]; };
-               if (@tag[0] eq 'ICOVERAGE') { $coverage{@nsys[$nsystems]}=@tag[2]; };
-            }; #-->if no molecule
+        if (@molecules[$#molecules] ne @nsys[$nsystems]) {
+            if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
+                foreach $t (@tmp) {
+                    if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tmp=@Nline; @Nline=();
+                if ( @tmp[0] =~ /^[0-9]+$/) { @nsitetype{@nsys[$nsystems]}=@tmp[0]; @sitetype{@nsys[$nsystems]}=@tmp[1];
+                }else{ @sitetype{@nsys[$nsystems]}=@tmp[0]; @nsitetype{@nsys[$nsystems]}=@tmp[1]; };
+                if (!$nsitetype{@nsys[$nsystems]}) { @nsitetype{@nsys[$nsystems]}=1; };
+            };
+            if (@tag[0] eq 'IACAT') { @Acat{@sitetype{@nsys[$nsystems]}}=@tag[2]; push(@surfaces,@nsys[$nsystems]); };
+            if (@tag[0] eq 'RCOVERAGE') { $icov{@nsys[$nsystems]}=@tag[2]; $fcov{@nsys[$nsystems]}=@tag[3];
+                $scov{@nsys[$nsystems]}=@tag[4]; };
+            if (@tag[0] eq 'ICOVERAGE') { $coverage{@nsys[$nsystems]}=@tag[2]; };
+        }; #-->if no molecule
 #---------------------------------------------------------------------------------------------------------------------------------end system
-           if ((@tag[0] eq 'end') or (@tag[0] eq 'END')) { $nend++; $nsystems++; };
-     }; #--> line
-  }; #-->foreach line
-       $nsystems=$countersystems;
-
+        if ((@tag[0] eq 'end') or (@tag[0] eq 'END')) { $nend++; $nsystems++; };
+    }; #--> line
+}; #-->foreach line
+$nsystems=$countersystems;
 #--------------------------------------------------------------------------------------------------------------------------------- assigns Mol, Sur and Cat
-    foreach $s (@nsys) { $new="yes";
- 	   foreach $mol (@molecules) { if ($s eq $mol) { $new="no"; }; };
- 	   if ($new eq "yes") { foreach $sur (@surfaces) { if ($s eq $sur) { $new="no"; }; }; };
- 	   if ($new eq "yes") { push(@catalysts,$s); };
+foreach $s (@nsys) { $new="yes";
+    foreach $mol (@molecules) {
+        if ($s eq $mol) { $new="no"; };
     };
-
-#================================================================================================================================= 
+    if ($new eq "yes") {
+        foreach $sur (@surfaces) {
+            if ($s eq $sur) { $new="no"; }; }; };
+    if ($new eq "yes") { push(@catalysts,$s); };
+};
+#=================================================================================================================================
 #
 #                                               SYSTEMS PROPERTIES
 #
@@ -175,9 +184,9 @@ print "Reading thermodynamics";
 
 
 #--------------------------------------------------------------------------------------------------------------------------------- fails
-   if ($nend != $nsystems) {  print "\n -  Please, check the number of SYSTEMs and ENDs - \n" ; exit 0; };
+if ($nend != $nsystems) {  print "\n -  Please, check the number of SYSTEMs and ENDs - \n" ; exit 0; };
 print"\n";
-   foreach $mol (@molecules) {
+foreach $mol (@molecules) {
       if (!$e0{$mol}) { print "  $mol energy\t... fail\n"; exit 0;
 #		 }else{ print "  $mol energy ($e0{$mol})\t... OK\n";
 	};   
