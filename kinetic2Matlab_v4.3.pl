@@ -566,10 +566,10 @@ print "\t\t... done\n";
             };
             push(@variable,"qvib2D$sys");
             print OUT "\t\t\t%_____________Q3Dnotrans is for calculating molecules transition (TS) towards an\n";
-            print OUT "\t\t\t%_____________anchored site, i.e. a trasition state in indirect adsorption mode.\n";
+            print OUT "\t\t\t%_____________anchored site, i.e. a transition state in indirect adsorption mode.\n";
             print OUT "\t\t\t%_____________In case of an existent TS defined, it will use it to model direct adsorptions.\n";
             print OUT "  Q3Dnotrans$sys=qvib3D$sys*qrot3D$sys;\n";   #------------ no *qelec@nsys[$i] because qelec(#)=qelec(gas)
-            # 	         push(@variable,"Q3Dnotrans$sys");
+            push(@variable,"Q3Dnotrans$sys");
         }else{
             if ($nqvib > 0) { $tmp=0;
                 while ( $tmp <= $nqvib ) {
@@ -577,10 +577,8 @@ print "\t\t... done\n";
                     for ($k=50*$tmp; $k<=49+50*$tmp; $k++) {
                         if (@ifreq[$k]) {
                             if (($k < 49+50*$tmp) and ( $k < $#ifreq)) {
-                                print "nf$nf k$k .. $#ifreq| ";
                                 print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)))*"; $nf++;
                             }else{
-                                print "nf$nf k$k >> $#ifreq| ";
                                 print OUT "1/(1-exp(-h*c*$ifreq[$k]/(kb*T)));\n"; $nf++; };};
                     }; $tmp++;
                 };
@@ -1004,47 +1002,59 @@ print "\t\t... done\n";
   }; #--> sub DRCrates
 #==============================================================================================================================
    sub ProcessParameters_sub {
-	  ($typeP,$pr)=@_;
-	  if ($ttemp) { $row=1+($ftemp-$itemp)/$ttemp; }else{ $row=1; };
-  	  if ($sVext) { $row=$row+($nVext+$pVext)/$sVext; };
-	  if ($spH) { $row=$row+($fpH-$ipH)/$spH; };
+       ($typeP,$pr)=@_;
+       if ($ttemp) { $row=1+($ftemp-$itemp)/$ttemp;
+       }else{ $row=1; };
+       if ($sVext) { $row=$row+($nVext+$pVext)/$sVext; };
+       if ($spH) { $row=$row+($fpH-$ipH)/$spH; };
        open OUT, ">>processes.m";
-                 print OUT " fileID=fopen(\"./KINETICS/PROCESS/ReactionParameters$pr.dat\",'a+');";
-          if (($typeP eq 'A') or ($typeP eq 'a')) {
-		 print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\\n\');\n";
-            }else{ 
-                 print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n"; };  print OUT "\n";
-	                if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
-        	        }else{          print OUT "j=1;\nT=$itemp;\n"; };
-		$done="no";
-	     foreach $R (@PR) { @do{$R}="yes"; }; foreach $P (@PP) { @do{$P}="yes"; };  foreach $TS (@PTS) { @do{$TS}="yes"; };
-         foreach $R (@PR) { if ($done eq "no") { if ($ttemp) {
-				     	    print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };};
-
-         foreach $R (@PR) { if (@do{$R} eq "yes") { $qmol="no";
-		        foreach $mol (@molecules) { if ($R eq $mol) { $qmol="yes" };};
-                if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
-			                            print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-				                        print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
-		                        }else{  print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};}; #foreach PR
-         foreach $TS (@PTS) { if (@do{$TS} eq "yes") {
-                                        print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no";};}; #foreach PTS
-#         foreach $P (@PP) { if (@do{$P} eq "yes") { $qmol="no";
-#		     foreach $mol (@molecules) { if ($P eq $mol) { $qmol="yes" };};
-#             if ($qmol eq "yes") {      print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-#    		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-#            				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
-#    		                    }else{  print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no"; };};}; #foreach PR
-		if (($typeP eq 'A') or ($typeP eq 'a')) {
-                 print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
-             }else{ 
-                 print OUT " fprintf(fileID, '%.4f %1.15E %1.15E\\n', T, subs(Arrhenius$pr), subs(Krate$pr));\n"; };
-        if ($ttemp) {  print OUT "end\nfclose(fileID);\n";
-        	}else{ print OUT "fclose(fileID);\n"; };
-	    print OUT "\n\n";
-        close OUT;
-    return();
-  }; #--> sub ProcessParameters
+       print OUT " fileID=fopen(\"./KINETICS/PROCESS/ReactionParameters$pr.dat\",'a+');";
+       if (($typeP eq 'A') or ($typeP eq 'a')) {
+           print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\\n\');\n";
+       }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n"; };
+       print OUT "\n";
+       if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
+       }else{          print OUT "j=1;\nT=$itemp;\n"; };
+       $done="no";
+       foreach $R (@PR) { @do{$R}="yes"; };
+       foreach $P (@PP) { @do{$P}="yes"; };
+       foreach $TS (@PTS) { @do{$TS}="yes"; };
+       foreach $R (@PR) {
+           if ($done eq "no") {
+               if ($ttemp) { print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };
+       };
+       foreach $R (@PR) {
+           if (@do{$R} eq "yes") { $qmol="no";
+               foreach $mol (@molecules) {
+                   if ($R eq $mol) { $qmol="yes" };
+               };
+               if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
+			                           print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
+				                       print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
+               }else{  print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};
+       }; #foreach PR
+       foreach $TS (@PTS) {
+           if (@do{$TS} eq "yes") { print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no";};
+       }; #foreach PTS
+       foreach $P (@PP) {
+           if (@do{$P} eq "yes") { $qmol="no";
+               foreach $mol (@molecules) {
+                   if ($P eq $mol) { $qmol="yes" };
+               };
+               if ($qmol eq "yes") {    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
+    		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
+            				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
+               }else{  print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no"; };};
+       }; #foreach PR
+       if (($typeP eq 'A') or ($typeP eq 'a')) {
+           print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
+       }else{ print OUT " fprintf(fileID, '%.4f %1.15E %1.15E\\n', T, subs(Arrhenius$pr), subs(Krate$pr));\n";
+       };
+       if ($ttemp) {  print OUT "end\nfclose(fileID);\n"; }else{ print OUT "fclose(fileID);\n"; };
+       print OUT "\n\n";
+       close OUT;
+       return();
+   }; #--> sub ProcessParameters
 #==============================================================================================================================
    sub variables_sub {
           ($exp)=@_;
