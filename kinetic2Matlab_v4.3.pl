@@ -19,7 +19,8 @@
 #   version 4.x - It reads all the needed information from file.mk.in so it is DFT-Software independent
 #
 #
-#
+####################
+#       AMEND AREA PER SITE: ISITE = 4 A; A= 1E-18 ---> 1A = A/4 * n_of_molecule
 #
 #
 eval '(exit $?0)' && eval 'exec perl -S $0 ${1+"$@"}' && eval 'exec perl -S $0 $argv:q' if 0;
@@ -868,85 +869,140 @@ print "\t\t... done\n";
      return();
    }; #--> sub Import
 #==============================================================================================================================
-   sub Interpolate_sub {
-         ($sys)=@_;
-        open OUT, ">>processes.m";
-               print OUT "x$sys=[0, 0.25, 0.50, 0.75, 1];\n   Ey$sys=[ENERGY$sys, ENERGY$sys, ENERGY$sys, ENERGY$sys, ENERGY$sys];";
-	       print OUT " Qy$sys=[PARTITION3D$sys, PARTITION3D$sys, PARTITION3D$sys, PARTITION3D$sys, PARTITION3D$sys];\n";
-	       $E="Interp1(x$sys, Ey$sys, cov$sys, 'pchip','extrap')";
-               $Q3D="Interp1(x$sys, Qy$sys, cov$sys, 'pchip', 'extrap')";
-        close OUT; 
-     return($E,$Q3D);
-   }; #--> sub Interpolate
+sub Interpolate_sub {
+    ($sys)=@_;
+    open OUT, ">>processes.m";
+    print OUT "% \t\t FIX interpolation for species $sys :: 'pchip' requires 4 points, 'makima' requires 2 points\n";
+    print OUT "x$sys=[0 0.25 0.50 0.75 1];\n\tEy$sys=[ENERGY$sys ENERGY$sys ENERGY$sys ENERGY$sys ENERGY$sys];\n";
+    print OUT "\tQy$sys=[PARTITION3D$sys PARTITION3D$sys PARTITION3D$sys PARTITION3D$sys PARTITION3D$sys];\n";
+    print OUT "\tE$sys=Interp1(x$sys, Ey$sys, cov$sys, 'pchip','extrap');\n";
+    print OUT "\tQ3D$sys=Interp1(x$sys, Qy$sys, cov$sys, 'pchip', 'extrap');\n";
+    print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, E$sys,':.');\n\n";
+    close OUT;
+    return("E$sys(cov$sys)","Q3D$sys(cov$sys)");
+}; #--> sub Interpolate
 #==============================================================================================================================
-   sub ProcessE_sub {
-          ($typeP,$pr)=@_;
-        open OUT, ">>processes.m"; print OUT "\n";
-              @Etmp=(); @Esyms=();
-           foreach $R (@PR) { if (@en{$R}) { push(@Etmp,"+stoichio$pr$R*@en{$R}");
-		                      }else{ push(@Etmp,"+stoichio$pr$R*E$R"); push(@Esyms,"E$R"); }; };
-           if (@PTS) { @Etmp2=(); 
-              foreach $TS (@PTS) { @imafrq=split(/\s+/,@imafreq{$TS});           # Quantum tunnelling [J. Chem. Phys. 2006, 124, 044706.]
-                   print OUT "   Qtunnel$TS=(kb*T/toeV)*log("; foreach $if (@imafrq) { print OUT "sinh($if*(h*c)/(2*kb*T))/($if*(h*c)/(2*kb*T))*"; }; print OUT "1);\n"; 
-                 if (@en{$TS}) { push(@Etmp2,"+@en{$TS}+Qtunnel$TS");
-		          }else{ push(@Etmp2,"+E$TS+Qtunnel$TS"); push(@Esyms,"E$TS"); }; };
-               print OUT "syms"; foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
-	       print OUT "   Ereactants$pr=0@Etmp;\n";
-               print OUT "   Ets$pr=0@Etmp2;\n"; 
-           }elsif (!@PTS) {
-               if (($typeP eq 'A') or ($typeP eq 'a')) {
-                    @Etmp2=();
-                  foreach $R (@PR) { if (@en{$R}) { push(@Etmp2,"+stoichio$pr$R*@en{$R}"); }else{ push(@Etmp2,"+stoichio$pr$R*E$R"); push(@Esyms,"E$R");};
-                     foreach $mol (@molecules) { if ($R eq $mol) { push(@Etmp2,"+stoichio$pr$R*(-Z$R+Z2D$R)"); push(@Esyms,"Z$R Z2D$R"); }; }; };
-	             print OUT "syms"; foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
-                     print OUT "   Ereactants$pr=0@Etmp;\n";
-                     print OUT "   Ets$pr=0@Etmp2;\n"; 
-	       }else{
-	            @Etmp2=();
-	          foreach $P (@PP) { if (@en{$P}) { push(@Etmp2,"+stoichio$pr$P*@en{$P}"); }else{ push(@Etmp2,"+stoichio$pr$P*E$P"); push(@Esyms,"E$P"); };
-	             foreach $mol (@molecules) { if ($P eq $mol) { push(@Etmp2,"+stoichio$pr$P*(-Z$P+Z2D$P)"); push(@Esyms,"Z$P Z2D$P"); }; }; };
-	             print OUT "syms"; foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
-	             print OUT "   Ereactants$pr=0@Etmp;\n";
-                     print OUT "   Ets$pr=0@Etmp2;\n";
-	       }; # if A D or R
-	   }; # if TS
+sub ProcessE_sub {
+    ($typeP,$pr)=@_;
+    open OUT, ">>processes.m";
+    print OUT "\n";
+    @Etmp=(); @Esyms=();
+    foreach $R (@PR) {
+        if (@en{$R}) { push(@Etmp,"+stoichio$pr$R*@en{$R}");
+            foreach $inter (@interpolated) {
+                if ($inter eq $R) { push(@Esyms,"Ey$R"); push(@Esyms,"E$R");};
+            };
+        }else{ push(@Etmp,"+stoichio$pr$R*E$R"); push(@Esyms,"E$R"); };
+    };
+    if (@PTS) { @Etmp2=();
+        foreach $TS (@PTS) { @imafrq=split(/\s+/,@imafreq{$TS});           # Quantum tunnelling [J. Chem. Phys. 2006, 124, 044706.]
+            print OUT "   Qtunnel$TS=(kb*T/toeV)*log(";
+            foreach $if (@imafrq) {
+                print OUT "sinh($if*(h*c)/(2*kb*T))/($if*(h*c)/(2*kb*T))*"; }; print OUT "1);\n";
+            if (@en{$TS}) { push(@Etmp2,"+@en{$TS}+Qtunnel$TS");
+            }else{ push(@Etmp2,"+E$TS+Qtunnel$TS"); push(@Esyms,"E$TS"); };
+        };
+        print OUT "syms";
+        foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
+        print OUT "   Ereactants$pr=0@Etmp;\n";
+        print OUT "   Ets$pr=0@Etmp2;\n";
+    }elsif (!@PTS) {
+        if (($typeP eq 'A') or ($typeP eq 'a')) {
+            @Etmp2=();
+            foreach $R (@PR) {
+                if (@en{$R}) { push(@Etmp2,"+stoichio$pr$R*@en{$R}");
+                }else{ push(@Etmp2,"+stoichio$pr$R*E$R"); push(@Esyms,"E$R");};
+                foreach $mol (@molecules) {
+                    if ($R eq $mol) { push(@Etmp2,"+stoichio$pr$R*(-Z$R+Z2D$R)"); push(@Esyms,"Z$R Z2D$R"); }; };
+            };
+            print OUT "syms";
+            foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
+            print OUT "   Ereactants$pr=0@Etmp;\n";
+            print OUT "   Ets$pr=0@Etmp2;\n";
+        }else{
+            @Etmp2=();
+            foreach $P (@PP) {
+                if (@en{$P}) { push(@Etmp2,"+stoichio$pr$P*@en{$P}");
+                }else{ push(@Etmp2,"+stoichio$pr$P*E$P"); push(@Esyms,"E$P"); };
+                foreach $mol (@molecules) {
+                    if ($P eq $mol) { push(@Etmp2,"+stoichio$pr$P*(-Z$P+Z2D$P)"); push(@Esyms,"Z$P Z2D$P"); }; };
+            };
+            print OUT "syms";
+            foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
+            print OUT "   Ereactants$pr=0@Etmp;\n";
+            print OUT "   Ets$pr=0@Etmp2;\n";
+        }; # if A D or R
+    }; # if TS
 	print OUT "AE$pr=Ets$pr-Ereactants$pr;";
-        close OUT;
+    close OUT;
     return();
-  }; #--> sub ProcessE
+}; #--> sub ProcessE
 #==============================================================================================================================  
-   sub ProcessQ_sub {
-	  ($typeP,$pr)=@_;
-           @Qtmp=(); @Qsyms=();
-       if (($typeP eq 'A') or ($typeP eq 'a')) {
-          foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-             if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
-             }else{ if (@en{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
-       }else{ foreach $R (@PR) { if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};};
-       if (@PTS) { @Qtmp2=();
-          foreach $TS (@PTS) { if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}"); }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };};
-       }elsif (!@PTS) { @Qtmp2=();
-          if (($typeP eq 'A') or ($typeP eq 'a')) {
-             foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
+sub ProcessQ_sub {
+    ($typeP,$pr)=@_;
+    @Qtmp=(); @Qsyms=();
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
+        foreach $R (@PR) { $go='no';
+            foreach $mol (@molecules) {
+                if ($R eq $mol) { $go='yes'; };
+            };
+            if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
+            }else{
+                if (@en{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+                }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
+        };
+    }else{
+        foreach $R (@PR) {
+            if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+            }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};
+    };
+    if (@PTS) { @Qtmp2=();
+        foreach $TS (@PTS) {
+            if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}");
+            }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };
+        };
+    }elsif (!@PTS) { @Qtmp2=();
+        if (($typeP eq 'A') or ($typeP eq 'a')) {
+            foreach $R (@PR) { $go='no';
+                foreach $mol (@molecules) {
+                    if ($R eq $mol) { $go='yes'; };
+                };
                 if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
-                }else{ if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R"); }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; }; };
-          }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
-	      foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
-	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; }; };
-	  }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
-	      foreach $R (@PR) { $go='no'; foreach $mol (@molecules) { if ($R eq $mol) { $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R"); }; };                 
-	      foreach $P (@PP) { $go='no'; foreach $mol (@molecules) { if ($P eq $mol) {  $go='yes'; }; };
-	         if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
-	         }else{ if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P"); }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};};};
-       open OUT, ">>processes.m";
-           print OUT "syms"; foreach $s (@Qsyms) { print OUT " $s"; }; print OUT "\n";
-           print OUT "   Qreactants$pr=1@Qtmp;\n";
-           print OUT "   Qts$pr=1@Qtmp2;\n";
-        close OUT;
-     return();
-   }; #--> sub ProcessQ
+                }else{
+                    if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R");
+                    }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
+            };
+        }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
+            foreach $P (@PP) { $go='no';
+                foreach $mol (@molecules) {
+                    if ($P eq $mol) {  $go='yes'; }; };
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+                }else{
+                    if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
+                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; };
+            };
+        }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
+            foreach $R (@PR) { $go='no';
+                foreach $mol (@molecules) {
+                    if ($R eq $mol) { $go='yes'; }; };
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R"); };
+            };
+            foreach $P (@PP) { $go='no';
+                foreach $mol (@molecules) {
+                    if ($P eq $mol) {  $go='yes'; }; };
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+                }else{
+                    if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
+                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};};
+    };
+    open OUT, ">>processes.m";
+    print OUT "syms";
+    foreach $s (@Qsyms) { print OUT " $s"; }; print OUT "\n";
+    print OUT "   Qreactants$pr=1@Qtmp;\n";
+    print OUT "   Qts$pr=1@Qtmp2;\n";
+    close OUT;
+    return();
+}; #--> sub ProcessQ
 #==============================================================================================================================
    sub ProcessK_sub {
 	  ($typeP,$pr)=@_;
