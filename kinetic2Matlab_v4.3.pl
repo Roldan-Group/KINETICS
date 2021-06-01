@@ -1387,6 +1387,9 @@ sub ODE_import_sub {
         print OUT "process$pr=readtable(\'./KINETICS/PROCESS/ReactionParameters$pr.dat\');\n";
     };
     foreach $interp (@interpolated) {
+
+        interpsys{$interp}
+
         print OUT "ENERGY$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/G$sys.dat\');\n";
 #        print OUT "PARTITION3D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3D$sys.dat\');\n";  #----------------------- considers no changes in Q with coverage
     };
@@ -1459,17 +1462,7 @@ sub ODE_call_sub {
                         if ($R eq $interp) {
                             ($E,$Q3D)=&Interpolate_sub($interp); @en{$interp}=$E; @q{$interp}=$Q3D;
                             print OUT "AEcov$pr=@en{$interp}-ENERGY$interp\(j,2);\n";
-
-
-
-    foreach $interp (@interpolated) {
-        print OUT "ENERGY$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/G$sys.dat\');\n";
-#        print OUT "PARTITION3D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3D$sys.dat\');\n";  #----------------------- considers no changes in Q with coverage
-        ($E,$Q3D)=&Interpolate_sub($interp); @en{$interp}=$E; @q{$interp}=$Q3D;
-    };
-
-
-
+                        };
                     };
                 };
                 print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4}*exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
