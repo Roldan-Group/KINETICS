@@ -315,7 +315,7 @@ foreach $sur (@surfaces) { $tmp=1; foreach $did (@done) { if ($did eq $sur) { $t
 foreach $cat (@catalysts) { $tmp=1; foreach $did (@done) { if ($did eq $cat) { $tmp=0; };};
     if ($tmp eq 1) { ()=&Import_sub($cat,"processes"); push(@done,$cat); };};
 #----------------------------------------------------------------------------------------------------------------------- Interpolation
-foreach $in (@interpolated) { ($E,$Q3D)=&Interpolate_sub($in); @en{$in}=$E; @q{$in}=$Q3D; };
+############################################################################## needed it?  ?????   ?  foreach $in (@interpolated) { ($E,$Q3D)=&Interpolate_sub($in); @en{$in}=$E; @q{$in}=$Q3D; };
 #----------------------------------------------------------------------------------------------------------------------- processes
 print "  Writing processes.m";
 $row=1; %y=();
@@ -882,7 +882,7 @@ sub process_sub {
     close OUT3;
     return (\@PR, \@PTS, \@PP, $type);
 }; #--> sub process
-#==============================================================================================================================
+#=======================================================================================================================
 sub Import_sub {
     ($sys,$file)=@_;
     @done_import=(); $tmp=1;
@@ -907,7 +907,7 @@ sub Import_sub {
     }; # if tmp
     return();
 }; #--> sub Import
-#==============================================================================================================================
+#=======================================================================================================================
 sub Interpolate_sub {
     ($sys)=@_; @tmp=split(/\s+/,@interpsys{$sys});
     foreach $t (@tmp) {
@@ -917,9 +917,9 @@ sub Interpolate_sub {
     print OUT "x$sys=[0";
     foreach $interp (@tmp) { print OUT "@nsitetype{$interp} "; }; print OUT "];\n";
     print OUT "\tEy$sys=[";
-    foreach $interp (@tmp) { print OUT "ENERGY$interp "; }; print OUT "];\n";
+    foreach $interp (@tmp) { print OUT "ENERGY$interp\{j, 2} "; }; print OUT "];\n";
     print OUT "\tQy$sys=[";
-    foreach $interp (@tmp) { print OUT "PARTITION3D$interp "; }; print OUT "];\n";
+    foreach $interp (@tmp) { print OUT "PARTITION3D$interp\{j, 2} "; }; print OUT "];\n";
     if ($#tmp >= 4) {
         print OUT "\tE$sys=Interp1(x$sys, Ey$sys, cov$sys, 'pchip','extrap');\n";
         print OUT "\tQ3D$sys=Interp1(x$sys, Qy$sys, cov$sys, 'pchip', 'extrap');\n";
@@ -930,7 +930,7 @@ sub Interpolate_sub {
     close OUT;
     return("E$sys(cov$sys)","Q3D$sys(cov$sys)");
 }; #--> sub Interpolate
-#==============================================================================================================================
+#=======================================================================================================================
 sub ProcessE_sub {
     ($typeP,$pr)=@_;
     open OUT, ">>processes.m";
@@ -997,7 +997,7 @@ sub ProcessE_sub {
     close OUT;
     return();
 }; #--> sub ProcessE
-#==============================================================================================================================  
+#=======================================================================================================================
 sub ProcessQ_sub {
     ($typeP,$pr)=@_;
     @Qtmp=(); @Qsyms=();
@@ -1092,7 +1092,7 @@ sub ProcessQ_sub {
     close OUT;
     return();
 }; #--> sub ProcessQ
-#==============================================================================================================================
+#=======================================================================================================================
 sub ProcessK_sub {
     ($typeP,$pr)=@_;
     @r=(); $tmp=(); $nrate="Krate$pr";
@@ -1133,7 +1133,7 @@ sub ProcessK_sub {
     close OUT;
     return();
 }; #--> sub ProcessK
-#==============================================================================================================================
+#=======================================================================================================================
    sub DRCrates_sub {
           ($exp)=@_;
         open OUT, ">>$exp.m"; %done=();
@@ -1156,8 +1156,8 @@ sub ProcessK_sub {
         close OUT;
     return();
   }; #--> sub DRCrates
-#==============================================================================================================================
-sub ProcessParameters_sub {
+#=======================================================================================================================
+   sub ProcessParameters_sub {
     ($typeP,$pr)=@_;
     if ($ttemp) { $row=1+($ftemp-$itemp)/$ttemp;
     }else{ $row=1; };
@@ -1218,7 +1218,7 @@ sub ProcessParameters_sub {
     close OUT;
     return();
 }; #--> sub ProcessParameters
-#==============================================================================================================================
+#=======================================================================================================================
    sub variables_sub {
           ($exp)=@_;
           @variables=();  %tmpPressure=(); %tmpCov=(); 
@@ -1347,7 +1347,7 @@ sub ProcessParameters_sub {
         close OUT;
     return(\@IC);
    }; #--> sub variables
-#==============================================================================================================================
+#=======================================================================================================================
    sub InitialConcentrations_sub {
            ($exp)=@_;
            @IniCon=(); %tmp=(); 
@@ -1379,24 +1379,30 @@ sub ProcessParameters_sub {
        close OUT;
     return(\@IniCon);
   }; #--> sub InitialConcentrations
-#==============================================================================================================================
-   sub ODE_import_sub {
-       ($exp)=@_;
-       open OUT, ">>$exp.m";
-         for ($pr=1; $pr<=$#process; $pr++ ) { print OUT "process$pr=readtable(\'./KINETICS/PROCESS/ReactionParameters$pr.dat\');\n"; }; # for process			
-         print OUT "\n";
-       close OUT;
+#=======================================================================================================================
+sub ODE_import_sub {
+    ($exp)=@_;
+    open OUT, ">>$exp.m";
+    for ($pr=1; $pr<=$#process; $pr++ ) {
+        print OUT "process$pr=readtable(\'./KINETICS/PROCESS/ReactionParameters$pr.dat\');\n";
+    };
+    foreach $interp (@interpolated) {
+        print OUT "ENERGY$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/G$sys.dat\');\n";
+#        print OUT "PARTITION3D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3D$sys.dat\');\n";  #----------------------- considers no changes in Q with coverage
+    };
+    print OUT "\n";
+    close OUT;
     return();
-   }; #--> sub ODE_import
-#==============================================================================================================================
-   sub ODE_call_sub {
-        ($exp)=@_;
-      open OUT, ">>$exp.m";
-           @transfer=();
+}; #--> sub ODE_import
+#=======================================================================================================================
+sub ODE_call_sub {
+    ($exp)=@_;
+    open OUT, ">>$exp.m";
+    @transfer=();
 # Alberto 18/01/2019
- 	   print OUT "\nj=1;\n";
-	if ($ttemp) { print OUT "   while (process1\{j,1} ~= T)\n      j=j+1;\n   end\n"; };
-        for ($pr=1; $pr<=$#process; $pr++ ) {
+ 	print OUT "\nj=1;\n";
+    if ($ttemp) { print OUT "   while (process1\{j,1} ~= T)\n      j=j+1;\n   end\n"; };
+    for ($pr=1; $pr<=$#process; $pr++ ) {
 # 	Phys. Rev. Lett. 2007, 99, 126101                             DOI:https://doi.org/10.1103/PhysRevLett.99.126101
 # 	J. Phys. Chem. C, 2010, 114 (42), pp 18182–18197              DOI: 10.1021/jp1048887
 #	The hydrogen coverage will be dependent on the potential via the reaction:
@@ -1407,107 +1413,177 @@ sub ProcessParameters_sub {
 # 	The reaction free energy can be written as:
 #       		        ΔGH* = AG + AG(U)= AG + −eU 
 # 	defines the chemical potential of H*.
-	if ($exp ne "TPR") {
-		if ($iVext) {
-			if ($ineexch[$pr]) {
-				print OUT "        AEv$pr=@ineexch[$pr]*V;  ";
-			}else{ 	@PR=split(/\s+/,@ProcessReactants[$pr]); $H="no";
-                             	foreach $l (@PR) { if ($l) { push(@Nline,$l); }; }; @PR=@Nline; @Nline=();
-                            	foreach $R (@PR) { if ($R eq "H") { $H="R"; $a=$R; };};
-                            	@PP=split(/\s+/,@ProcessProducts[$pr]);
-                            	foreach $l (@PP) { if ($l) { push(@Nline,$l); }; }; @PP=@Nline; @Nline=();
-                            	foreach $P (@PP) { if ($P eq "H") { $H="P"; $a=$P; };};
-				if ($H eq "R") {    	print OUT "        AEv$pr=-$stoichio{$a}->[$pr]*V;  \n";
-	                        }elsif ($H eq "P") {	print OUT "        AEv$pr=$stoichio{$a}->[$pr]*V;  \n"; }; };
-                }else{  print OUT "        AEv$pr=0;  "; };
-
+#----------------------------------------------------------------------------------------------------------------------- for TPR
+	    if ($exp ne "TPR") {
+            if ($iVext) {
+                if ($ineexch[$pr]) {
+                    print OUT "        AEv$pr=@ineexch[$pr]*V;  ";
+                }else{ 	@PR=split(/\s+/,@ProcessReactants[$pr]); $H="no";
+                    foreach $l (@PR) {
+                        if ($l) { push(@Nline,$l); }; }; @PR=@Nline; @Nline=();
+                    foreach $R (@PR) {
+                        if ($R eq "H") { $H="R"; $a=$R; };};
+                    @PP=split(/\s+/,@ProcessProducts[$pr]);
+                    foreach $l (@PP) {
+                        if ($l) { push(@Nline,$l); }; }; @PP=@Nline; @Nline=();
+                    foreach $P (@PP) {
+                        if ($P eq "H") { $H="P"; $a=$P; };};
+                    if ($H eq "R") { print OUT "        AEv$pr=-$stoichio{$a}->[$pr]*V;  \n";
+                    }elsif ($H eq "P") {
+                        print OUT "        AEv$pr=$stoichio{$a}->[$pr]*V;  \n"; }; };
+            }else{ print OUT "        AEv$pr=0;  "; };
 # 	J. Phys. Chem. B, 2004, 108 (46), pp 17886–17892    DOI: 10.1021/jp047349j
 # 	At a pH different from 0, we can correct the free energy of H+ ions by the concentration dependence of the entropy:
 #       		        G = H -TS + kT ln(Products/Reactants)   ;    pH = -log[H3O+]
 #		               G(pH) = −kT ln[H+]= kT ln (10) × pH.
+            if ($ipH) { @PR=split(/\s+/,@ProcessReactants[$pr]); $H3O="no";
+                foreach $l (@PR) {
+                    if ($l) { push(@Nline,$l); }; }; @PR=@Nline; @Nline=();
+                foreach $R (@PR) {
+                    if (($R eq "H3O") or ($R eq "H3Op")) { $H3O="R"; };};
+                @PP=split(/\s+/,@ProcessProducts[$pr]);
+                foreach $l (@PP) {
+                    if ($l) { push(@Nline,$l); }; }; @PP=@Nline; @Nline=();
+                foreach $P (@PP) {
+                    if (($P eq "H3O") or ($P eq "H3Op")) { $H3O="P"; };};
+                if ($H3O eq "R") { print OUT " AEph$pr=(kb*T*log(10)*pH)/toeV;\n";
+                }elsif ($H3O eq "P") { print OUT " AEph$pr=-(kb*T*log(10)*pH)/toeV;\n";
+                }else{ print OUT " AEph$pr=0;\n"; };
+            }else{ print OUT " AEph$pr=0;\n"; };
+            if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
+#----------------------------------------------------------------------------------------------------------------------- coverage effect on Krate
+                foreach $l (@PR) {   # ==== > PPTS??? no for molec
+                    if ($l) { push(@Nline,$l); };}; @PR=@Nline; @Nline=();
+                foreach $R (@PR) {
+                    foreach $interp (@interpolated) {
+                        if ($R eq $interp) {
+                            ($E,$Q3D)=&Interpolate_sub($interp); @en{$interp}=$E; @q{$interp}=$Q3D;
+                            print OUT "AEcov$pr=@en{$interp}-ENERGY$interp\(j,2);\n";
 
-                if ($ipH) { @PR=split(/\s+/,@ProcessReactants[$pr]); $H3O="no";
-       	                    foreach $l (@PR) { if ($l) { push(@Nline,$l); }; }; @PR=@Nline; @Nline=();
-               	            foreach $R (@PR) { if (($R eq "H3O") or ($R eq "H3Op")) { $H3O="R"; };};
-                       	    @PP=split(/\s+/,@ProcessProducts[$pr]);
-                            foreach $l (@PP) { if ($l) { push(@Nline,$l); }; }; @PP=@Nline; @Nline=();
-       	                    foreach $P (@PP) { if (($P eq "H3O") or ($P eq "H3Op")) { $H3O="P"; };};
-               	        if ($H3O eq "R") {         print OUT " AEph$pr=(kb*T*log(10)*pH)/toeV;\n";
-                       	    }elsif ($H3O eq "P") { print OUT " AEph$pr=-(kb*T*log(10)*pH)/toeV;\n";
-                            }else{                 print OUT " AEph$pr=0;\n"; };
-       	        }else{ print OUT " AEph$pr=0;\n"; };
-           if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
-		  print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4}*exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n"; push(@transfer,"Krate$pr"); 
-           }else{ print OUT "     Krate$pr=process$pr\{j,3}*exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n"; push(@transfer,"Krate$pr"); };
-	}else{	# TPR?
-           if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
-                  print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4};\n"; push(@transfer,"Krate$pr");
-           }else{ print OUT "     Krate$pr=process$pr\{j,3};\n"; push(@transfer,"Krate$pr"); };	
-	}; # TPR?
+
+
+    foreach $interp (@interpolated) {
+        print OUT "ENERGY$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/G$sys.dat\');\n";
+#        print OUT "PARTITION3D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3D$sys.dat\');\n";  #----------------------- considers no changes in Q with coverage
+        ($E,$Q3D)=&Interpolate_sub($interp); @en{$interp}=$E; @q{$interp}=$Q3D;
+    };
+
+
+
+                    };
+                };
+                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4}*exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
+                push(@transfer,"Krate$pr");
+            }else{
+                print OUT "     Krate$pr=process$pr\{j,3}*exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
+                push(@transfer,"Krate$pr"); };
+        }else{
+            if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
+#----------------------------------------------------------------------------------------------------------------------- coverage effect on Krate
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4};\n"; push(@transfer,"Krate$pr");
+            }else{
+                print OUT "     Krate$pr=process$pr\{j,3};\n"; push(@transfer,"Krate$pr"); };
+        }; # TPR
 	}; # for process
 #  	Angewandte Chemie (2016) Volume 128, Issue 26, Page 7627, DOI: 10.1002/ange.201511804
 # 	 current intensity=[[electron charge * number of electrons transferred * area of 
 # 	 active site (m^2) * reaction rates]] x all the processes exchanging electrons
 # 	  units = Ampere/m^2
-	if ($exp eq "const_TEMP") { print OUT "     RedoxIntensity=";   
-	        for ($pr=1; $pr<=$#process; $pr++ ) {
-			if (@ineexch[$pr] != 0) {
-				@PR=split(/\s+/,@ProcessReactants[$pr]);
-	                        foreach $l (@PR) { if ($l) { push(@Nline,$l); }; }; @PR=@Nline; @Nline=();
-				print OUT "(@ineexch[$pr]*Fa*@Acat{@sitetype{$PR[0]}}*Krate$pr/Av)+"; };
-		}; print OUT "0;\n\n";
-	}; # if const_TEMP
-
-        if (!@Rspecies) {
-       		foreach $mol (@molecules) { if (@y{$mol}) { $go="yes";
-			foreach $t (@transitions) { if ($mol eq $t) { $go="no"; };};
-		        if ($go eq "yes") {push(@Rspecies,"P$mol"); };}};
-       		foreach $rs (@react_species) {
-	   		if (@y{$rs}) { $do='yes'; foreach $mol (@molecules) { if ($mol eq $rs) { $do='no'; };};
-		        			  foreach $sur (@surfaces) { if ($sur eq $rs) { $do='no'; };};
-                                                  foreach $t (@transitions) { if ($t eq $rs) { $do='no'; };};
-	      		if ($do eq 'yes') { push(@Rspecies,"coverage$rs");  };};};
-       		foreach $sur (@surfaces) { if (@y{$sur}) { push(@Rspecies,"coverage$sur"); };};
-	}; # if Rspecies 
-
-          print OUT "\n   tspan=[$itime $ftime];\n   IC=[@Rspecies];\n";
+#----------------------------------------------------------------------------------------------------------------------- for const_TEMP
+	if ($exp eq "const_TEMP") { print OUT "     RedoxIntensity=";
+        for ($pr=1; $pr<=$#process; $pr++ ) {
+            if (@ineexch[$pr] != 0) {
+                @PR=split(/\s+/,@ProcessReactants[$pr]);
+                foreach $l (@PR) {
+                    if ($l) { push(@Nline,$l); }; }; @PR=@Nline; @Nline=();
+                print OUT "(@ineexch[$pr]*Fa*@Acat{@sitetype{$PR[0]}}*Krate$pr/Av)+"; };
+        }; print OUT "0;\n\n";
+    }; # if const_TEMP
+    if (!@Rspecies) {
+        foreach $mol (@molecules) {
+            if (@y{$mol}) { $go="yes";
+                foreach $t (@transitions) {
+                    if ($mol eq $t) { $go="no"; };};
+                if ($go eq "yes") { push(@Rspecies,"P$mol"); };};};
+        foreach $rs (@react_species) {
+            if (@y{$rs}) { $do='yes';
+                foreach $mol (@molecules) {
+                    if ($mol eq $rs) { $do='no'; };};
+                foreach $sur (@surfaces) {
+                    if ($sur eq $rs) { $do='no'; };};
+                foreach $t (@transitions) {
+                    if ($t eq $rs) { $do='no'; };};
+                if ($do eq 'yes') { push(@Rspecies,"coverage$rs");  };};};
+        foreach $sur (@surfaces) {
+            if (@y{$sur}) { push(@Rspecies,"coverage$sur"); };};
+    }; # if Rspecies
+    print OUT "\n   tspan=[$itime $ftime];\n   IC=[@Rspecies];\n";
 # alberto 09/2019
-	if ($exp ne "TPR") { $ode="myode";  
-  	  	printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1;
-	}else{ $ode="mytpr";
-       		printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1; };
-
-          print OUT "\nsolution=ode15s(\@(t,y) $ode(t,y,";
-       foreach $trn (@transfer) { if ($trn ne @transfer[$#transfer]) { print OUT "$trn,"; }else{ print OUT "$trn),tspan,IC,options);\n\n"; };};
-     close OUT;  
+	if ($exp ne "TPR") { $ode="myode";
+        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1;
+    }else{ $ode="mytpr";
+        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1; };
+    print OUT "\nsolution=ode15s(\@(t,y) $ode(t,y,";
+    foreach $trn (@transfer) {
+        if ($trn ne @transfer[$#transfer]) { print OUT "$trn,";
+        }else{ print OUT "$trn),tspan,IC,options);\n\n"; };};
+    close OUT;
     return();
-      }; #--> sub ODE_call
+}; #--> sub ODE_call
 #==============================================================================================================================
-   sub ODE_solution_sub {
- 	($exp)=@_;     
-	 $timeSteps=int(($ftime-$itime)/$ttime);  
-      open OUT, ">>$exp.m";
-#             print OUT "   variables=zeros($timeSteps,3); variables(:,1)=V; variables(:,2)=pH; variables(:,3)=T;\n";
-	      print OUT "   concentrations=transpose(deval(solution,transpose(linspace($itime,$ftime,$timeSteps))));\n";
-#             print OUT "   sol=vertcat(sol,[variables,transpose(linspace($itime,$ftime,$timeSteps)),concentrations]);\n\n";
-             print OUT "   results=[transpose(linspace($itime,$ftime,$timeSteps)),concentrations];\n\n";
-	if ($exp ne "const_TEMP") {    
-	$n=1;
-	foreach $mol (@molecules) { foreach $rs (@react_species) {
-		if ($mol eq $rs) {  $go="y"; foreach $t (@transitions) { if ($t eq $mol) { $go="n"; };};
-                        if ($go eq "y") { print OUT "     P$mol=concentrations(end,$n); "; $n++; };};};}; print OUT "\n"; 
-        foreach $rs (@react_species) { $do='yes'; foreach $mol (@molecules) { if ($mol eq $rs) { $do='no'; };};
-                                                  foreach $t (@transitions) { if ($t eq $rs) { $do='no'; };};
-                                                  foreach $sur (@surfaces) { if (($sur eq $rs) and (!@freq{$sur})) {$do='no'; };};
-    		if ($do eq 'yes') { print OUT "     coverage$rs=concentrations(end,$n); "; $n++; };}; print OUT "\n";
-	foreach $sur (@surfaces) { if ($y{$sur}) { print OUT "     coverage$sur=concentrations(end,$n); "; $n++; };}; print OUT "\n";
-         }; # if const_TEMP
+sub ODE_solution_sub {
+    ($exp)=@_;
+    $timeSteps=int(($ftime-$itime)/$ttime);
+    open OUT, ">>$exp.m";
+#   print OUT "   variables=zeros($timeSteps,3); variables(:,1)=V; variables(:,2)=pH; variables(:,3)=T;\n";
+	print OUT "   concentrations=transpose(deval(solution,transpose(linspace($itime,$ftime,$timeSteps))));\n";
+#   print OUT "   sol=vertcat(sol,[variables,transpose(linspace($itime,$ftime,$timeSteps)),concentrations]);\n\n";
+    print OUT "   results=[transpose(linspace($itime,$ftime,$timeSteps)),concentrations];\n\n";
+    if ($exp ne "const_TEMP") {
+        $n=1;
+        foreach $mol (@molecules) {
+            foreach $rs (@react_species) {
+                if ($mol eq $rs) {  $go="y";
+                    foreach $t (@transitions) {
+                        if ($t eq $mol) { $go="n"; };};
+                    if ($go eq "y") { print OUT "     P$mol=concentrations(end,$n); "; $n++; };};};
+        }; print OUT "\n";
+        foreach $rs (@react_species) { $do='yes';
+            foreach $mol (@molecules) {
+                if ($mol eq $rs) { $do='no'; };};
+            foreach $t (@transitions) {
+                if ($t eq $rs) { $do='no'; };};
+            foreach $sur (@surfaces) {
+                if (($sur eq $rs) and (!@freq{$sur})) {$do='no'; };};
+            if ($do eq 'yes') { print OUT "     coverage$rs=concentrations(end,$n); "; $n++; };};
+        print OUT "\n";
+        foreach $sur (@surfaces) {
+            if ($y{$sur}) { print OUT "     coverage$sur=concentrations(end,$n); "; $n++; };};
+        print OUT "\n";
+    }; # if const_TEMP
 	close OUT;
-     return();
-       }; #--> sub ODE_solution
-
-
-#==============================================================================================================================
+    return();
+}; #--> sub ODE_solution
+#=======================================================================================================================
    sub ODE_closingloops_sub {
           ($exp)=@_;
       open OUT, ">>$exp.m";
