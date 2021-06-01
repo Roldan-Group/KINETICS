@@ -42,35 +42,40 @@ use Math::Trig;
 #   system("pwd |cut -b23- >>pathroot2");
 #   open IN, "./pathroot2"; while (<IN>) { $tmpath.=$_;}; close IN; system("rm pathroot2"); @tmpath=split(/\n/,$tmpath);
 #       $rootpath2="C:/Users/user/Desktop/ALBERTO/$tmpath[0]";
-       $rootpath=getcwd;
+$rootpath=getcwd;
 #--------------------------------------------------------------------------------------------------------------------------------- open input file
-  $filename=$ARGV[0];
+$filename=$ARGV[0];
 print "\nReading file $ARGV[0]\n";
-open IN, $ARGV[0]; while (<IN>) {$input.= $_ ;}; close IN ;
-     @input=split(/\n/,$input);
-     @in=grep(!/^#/,@input);    # weed out comments
+open IN, $ARGV[0];
+while (<IN>) {$input.= $_ ;};
+close IN ;
+@input=split(/\n/,$input);
+@in=grep(!/^#/,@input);    # weed out comments
 #=================================================================================================================================
 #
 #                                                          READING INPUT
 #
 #=================================================================================================================================
 print "Reading thermodynamics";
-    foreach $line (@in) {
-        if ($line) {
-            @tag=split(/\s+/,$line); foreach $t (@tag) { if ($t) { push(@Nline,$t); }; }; @tag=@Nline; @Nline=();
-          if (@tag[0] eq 'RTEMP') { $itemp=@tag[2];
-		 	if ($tag[3]) { $ftemp=@tag[3]; };
-			if ($tag[4]) { $ttemp=@tag[4]; }; };
-          if (@tag[0] eq 'RTIME') { if ($tag[3]) { $itime=0.0; $ftime=@tag[2]; $ttime=@tag[3]; 
-				    }else{ $itime=@tag[2]; }; };	
-          if (@tag[0] eq 'RVEXT') {    $nVext=@tag[2];
-		 	if ($tag[3]) { $pVext=@tag[3]; };
-		 	if ($tag[4]) { $sVext=@tag[4]; }; };
-          if (@tag[0] eq 'RpH') {      $ipH=@tag[2]; 
-		  	if ($tag[3]) { $fpH=@tag[3]; };
-			if ($tag[4]) { $spH=@tag[4]; }; };
-        }; #--> line
-    }; #-->foreach
+foreach $line (@in) {
+    if ($line) {
+        @tag=split(/\s+/,$line);
+        foreach $t (@tag) {
+            if ($t) { push(@Nline,$t); }; }; @tag=@Nline; @Nline=();
+        if (@tag[0] eq 'RTEMP') { $itemp=@tag[2];
+            if ($tag[3]) { $ftemp=@tag[3]; };
+            if ($tag[4]) { $ttemp=@tag[4]; }; };
+        if (@tag[0] eq 'RTIME') {
+            if ($tag[3]) { $itime=0.0; $ftime=@tag[2]; $ttime=@tag[3];
+            }else{ $itime=@tag[2]; }; };
+        if (@tag[0] eq 'RVEXT') {    $nVext=@tag[2];
+            if ($tag[3]) { $pVext=@tag[3]; };
+            if ($tag[4]) { $sVext=@tag[4]; }; };
+        if (@tag[0] eq 'RpH') {      $ipH=@tag[2];
+            if ($tag[3]) { $fpH=@tag[3]; };
+            if ($tag[4]) { $spH=@tag[4]; }; };
+    }; #--> line
+}; #-->foreach
 #==================================================================================================================================
 #
 #                                                       READING SYSTEMS
@@ -80,8 +85,7 @@ print "Reading thermodynamics";
 foreach $line (@in) {
     if ( $line ) { @tag=split(/\s+/,$line);
         foreach $t (@tag) {
-            if (($t) or (looks_like_number($t))) { push(@Nline,$t); };
-        };
+            if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; };
         @tag=@Nline; @Nline=(); @eqtmp=split(/= /,$line);
         foreach $e (@eqtmp) {
             if ($t) { push(@Nline,$t); };
@@ -93,35 +97,28 @@ foreach $line (@in) {
         if (@tag[0] eq 'FREQ') { $t=2; @ifreq=''; @imafreq='';
             while ((@tag[$t] ne '#') and (@tag[$t])) {
                 if (@tag[$t] > 0) { push(@ifreq,@tag[$t]);
-                }else { push(@imafreq,@tag[$t]); }; $t++;
-            };
+                }else { push(@imafreq,@tag[$t]); }; $t++; };
             @freq = sort {$b <=> $a} @ifreq; @freq{$nsys[$nsystems]}="@freq";  @imafr{$nsys[$nsystems]}="@imafreq";
         };
         if (@tag[0] eq 'FREQ2D') { $t=2; @ifreq='';
-            while (($tag[$t] ne '#') and ($tag[$t])) { push(@ifreq,$tag[$t]); $t++;
-            };
+            while (($tag[$t] ne '#') and ($tag[$t])) { push(@ifreq,$tag[$t]); $t++; };
             @freq2D = sort {$b <=> $a} @ifreq; @freq2D{$nsys[$nsystems]}="@freq"; push(@molecules,@nsys[$nsystems]);
         };
 #---------------------------------------------------------------------------------------------------------------------------------molecule
         if (@molecules[$#molecules] eq @nsys[$nsystems]) {
             if (@tag[0] eq 'IMASS') { $t=2; $Av=6.022139922973909E+023; @iimass='';
                 while ((@tag[$t] ne '#') and (@tag[$t])) { push(@iimass,@tag[$t]/($Av*1000)); $t++; };
-                @imass{@nsys[$nsystems]}="@iimass";
-            };
+                @imass{@nsys[$nsystems]}="@iimass"; };
             if (@tag[0] eq 'INATOMS') { $t=2; @iiatoms='';
-                while ((@tag[$t] ne '#') and (@tag[$t])) {
-                    push(@iiatoms,@tag[$t]); $t++;
-                };
+                while ((@tag[$t] ne '#') and (@tag[$t])) { push(@iiatoms,@tag[$t]); $t++; };
                 @inatoms{@nsys[$nsystems]}="@iiatoms"; $natom=0; ($natom+=$_) for @iiatoms;
                 @Tnatoms{@nsys[$nsystems]}=$natom; $iTmass=0;
                 if ($#iimass ne $#iiatoms) {
                     print "\n-- The number of atomic masses and number of atoms for @nsys[$nsystems] disagree --\n\n";
                     exit 0 ;
                 }else{
-                    for ($i=0; $i<=$#iimass; $i++) { $iTmass+=$iiatoms[$i]*$iimass[$i]; };
-                };
-                @Tmass{@nsys[$nsystems]}=$iTmass;
-            };
+                    for ($i=0; $i<=$#iimass; $i++) { $iTmass+=$iiatoms[$i]*$iimass[$i]; }; };
+                @Tmass{@nsys[$nsystems]}=$iTmass; };
             if (@tag[0] eq 'SYMFACTOR') { @sym{@nsys[$nsystems]}=@tag[2]; };
             if (@tag[0] eq 'INERTIA') { $t=2; @iIM=();
                 while (@tag[$t] ne '#') { push(@iIM,@tag[$t]); $t++; };
@@ -131,8 +128,6 @@ foreach $line (@in) {
                     if ($iIM[1] >= $iIM[0]) { @inertia{@nsys[$nsystems]}=$iIM[1];
                     }else{ @inertia{@nsys[$nsystems]}=$iIM[0]; };
                 }else{ @inertia{@nsys[$nsystems]}=$iIM[0]*$iIM[1]*$iIM[2]; };
-# Alberto
-#print "system=@nsys[$nsystems]\t|||linear=@linear{@nsys[$nsystems]}\t||inertia=@inertia{@nsys[$nsystems]}\t||||\n";
             };
             if (@tag[0] eq 'ISITES') { @tmpsites=split(/=/,$line); @tmp=split(/\s+/,@tmpsites[1]);
                 foreach $t (@tmp) {
@@ -159,17 +154,23 @@ foreach $line (@in) {
             if (@tag[0] eq 'RCOVERAGE') { $icov{@nsys[$nsystems]}=@tag[2]; $fcov{@nsys[$nsystems]}=@tag[3];
                 $scov{@nsys[$nsystems]}=@tag[4]; };
             if (@tag[0] eq 'ICOVERAGE') { $coverage{@nsys[$nsystems]}=@tag[2]; };
+            if (@tag[0] eq 'INTERPOLATE') { $t=2; @tmp=''; @interpsys{@nsys[$nsystems]}='';
+                while ((@tag[$t] ne '#') and (@tag[$t])) { push(@tmp, @tag[$t]); $t++; };
+                @interpsys{@nsys[$nsystems]}=@tmp; push(@system_interp, @nsys[$nsystems]); };
         }; #-->if no molecule
 #---------------------------------------------------------------------------------------------------------------------------------end system
         if ((@tag[0] eq 'end') or (@tag[0] eq 'END')) { $nend++; $nsystems++; };
     }; #--> line
 }; #-->foreach line
 $nsystems=$countersystems;
+#--------------------------------------------------------------------------------------------------------------------------------- remove interpolated from systems
+foreach $inter (@system_interp) {
+    @nsys = grep { $_ ne $inter } @nsys;
+};
 #--------------------------------------------------------------------------------------------------------------------------------- assigns Mol, Sur and Cat
 foreach $s (@nsys) { $new="yes";
     foreach $mol (@molecules) {
-        if ($s eq $mol) { $new="no"; };
-    };
+        if ($s eq $mol) { $new="no"; };};
     if ($new eq "yes") {
         foreach $sur (@surfaces) {
             if ($s eq $sur) { $new="no"; }; }; };
@@ -872,6 +873,10 @@ print "\t\t... done\n";
 sub Interpolate_sub {
     ($sys)=@_;
     open OUT, ">>processes.m";
+
+    # 31/05/2021
+
+
     print OUT "% \t\t FIX interpolation for species $sys :: 'pchip' requires 4 points, 'makima' requires 2 points\n";
     print OUT "x$sys=[0 0.25 0.50 0.75 1];\n\tEy$sys=[ENERGY$sys ENERGY$sys ENERGY$sys ENERGY$sys ENERGY$sys];\n";
     print OUT "\tQy$sys=[PARTITION3D$sys PARTITION3D$sys PARTITION3D$sys PARTITION3D$sys PARTITION3D$sys];\n";
@@ -946,19 +951,29 @@ sub ProcessQ_sub {
             foreach $mol (@molecules) {
                 if ($R eq $mol) { $go='yes'; };
             };
-            if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R"); push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
+            if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R");
+                push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
             }else{
-                if (@en{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+                if (@q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+                    foreach $inter (@interpolated) {
+                        if ($inter eq $R) { push(@Qsyms,"Qy$R"); push(@Qsyms,"Q3D$R");};
+                    };
                 }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
         };
     }else{
         foreach $R (@PR) {
             if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+                foreach $inter (@interpolated) {
+                    if ($inter eq $R) { push(@Qsyms,"Qy$R"); push(@Qsyms,"Q3D$R");};
+                };
             }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};
     };
     if (@PTS) { @Qtmp2=();
         foreach $TS (@PTS) {
             if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}");
+                foreach $inter (@interpolated) {
+                    if ($inter eq $TS) { push(@Qsyms,"Qy$TS"); push(@Qsyms,"Q3D$TS");};
+                };
             }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };
         };
     }elsif (!@PTS) { @Qtmp2=();
@@ -970,6 +985,9 @@ sub ProcessQ_sub {
                 if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
                 }else{
                     if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R");
+                        foreach $inter (@interpolated) {
+                            if ($inter eq $R) { push(@Qsyms,"Qy$R"); push(@Qsyms,"Q3D$R");};
+                        };
                     }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
             };
         }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
@@ -979,6 +997,9 @@ sub ProcessQ_sub {
                 if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
                 }else{
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
+                        foreach $inter (@interpolated) {
+                            if ($inter eq $P) { push(@Qsyms,"Qy$P"); push(@Qsyms,"Q3D$P");};
+                        };
                     }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); }; };
             };
         }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
@@ -993,6 +1014,9 @@ sub ProcessQ_sub {
                 if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
                 }else{
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
+                        foreach $inter (@interpolated) {
+                            if ($inter eq $P) { push(@Qsyms,"Qy$P"); push(@Qsyms,"Q3D$P");};
+                        };
                     }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};};
     };
     open OUT, ">>processes.m";
@@ -1066,60 +1090,67 @@ sub ProcessQ_sub {
     return();
   }; #--> sub DRCrates
 #==============================================================================================================================
-   sub ProcessParameters_sub {
-       ($typeP,$pr)=@_;
-       if ($ttemp) { $row=1+($ftemp-$itemp)/$ttemp;
-       }else{ $row=1; };
-       if ($sVext) { $row=$row+($nVext+$pVext)/$sVext; };
-       if ($spH) { $row=$row+($fpH-$ipH)/$spH; };
-       open OUT, ">>processes.m";
-       print OUT " fileID=fopen(\"./KINETICS/PROCESS/ReactionParameters$pr.dat\",'a+');";
-       if (($typeP eq 'A') or ($typeP eq 'a')) {
-           print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\\n\');\n";
-       }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n"; };
-       print OUT "\n";
-       if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
-       }else{          print OUT "j=1;\nT=$itemp;\n"; };
-       $done="no";
-       foreach $R (@PR) { @do{$R}="yes"; };
-       foreach $P (@PP) { @do{$P}="yes"; };
-       foreach $TS (@PTS) { @do{$TS}="yes"; };
-       foreach $R (@PR) {
-           if ($done eq "no") {
-               if ($ttemp) { print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };
-       };
-       foreach $R (@PR) {
-           if (@do{$R} eq "yes") { $qmol="no";
-               foreach $mol (@molecules) {
-                   if ($R eq $mol) { $qmol="yes" };
-               };
-               if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
-			                           print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-				                       print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
-               }else{  print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};
-       }; #foreach PR
-       foreach $TS (@PTS) {
-           if (@do{$TS} eq "yes") { print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no";};
-       }; #foreach PTS
-       foreach $P (@PP) {
-           if (@do{$P} eq "yes") { $qmol="no";
-               foreach $mol (@molecules) {
-                   if ($P eq $mol) { $qmol="yes" };
-               };
-               if ($qmol eq "yes") {    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-    		                            print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-            				            print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
-               }else{  print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no"; };};
-       }; #foreach PR
-       if (($typeP eq 'A') or ($typeP eq 'a')) {
-           print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
-       }else{ print OUT " fprintf(fileID, '%.4f %1.15E %1.15E\\n', T, subs(Arrhenius$pr), subs(Krate$pr));\n";
-       };
-       if ($ttemp) {  print OUT "end\nfclose(fileID);\n"; }else{ print OUT "fclose(fileID);\n"; };
-       print OUT "\n\n";
-       close OUT;
-       return();
-   }; #--> sub ProcessParameters
+sub ProcessParameters_sub {
+    ($typeP,$pr)=@_;
+    if ($ttemp) { $row=1+($ftemp-$itemp)/$ttemp;
+    }else{ $row=1; };
+    if ($sVext) { $row=$row+($nVext+$pVext)/$sVext; };
+    if ($spH) { $row=$row+($fpH-$ipH)/$spH; };
+    open OUT, ">>processes.m";
+    print OUT " fileID=fopen(\"./KINETICS/PROCESS/ReactionParameters$pr.dat\",'a+');";
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
+        print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\\n\');\n";
+    }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n"; };
+    print OUT "\n";
+    if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
+    }else{          print OUT "j=1;\nT=$itemp;\n"; };
+    $done="no";
+    foreach $R (@PR) { @do{$R}="yes"; };
+    foreach $P (@PP) { @do{$P}="yes"; };
+    foreach $TS (@PTS) { @do{$TS}="yes"; };
+    foreach $R (@PR) {
+        if ($done eq "no") {
+            if ($ttemp) { print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };
+    };
+    foreach $R (@PR) {
+        if (@do{$R} eq "yes") { $qmol="no";
+            foreach $mol (@molecules) {
+                if ($R eq $mol) { $qmol="yes" };
+            };
+            if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
+                print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
+                print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
+            }else{
+
+
+
+# 31/05/2021
+
+
+
+                print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};
+    }; #foreach PR
+    foreach $TS (@PTS) {
+        if (@do{$TS} eq "yes") { print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no";}
+    }; #foreach PTS
+    foreach $P (@PP) {
+        if (@do{$P} eq "yes") { $qmol="no";
+            foreach $mol (@molecules) {
+                if ($P eq $mol) { $qmol="yes" };
+            };
+            if ($qmol eq "yes") {    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
+                print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
+                print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
+            }else{  print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no"; };};
+    }; #foreach PR
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
+        print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
+    }else{ print OUT " fprintf(fileID, '%.4f %1.15E %1.15E\\n', T, subs(Arrhenius$pr), subs(Krate$pr));\n"; };
+    if ($ttemp) {  print OUT "end\nfclose(fileID);\n"; }else{ print OUT "fclose(fileID);\n"; };
+    print OUT "\n\n";
+    close OUT;
+    return();
+}; #--> sub ProcessParameters
 #==============================================================================================================================
    sub variables_sub {
           ($exp)=@_;

@@ -15,7 +15,8 @@ import numpy as np
 from ase import Atoms
 from ase.io import read, write
 
-Parameters = ["SYSTEM", "SYSPATH","FREQPATH", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE", "RCOVERAGE","END"]
+Parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE", "RCOVERAGE",
+			  "INTERPOLATE", "END"]
 
 #print("\n")
 
@@ -233,8 +234,9 @@ ipressure = None
 rpressure = None
 icoverage = None
 rcoverage = None
+interpolate = None
 
-ifile = open(OutputFile,'a+')
+ifile = open(OutputFile, 'a+')
 
 # Enters in the loop to read the initial file looking for particular tags
 for line in lines:
@@ -249,9 +251,21 @@ for line in lines:
 	elif words[0] == "FREQPATH":
 		FreqFile = words[2]
 	elif words[0] == "ISITES":
-		sites = words[2:]
+		try:
+			n_sites = float(words[2])
+			sites = str(words[3])
+		except:
+			n_sites = 1.0
+			sites = str(words[2])
+			continue
 	elif words[0] == "SSITES":
-		ssites = words[2:]
+		ssites = []
+		for i in words[2:]:
+			try:
+				i_float = float(i)
+			except:
+				ssites.append(str(i))
+				continue
 	elif words[0] == "IPRESSURE":
 		ipressure = words[2]
 	elif words[0] == "RPRESSURE":
@@ -260,120 +274,122 @@ for line in lines:
 		icoverage = words[2]
 	elif words[0] == "RCOVERAGE":
 		rcoverage = words[2:]
-
+	elif words[0] == "INTERPOLATE":
+		interpolate = words[2:]
 
 	if words[0] == "END" or words[0] == "end":
+# writes the SYSTEM name
+		ifile.write("\nSYSTEM = %s\n" %(name))
+
 # seeks for common and system properties
-		try:
-			fd = open(File)
-			system = read(File, index=-1)
-			xyzPath, mag = Common_Properties(system, name)
-			system_type, symmetry_factor, Area = System_Properties(File, system, ssites)
-			Inertia_moments = system.get_moments_of_inertia()
+		if interpolate is None:
+			try:
+				fd = open(File)
+				system = read(File, index=-1)
+				xyzPath, mag = Common_Properties(system, name)
+				system_type, symmetry_factor, Area = System_Properties(File, system, ssites)
+				Inertia_moments = system.get_moments_of_inertia()
 
-			software = None
-			while software == None:
-				line = fd.readline().split(" ")
-				words = [i.strip() for i in line if i]
-				for word in words:
-					if word == "FHI-aims":
-						software = "FHI-aims"
-					elif word.startswith('vasp') is True:
-						software = "VASP"
-
-		except IOError:
-			raise Exception("   "+File+" is not a valid file!")
+				software = None
+				while software == None:
+					line = fd.readline().split(" ")
+					words = [i.strip() for i in line if i]
+					for word in words:
+						if word == "FHI-aims":
+							software = "FHI-aims"
+						elif word.startswith('vasp') is True:
+							software = "VASP"
+			except IOError:
+				raise Exception("   "+File+" is not a valid file!")
 
 # Works out the 3D and 2D frequencies
-		if FreqFile is None and software == "VASP":
-			FreqFile = File
-		try:
-			frequencies, frequencies_2D = Frequencies(FreqFile, system_type, system.get_chemical_symbols(), software)
-		except IOError:
-			raise Exception("   "+FreqFile+" is not a valid file for FREQUENCIES!")
+			if FreqFile is None and software == "VASP":
+				FreqFile = File
+			try:
+				frequencies, frequencies_2D = Frequencies(FreqFile, system_type, system.get_chemical_symbols(), software)
+			except IOError:
+				raise Exception("   "+FreqFile+" is not a valid file for FREQUENCIES!")
 
 # writes the information required from each system
-#		print("   SYSTEM = %s" %(name) )
-		ifile.write ("\nSYSTEM = %s\n" %(name))
-		ifile.write ("SYSPATH = %s\n" %(File))
-		ifile.write ("XYZPATH = %s\n" %(str("./XYZ/" + name + ".xyz")))
-		if FreqFile is not None:
-			ifile.write ("FREQPATH = %s\n" %(FreqFile))
-		ifile.write (" E0 = %f\n" %(system.get_total_energy()))
-		ifile.write (" DEGENERATION = %d\n" %(np.abs(round(mag))))
-		if frequencies:
-			ifile.write (" FREQ =")
-			for freq in frequencies:
-				ifile.write (" %.1f" %(float(freq)))
-			ifile.write ("\n")
-#		else:
-#			ifile.write (" FREQ = 0.0\n")
-		if system_type == "Molecule":
-			if frequencies_2D is not None:
-				if len(frequencies_2D) < 1:
-					ifile.write (" FREQ2D = 0.0")
-				else:
-					ifile.write (" FREQ2D =")
-					for freq2D in frequencies_2D:
-						ifile.write (" %.1f" %(float(freq2D)))
+			ifile.write ("SYSPATH = %s\n" %(File))
+			ifile.write ("XYZPATH = %s\n" %(str("./XYZ/" + name + ".xyz")))
+			if FreqFile is not None:
+				ifile.write ("FREQPATH = %s\n" %(FreqFile))
+			ifile.write (" E0 = %f\n" %(system.get_total_energy()))
+			ifile.write (" DEGENERATION = %d\n" %(np.abs(round(mag))))
+			if frequencies:
+				ifile.write (" FREQ =")
+				for freq in frequencies:
+					ifile.write (" %.1f" %(float(freq)))
 				ifile.write ("\n")
-			ifile.write (" IMASS =")
-			masses = []
-			n_masses = [0]*len(system.get_masses())
-			n=-1
-			for mass in system.get_masses():
-				if mass not in masses:
-					masses.append(mass)
-					n += 1
-					n_masses[n] = 1
+#			else:
+#				ifile.write (" FREQ = 0.0\n")
+			if system_type == "Molecule":
+				if frequencies_2D is not None:
+					if len(frequencies_2D) < 1:
+						ifile.write (" FREQ2D = 0.0")
+					else:
+						ifile.write (" FREQ2D =")
+						for freq2D in frequencies_2D:
+							ifile.write (" %.1f" %(float(freq2D)))
+					ifile.write ("\n")
+				ifile.write (" IMASS =")
+				masses = []
+				n_masses = [0]*len(system.get_masses())
+				n=-1
+				for mass in system.get_masses():
+					if mass not in masses:
+						masses.append(mass)
+						n += 1
+						n_masses[n] = 1
+					else:
+						n_masses[n] += 1
+				for mass in masses:
+					ifile.write (" %.3f" %(float(mass)))
+				ifile.write ("   # amu\n")
+				ifile.write (" INATOMS =")
+				for n in n_masses:
+					if n > 0:
+						ifile.write (" %d " %(int(n)))
+				ifile.write ("\n")
+				ifile.write (" SYMFACTOR = %d\n" %(int(symmetry_factor)))
+				ifile.write (" INERTIA =")
+				for IM in Inertia_moments:
+					ifile.write (" %.3g" %(IM*1.66053904E-47))
+				ifile.write ("   # kg*m^2\n")
+				ifile.write(" ISITES = {} {}\n" .format(n_sites, sites))
+				if ipressure is not None:
+					ifile.write(" IPRESSURE = %.3f\n" %(float(ipressure)))
+				elif rpressure is not None:
+					ifile.write(" RPRESSURE = %.3f %.3f %.3f\n" %(float(rpressure[0]),
+																  float(rpressure[1]),
+																  float(rpressure[2])))       # initial, final and pressure step
 				else:
-					n_masses[n] += 1
-			for mass in masses:
-				ifile.write (" %.3f" %(float(mass)))
-			ifile.write ("   # amu\n")
-			ifile.write (" INATOMS =")
-			for n in n_masses:
-				if n > 0:
-					ifile.write (" %d " %(int(n)))
-			ifile.write ("\n")
-			ifile.write (" SYMFACTOR = %d\n" %(int(symmetry_factor)))
-			ifile.write (" INERTIA =")
-			for IM in Inertia_moments:
-				ifile.write (" %.3g" %(IM*1.66053904E-47))
-			ifile.write ("   # kg*m^2\n")
-			ifile.write (" ISITES =")
-			for s in sites:
-				ifile.write (" %s" %(s))
-			ifile.write ("\n")
-			if ipressure is not None:
-				ifile.write (" IPRESSURE = %.3f\n" %(float(ipressure)))
-			elif rpressure is not None:
-				ifile.write (" RPRESSURE = %.3f %.3f %.3f\n" %(float(rpressure[0]),
-															  float(rpressure[1]),
-															  float(rpressure[2])))       # initial, final and pressure step
-			else:
-				ifile.write (" IPRESSURE = 0.0\n")
-		if system_type == "Surface":
-			ifile.write (" ISITES =")
-			for s in ssites:
-				ifile.write (" %s" %(s))
-			ifile.write ("\n")
-			ifile.write (" IACAT = %.5g    # m^2\n" %(float(Area)))
-		if system_type == "Catalyst":
-			ifile.write (" ISITES =")
-			for s in sites:
-				ifile.write (" %s" %(s))
-			ifile.write ("\n")
-			if icoverage is not None:
-				ifile.write (" ICOVERAGE = %.3f\n" %(float(icoverage)))
-			elif rcoverage is not None:
-				ifile.write (" RCOVERAGE = %.3f %.3f %.3f\n" %(float(rcoverage[0]),
-															  float(rcoverage[1]),
-															  float(rcoverage[2])))       # initial, final and coverage step
-			else:
-				ifile.write (" ICOVERAGE = 0.0\n")
+					ifile.write(" IPRESSURE = 0.0\n")
+			if system_type == "Surface":
+				ifile.write(" ISITES =")
+				for s in ssites:
+					ifile.write(" %s" %(s))
+				ifile.write("\n")
+				ifile.write(" IACAT = %.5g    # m^2\n" %(float(Area)))
+			if system_type == "Catalyst":
+				ifile.write(" ISITES = {} {}\n" .format(n_sites, sites))
+				if icoverage is not None:
+					ifile.write(" ICOVERAGE = %.3f\n" %(float(icoverage)))
+				elif rcoverage is not None:
+					ifile.write(" RCOVERAGE = %.3f %.3f %.3f\n" %(float(rcoverage[0]),
+																  float(rcoverage[1]),
+																  float(rcoverage[2])))       # initial, final and coverage step
+				else:
+					ifile.write(" ICOVERAGE = 0.0\n")
+		elif interpolate is not None:
+			ifile.write(" INTERPOLATE =")
+			for s in interpolate:
+				ifile.write(" %s" %(s))
+			ifile.write("\n")
+			ifile.write(" ISITES = {}\n" .format(sites))
 
-		ifile.write ("END\n")
+		ifile.write("END\n")
 
 # wipes the variables at the end of each system
 		system = None
@@ -389,6 +405,7 @@ for line in lines:
 		rpressure = None
 		icoverage = None
 		rcoverage = None
+		interpolate = None
 	elif words[0] not in Parameters:
 # write lines not related with the data from the systems
 	   ifile.write (line)
