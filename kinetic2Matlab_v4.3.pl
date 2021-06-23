@@ -329,7 +329,8 @@ foreach $rs (@react_species) { $go="yes"; $tr="no";
         if ($rs eq $mol) { $go="no"; };};
     foreach $t (@transitions) { if ($rs eq $t) { $go="no"; };};
     foreach $sur (@surfaces) { if ($rs eq $sur) { $go="no"; };};
-    if ($go eq "yes") { if (!@y{$rs}) { @y{$rs}=$row; $row++; };};};
+    if ($go eq "yes") { if (!@y{$rs}) { @y{$rs}=$row; $row++;
+    };};};
 foreach $sur (@surfaces) {
     if (!@y{$sur}) { @y{$sur}=$row; $row++; };};
 for ($pr=1; $pr<=$#process; $pr++ ) {
@@ -1109,11 +1110,13 @@ sub ProcessK_sub {
 #	}else{ @r=(); $tmp=(); 
     foreach $R (@PR) {
         foreach $mol (@molecules) {
-            if ($R eq $mol) { push(@r,"y(@y{$mol})^stoichio$pr$mol"); $tmp=$mol;};};
+            if ($R eq $mol) { push(@r,"y(@y{$R})^stoichio$pr$R"); $tmp=$mol;};};
         foreach $sur (@surfaces) {
-            if ($R eq $sur) { push(@r,"y(@y{$sur})^stoichio$pr$sur"); };};
+            if ($R eq $sur) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};
         foreach $cat (@catalysts) {
-            if ($R eq $cat) { push(@r,"y(@y{$cat})^stoichio$pr$cat"); };};};
+            if ($R eq $cat) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};
+        foreach $interp (@interpolated) {
+            if ($R eq $interp) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};};
     if (($typeP eq 'A') or ($typeP eq 'a')) {
         print OUT "sticky$pr=(Qts$pr/Qreactants$pr)*exp(-(AE$pr*toeV/(kb*T)));\n";
         print OUT "Arrhenius$pr=area$tmp*1/((2*pi*Mass$tmp*kb*T)^(1/2));\n";
@@ -1237,7 +1240,7 @@ sub ProcessParameters_sub {
 #=======================================================================================================================
 sub variables_sub {
     ($exp)=@_;
-    @variables=();  %tmpPressure=(); %tmpCov=();
+    @variables=();  %tmpPressure=();
     open OUT,">>$exp.m";
     if (($exp eq "const_TEMP") or ($exp eq "variable_TEMP")) {
         print OUT "fileID=fopen(\"./KINETICS/DATA/$exp/solution$exp.dat\",'a+');\n";
@@ -1335,9 +1338,6 @@ sub variables_sub {
                                 push(@variables,$P); $TPRdone="y"; };
                         };};};};};
         ($IniCon)=&InitialConcentrations_sub($exp); @IC="@$IniCon"; open OUT,">>$exp.m";
-
-        print "\tIC=@IC>>TPR";
-
         if ($ttemp) {
             print OUT "\nfor T = $itemp:$ttemp:$ftemp\n";    #################################### there was a i=1; before T loop
         }else{
@@ -1374,12 +1374,6 @@ sub variables_sub {
             if (($icov{$cat}) and ($fcov{$cat})) { push(@variables,$cat);
                 print OUT "for coverage$cat = $icov{$cat}:$scov{$cat}:$fcov{$cat}\n"; }; };
         ($IniCon)=&InitialConcentrations_sub($exp); @IC="@$IniCon"; open OUT,">>$exp.m";
-
-
-        print "\tIC=@IC>>cTemp\n";
-
-
-
     }elsif ($exp eq "variable_TEMP") {
 # Voltage loop
         if (($nVext) and ($pVext) and ($sVext) and ($nVext != $pVext)) {
@@ -1403,12 +1397,7 @@ sub variables_sub {
             if (($icov{$cat}) and ($fcov{$cat})) { push(@variables,$cat);
                 print OUT "for coverage$cat = $icov{$cat}:$scov{$cat}:$fcov{$cat}\n"; };
         };
-
         ($IniCon)=&InitialConcentrations_sub($exp); @IC="@$IniCon"; open OUT,">>$exp.m";
-
-        print "\tIC=@IC>>vTemp\n";
-
-
 # Temperature loop
         if ($ttemp) {
             print OUT "\nfor T = $itemp:$ttemp:$ftemp\n";
@@ -1436,9 +1425,6 @@ sub variables_sub {
         print OUT "DRCfile=fopen(file1,'a+');\n";
         print OUT "DSCfile=fopen(file2,'a+');\n\n";
         ($IniCon)=&InitialConcentrations_sub($exp); @IC="@$IniCon"; open OUT,">>$exp.m";
-
-        print "\tIC=@IC>>RC\n";
-
     }; # if exp
     close OUT;
     return(\@IC);
@@ -1476,33 +1462,19 @@ sub InitialConcentrations_sub {
         if ($go eq "yes") { $i="yes"; # done with python	if (@freq{$rs}) { &localIR_sub($rs,@ipath{$rs}); };
 			foreach $v (@variables) {
                 if ($rs eq $v) { $i="no"; };};
-            foreach $interp (@interpolated) {
-                print "interp=$interp;\t";
-                if ($rs eq $interp) { $i="no"; };};
             if ($i eq "yes") {
-                if ($tmpCov{$rs}) { print OUT "coverage$rs=@tmpCov{$rs}; ";
-#                print OUT "coverage$rs=@tmpCov{$rs}; ";
-                }else{
 # 31/05/2021
-                    foreach $interp (@interpolated) {
-                        if ($interp eq $rs) {
-                            print "ccccccccc$interp;\t";
-                            print OUT "coverage$interp=0";   # plus all the interpolating species * coverage (below)
+                foreach $interp (@interpolated) {
+                    if ($interp eq $rs) {
+                        print OUT "coverage$interp=0";   # plus all the interpolating species * coverage (below)
+                        @tmp = split(/\s+/, @interpsys{$interp});
+                        foreach $l (@tmp) {
+                            if ($l) { push(@Nline, $l);};}; @tmp = @Nline; @Nline = ();
+                        foreach $t (@tmp) { $do="yes";
                             foreach $sur (@surfaces) {
-                                if ((@sitetype{$sur} eq @sitetype{$rs})) {
-                                    @tmp{$sur}="@tmp{$sur} coverage$rs"; };};
-                            @tmp = split(/\s+/, @interpsys{$interp});
-                            foreach $l (@tmp) {
-                                if ($l) {push(@Nline, $l);};}; @tmp = @Nline; @Nline = ();
-                            foreach $t (@tmp) { $do="yes";
-                                foreach $sur (@surfaces) {
-                                    if ($sur eq $t) { $do="no"; }; };
-                                if ($do eq "yes") { print OUT "+@nsitetype{$t}*$t"; };}; print OUT "; ";
-                            @print_cov{$rs}="done";
-#                        }else{
-#                            if (@print_cov{$rs} ne "done"){
-#                                print OUT "coverage$rs=@coverage{$rs}; "; };
-                            };};};
+                                if ($sur eq $t) { $do="no"; }; };
+                            if ($do eq "yes") { print OUT "+@nsitetype{$t}*$t"; };}; print OUT "; ";
+                    };};
                 push(@IniCon,"coverage$rs "); };};
     };
     foreach $sur (@surfaces) { $tmp2=(); @tmp3=split(/\s+/,@tmp{$sur});
@@ -1815,32 +1787,65 @@ sub ODE_solution_sub {
     return();
    }; #--> sub stoichiometries
 #==============================================================================================================================
-   sub equations_sub {
-          ($fileout)=@_;
-	  %Appequation=(); %Desequation=();
+sub equations_sub {
+    ($fileout)=@_; %Appequation=(); %Desequation=();
 #-------------------------------------------------------------------------------------------------------------------------------- appear / desappear
-   for ($pr=1; $pr<=$#process; $pr++ ) {
-          @PR=split(/\s+/,@ProcessReactants[$pr]); @PTS=split(/\s+/,@ProcessTS[$pr]); @PP=split(/\s+/,@ProcessProducts[$pr]);
-      if (($typeproc[$pr] eq 'A') or ($typeproc[$pr] eq 'a')) { $tmpmol=(); $tmpcat=();
-        if ($exp ne "TPR") { 
+    for ($pr=1; $pr<=$#process; $pr++ ) {
+        @PR=split(/\s+/,@ProcessReactants[$pr]);
+        @PTS=split(/\s+/,@ProcessTS[$pr]);
+        @PP=split(/\s+/,@ProcessProducts[$pr]);
+        if (($typeproc[$pr] eq 'A') or ($typeproc[$pr] eq 'a')) { $tmpmol=(); $tmpcat=();
+            if ($exp ne "TPR") {
+                foreach $Rname (@PR) {
+                    foreach $mol (@molecules) {
+                        if ($Rname eq $mol) { $tmpmol=$mol;
+                            if (!$Desequation{$mol}) {
+                                $Desequation{$mol}="rate$pr";
+                            }else{
+                                $Desequation{$mol}="$Desequation{$mol}+rate$pr"; };};};
+                    foreach $cat (@catalysts) {
+                        if ($Rname eq $cat) { $tmpcat=$cat;
+                            if (!$Desequation{$cat}) {
+                                $Desequation{$cat}="rate$pr";
+                            }else{
+                                $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};};};
+                foreach $fpro (@PP) {
+                    foreach $mol (@molecules) {
+                        if ($fpro eq $mol) {
+                            if (!$Appequation{$mol}) {
+                                $Appequation{$mol}="(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
+                            }else{
+                                $Appequation{$mol}="$Appequation{$mol}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
+                            };};};
+                    foreach $cat (@catalysts) {
+                        if ($fpro eq $cat) {
+                            if ($tmpcat) {
+                                $tmp=$tmpcat;
+                            }else{
+                                $tmp=$tmpmol; };
+                            if (!$Appequation{$cat}) {
+                                $Appequation{$cat}="(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
+                            }else{
+                                $Appequation{$cat}="$Appequation{$cat}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
+                            };};};};};
+        }elsif (($typeproc[$pr] eq 'D') or ($typeproc[$pr] eq 'd')) { $tmpcat=();
             foreach $Rname (@PR) {
-               foreach $mol (@molecules) { if ($Rname eq $mol) { $tmpmol=$mol;
-		   if (!$Desequation{$mol}) { $Desequation{$mol}="rate$pr"; }else{ $Desequation{$mol}="$Desequation{$mol}+rate$pr"; };};};	      
-               foreach $cat (@catalysts) { if ($Rname eq $cat) { $tmpcat=$cat;
-		   if (!$Desequation{$cat}) { $Desequation{$cat}="rate$pr"; }else{ $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};}; };
-            foreach $fpro (@PP) {
-	       foreach $mol (@molecules) { if ($fpro eq $mol) { 
-                   if (!$Appequation{$mol}) { $Appequation{$mol}="(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
-		   }else{ $Appequation{$mol}="$Appequation{$mol}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr"; };};};
-               foreach $cat (@catalysts) { if ($fpro eq $cat) { if ($tmpcat) { $tmp=$tmpcat; }else{ $tmp=$tmpmol; };
-	           if (!$Appequation{$cat}) { $Appequation{$cat}="(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
-                   }else{ $Appequation{$cat}="$Appequation{$cat}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr"; };};};};};
-      }elsif (($typeproc[$pr] eq 'D') or ($typeproc[$pr] eq 'd')) { $tmpcat=();
-            foreach $Rname (@PR) {
-	       foreach $mol (@molecules) { if ($Rname eq $mol) {
-	   	   if (!$Desequation{$mol}) { $Desequation{$mol}="rate$pr"; }else{ $Desequation{$mol}="$Desequation{$mol}+rate$pr"; };};}		       
-               foreach $cat (@catalysts) { if ($Rname eq $cat) { $tmpcat=$cat;
-		   if (!$Desequation{$cat}) { $Desequation{$cat}="rate$pr"; }else{ $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};}; };
+                foreach $mol (@molecules) {
+                    if ($Rname eq $mol) {
+                        if (!$Desequation{$mol}) {
+                            $Desequation{$mol}="rate$pr";
+                        }else{
+                            $Desequation{$mol}="$Desequation{$mol}+rate$pr"; };};}
+                foreach $cat (@catalysts) {
+                    if ($Rname eq $cat) { $tmpcat=$cat;
+                        if (!$Desequation{$cat}) {
+                            $Desequation{$cat}="rate$pr";
+                        }else{
+                            $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};};};
+
+
+
+
             foreach $fpro (@PP) {
                foreach $mol (@molecules) { if ($fpro eq $mol) { $Pstoirate="$Pstoirate*stoichio$fpro";
                    if (!$Appequation{$mol}) { $Appequation{$mol}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
