@@ -1172,7 +1172,8 @@ sub ProcessParameters_sub {
     print OUT " fileID=fopen(\"./KINETICS/PROCESS/ReactionParameters$pr.dat\",'a+');";
     if (($typeP eq 'A') or ($typeP eq 'a')) {
         print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\\n\');\n";
-    }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n"; };
+    }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n";
+    };
     print OUT "\n";
     if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
     }else{          print OUT "j=1;\nT=$itemp;\n"; };
@@ -1221,7 +1222,7 @@ sub ProcessParameters_sub {
                 print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
             }else{
                 foreach $interp (@interpolated) {
-                    if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
+                    if ($interp eq $P) { @tmp=split(/\s+/,@interpsys{$interp});
                         print OUT "      E$interp=ENERGY@tmp[2]\{j,2}; Q3D$interp=PARTITION3D@tmp[2]\{j,2};\n";
                         @do{$interp}="no";};};
                 if (@do{$P} eq "yes") {
