@@ -1220,7 +1220,6 @@ sub ProcessParameters_sub {
                 print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
                 print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
             }else{
-# 31/05/2021
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
                         print OUT "      E$interp=ENERGY@tmp[2]\{j,2}; Q3D$interp=PARTITION3D@tmp[2]\{j,2};\n";
@@ -1395,8 +1394,7 @@ sub variables_sub {
                     print OUT "for P$mol = $ipressure{$mol}:$spressure{$mol}:$fpressure{$mol}\n"; };};};
         foreach $cat (@catalysts) {
             if (($icov{$cat}) and ($fcov{$cat})) { push(@variables,$cat);
-                print OUT "for coverage$cat = $icov{$cat}:$scov{$cat}:$fcov{$cat}\n"; };
-        };
+                print OUT "for coverage$cat = $icov{$cat}:$scov{$cat}:$fcov{$cat}\n"; };};
         ($IniCon)=&InitialConcentrations_sub($exp); @IC="@$IniCon"; open OUT,">>$exp.m";
 # Temperature loop
         if ($ttemp) {
@@ -1448,8 +1446,7 @@ sub InitialConcentrations_sub {
             if (@tmpPressure{$mol}) { print OUT "P$mol=@tmpPressure{$mol}; ";
             }else{
                 if ($exp eq "TPR") { print OUT "P$mol=0.0; ";
-                }else{	print OUT "P$mol=@pressure{$mol}; ";};};};
-    };
+                }else{	print OUT "P$mol=@pressure{$mol}; ";};};};};
     foreach $rs (@react_species) { $go="yes"; $tr="no"; $m="no";
         foreach $mol (@molecules) {
             if ($rs eq $mol) { $go="no"; $m="yes"; };};
@@ -1463,7 +1460,6 @@ sub InitialConcentrations_sub {
 			foreach $v (@variables) {
                 if ($rs eq $v) { $i="no"; };};
             if ($i eq "yes") {
-# 31/05/2021
                 foreach $interp (@interpolated) {
                     if ($interp eq $rs) {
                         print OUT "coverage$interp=0";   # plus all the interpolating species * coverage (below)
@@ -1475,8 +1471,7 @@ sub InitialConcentrations_sub {
                                 if ($sur eq $t) { $do="no"; }; };
                             if ($do eq "yes") { print OUT "+@nsitetype{$t}*$t"; };}; print OUT "; ";
                     };};
-                push(@IniCon,"coverage$rs "); };};
-    };
+                push(@IniCon,"coverage$rs "); };};};
     foreach $sur (@surfaces) { $tmp2=(); @tmp3=split(/\s+/,@tmp{$sur});
         foreach $c (@tmp3) {
             if (!$tmp2) { $tmp2="$c";
@@ -1650,7 +1645,7 @@ sub ODE_call_sub {
     close OUT;
     return();
 }; #--> sub ODE_call
-#==============================================================================================================================
+#=======================================================================================================================
 sub ODE_solution_sub {
     ($exp)=@_;
     $timeSteps=int(($ftime-$itime)/$ttime);
@@ -1685,35 +1680,47 @@ sub ODE_solution_sub {
     return();
 }; #--> sub ODE_solution
 #=======================================================================================================================
-   sub ODE_closingloops_sub {
-          ($exp)=@_;
-      open OUT, ">>$exp.m";
-      if ($exp eq "TPR") {
-                print OUT "\n   fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
-                foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
-                                          print OUT "\\n\',V,pH,T,results(end,:));\n";
-                if ($ttemp) { print OUT " end % Temperature\n"; };
-		print OUT " end % coverage from adsorbed $TPRmolecule\n";
-      }elsif ($exp eq "const_TEMP") { 
-                print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
-                foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
-                                          print OUT "\\n\',V,pH,T,results(i,:));\n   end\n";
-                if ($nVext) { print OUT "   if T == 300\n     fprintf(fileID2, \' %.3f %.3f %.6f %.15E\\n\',T, abs(subs(V/$ftime)),V,RedoxIntensity);\n   end\n\n"; };
-		foreach $mol (@molecules) { if (($ipressure{$mol}) and ($fpressure{$mol})) { print OUT " end % P$mol\n"; }; };
-		foreach $cat (@catalysts) { if (($icov{$cat}) and ($fcov{$cat})) { print OUT " end % coverage$cat\n"; }; };
-  		if ($ttemp) { print OUT " end % Temperature\n"; };
-        	if (($ipH) and ($fpH) and ($ipH != $fpH)) { print OUT " end % pH\n"; };
-        	if (($nVext) and ($pVext) and ($nVext != $pVext)) { print OUT " end % Vext\n"; };
-      }elsif ($exp eq "variable_TEMP") {
-                print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
-                foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
-                                          print OUT "\\n\',V,pH,T,results(i,:));\n   end\n";	      
-		if ($ttemp) { print OUT " end % Temperature\n"; };
-		foreach $mol (@molecules) { if (($ipressure{$mol}) and ($fpressure{$mol})) { print OUT " end % P$mol\n"; }; };
-	        foreach $cat (@catalysts) { if (($icov{$cat}) and ($fcov{$cat})) { print OUT " end % coverage$cat\n"; }; };	
-        	if (($ipH) and ($fpH) and ($ipH != $fpH)) { print OUT " end % pH\n"; };
-        	if (($nVext) and ($pVext) and ($nVext != $pVext)) { print OUT " end % Vext\n"; };
-      }elsif ($exp eq "RateControl") {
+sub ODE_closingloops_sub {
+    ($exp)=@_;
+    open OUT, ">>$exp.m";
+    if ($exp eq "TPR") {
+        print OUT "\n   fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
+        foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
+        print OUT "\\n\',V,pH,T,results(end,:));\n";
+        if ($ttemp) { print OUT " end % Temperature\n"; };
+        print OUT " end % coverage from adsorbed $TPRmolecule\n";
+    }elsif ($exp eq "const_TEMP") {
+        print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
+        foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
+        print OUT "\\n\',V,pH,T,results(i,:));\n   end\n";
+        if ($nVext) {
+            print OUT "   if T == 300\n     fprintf(fileID2, \' %.3f %.3f %.6f %.15E\\n\',T, abs(subs(V/$ftime)),V,RedoxIntensity);\n   end\n\n"; };
+        foreach $mol (@molecules) {
+            if (($ipressure{$mol}) and ($fpressure{$mol})) {
+                print OUT " end % P$mol\n"; }; };
+        foreach $cat (@catalysts) {
+            if (($icov{$cat}) and ($fcov{$cat})) {
+                print OUT " end % coverage$cat\n"; }; };
+        if ($ttemp) {
+            print OUT " end % Temperature\n"; };
+        if (($ipH) and ($fpH) and ($ipH != $fpH)) {
+            print OUT " end % pH\n"; };
+        if (($nVext) and ($pVext) and ($nVext != $pVext)) {
+            print OUT " end % Vext\n"; };
+    }elsif ($exp eq "variable_TEMP") {
+        print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
+        foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
+        print OUT "\\n\',V,pH,T,results(i,:));\n   end\n";
+        if ($ttemp) { print OUT " end % Temperature\n"; };
+        foreach $mol (@molecules) {
+            if (($ipressure{$mol}) and ($fpressure{$mol})) {
+                print OUT " end % P$mol\n"; }; };
+        foreach $cat (@catalysts) {
+            if (($icov{$cat}) and ($fcov{$cat})) {
+                print OUT " end % coverage$cat\n"; }; };
+        if (($ipH) and ($fpH) and ($ipH != $fpH)) { print OUT " end % pH\n"; };
+        if (($nVext) and ($pVext) and ($nVext != $pVext)) { print OUT " end % Vext\n"; };
+    }elsif ($exp eq "RateControl") {
 #                if ($ttemp) { print OUT " end % Temperature\n"; };
 #                foreach $mol (@molecules) { if (($ipressure{$mol}) and ($fpressure{$mol})) { print OUT " end % P$mol\n"; }; };
 #                foreach $cat (@catalysts) { if (($icov{$cat}) and ($fcov{$cat})) { print OUT " end % coverage$cat\n"; }; };
@@ -1721,75 +1728,86 @@ sub ODE_solution_sub {
 #                if (($nVext) and ($pVext) and ($nVext != $pVext)) { print OUT " end % Vext\n"; };
 #		print OUT "fclose(DRCfile,DSCfile);\n";
 	}; # if exp
-     close OUT;
+    close OUT;
     return();
-  }; #--> sub ODE_closingloops
-#==============================================================================================================================
-   sub ODE_printing_sub {
-        ($exp)=@_;
-      open OUT, ">>$exp.m";
+}; #--> sub ODE_closingloops
+#=======================================================================================================================
+sub ODE_printing_sub {
+    ($exp)=@_;
+    open OUT, ">>$exp.m";
 #    	 print OUT "\ndlmwrite(\'./KINETICS/DATA/$exp/solution$exp.dat\',sol,\'precision\',\'%1.15E\',\'delimiter\',\'\ \');\n";
-        	print OUT "fclose(fileID);\n";			
-          @gas=(); @su=(); @Rmolecules=();
-	foreach $mol (@molecules) { foreach $rs (@react_species) {  $go="y"; foreach $t (@transitions) { if ($t eq $mol) { $go="n"; };};
-                        if ($go eq "y") { if ($mol eq $rs) { push(@Rmolecules,$rs); };};};};
-	foreach $rs (@react_species) { $do='yes'; foreach $mol (@molecules) { if ($mol eq $rs) { $do='no'; };};
-                                             	  foreach $t (@transitions) { if ($t eq $rs) { $do='no'; };};
-# alberto 05/2019
-                                             	  foreach $sur (@surfaces) { if (($sur eq $rs) and (!@freq{$sur})) {$do='no'; };};
-          if ($do eq 'yes') { push(@su,$rs); };};
-        if ($exp eq "const_TEMP") { if ($nVext) { print OUT "fclose(fileID2);\n";}; };
-	print OUT "\n\n";
-      close OUT;
-      open OUT, ">>plot.sh";
-  	if ($exp eq "const_TEMP") { 
-#  	  	print OUT "\n\n\nperl ~/software/KINETICS/IRPlotting.pl $exp";
-		foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
-	        foreach $s (@su) { $n=4+@y{$s};
-	       	if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
-	if ($exp ne "TPR") {
-#		print OUT "\n\nperl ~/software/KINETICS/PlotConcentrations.pl $exp";
-                foreach $mol (@Rmolecules) { $n=4+@y{$mol}; print OUT " $n,$mol,mol"; };
-                foreach $s (@su) { $n=4+@y{$s};
-                if ($s ne @su[-1]) { print OUT " $n,$s,surf"; }else{ print OUT " $n,$s,surf\n"; };};};
-      close OUT;
+  	print OUT "fclose(fileID);\n";
+    @gas=(); @su=(); @Rmolecules=();
+    foreach $mol (@molecules) {
+        foreach $rs (@react_species) {  $go="y";
+            foreach $t (@transitions) {
+                if ($t eq $mol) { $go="n"; };};
+            if ($go eq "y") {
+                if ($mol eq $rs) { push(@Rmolecules,$rs); };};};};
+    foreach $rs (@react_species) { $do='yes';
+        foreach $mol (@molecules) {
+            if ($mol eq $rs) { $do='no'; };};
+        foreach $t (@transitions) {
+            if ($t eq $rs) { $do='no'; };};
+        foreach $sur (@surfaces) {
+            if (($sur eq $rs) and (!@freq{$sur})) {$do='no'; };};
+        if ($do eq 'yes') { push(@su,$rs); };};
+    if ($exp eq "const_TEMP") {
+        if ($nVext) { print OUT "fclose(fileID2);\n";}; };
+    print OUT "\n\n";
+    close OUT;
     return();
-  }; #--> sub ODE_pringing
-#==============================================================================================================================
-   sub ODE_sub {
-	($exp)=@_; if ($exp ne "TPR") { $fileout="myode"; }else{ $fileout="mytpr"; };   
-       open OUT, ">>$fileout.m";
-          print OUT "\nfunction dydt=$fileout(t,y,";
-         foreach $trn (@transfer) { if ($trn ne @transfer[$#transfer]) { print OUT "$trn,"; }else{ print OUT "$trn)\n\n"; };};
-         for ($pr=1; $pr<=$#process; $pr++ ) {
-	    @PR=split(/\s+/,@ProcessReactants[$pr]); @PTS=split(/\s+/,@ProcessTS[$pr]); @PP=split(/\s+/,@ProcessProducts[$pr]);
-	    ()=&stoichiometries_sub($fileout); };
-       open OUT, ">>$fileout.m";
-          print OUT "\n\n";
-	  foreach $nr (@rates) { print OUT "$nr;\n"; };
-	  print OUT "\n\n";
-	    ()=&equations_sub($fileout);
-          print OUT "end\n";
-       close OUT;
+}; #--> sub ODE_pringing
+#=======================================================================================================================
+sub ODE_sub {
+    ($exp)=@_;
+    if ($exp ne "TPR") {
+        $fileout="myode";
+    }else{
+        $fileout="mytpr"; };
+    open OUT, ">>$fileout.m";
+    print OUT "\nfunction dydt=$fileout(t,y,";
+    foreach $trn (@transfer) {
+        if ($trn ne @transfer[$#transfer]) {
+            print OUT "$trn,";
+        }else{
+            print OUT "$trn)\n\n"; };};
+    for ($pr=1; $pr<=$#process; $pr++ ) {
+        @PR=split(/\s+/,@ProcessReactants[$pr]);
+        @PTS=split(/\s+/,@ProcessTS[$pr]);
+        @PP=split(/\s+/,@ProcessProducts[$pr]);
+        ()=&stoichiometries_sub($fileout); };
+    open OUT, ">>$fileout.m";
+    print OUT "\n\n";
+    foreach $nr (@rates) { print OUT "$nr;\n"; };
+    print OUT "\n\n";
+    ()=&equations_sub($fileout);
+    print OUT "end\n";
+    close OUT;
     return();
-   }; #--> sub ODE
-#==============================================================================================================================
-   sub stoichiometries_sub {
-          ($fileout)=@_;
-       open OUT, ">>$fileout.m";
-         foreach $R (@PR) { @done{$R}="no"; }; foreach $P (@PP) { @done{$P}="no"; };
-         foreach $R (@PR) { if (@done{$R} eq "no") { print OUT "stoichio$pr$R=$stoichio{$R}->[$pr];\t";
-                                                     push(@trans,"stoichio$pr$R"); @done{$R}="yes";};};
-         foreach $P (@PP) { if (@done{$P} eq "no") { printf OUT "stoichio$pr$P=$stoichio{$P}->[$pr];\t";
-                                                     push(@trans,"stoichio$pr$P"); @done{$P}="yes";};};
-            print OUT "\t%  process $pr\n";
-       close OUT;
+}; #--> sub ODE
+#=======================================================================================================================
+sub stoichiometries_sub {
+    ($fileout)=@_;
+    open OUT, ">>$fileout.m";
+    foreach $R (@PR) { @done{$R}="no"; };
+    foreach $P (@PP) { @done{$P}="no"; };
+    foreach $R (@PR) {
+        if (@done{$R} eq "no") {
+            print OUT "stoichio$pr$R=$stoichio{$R}->[$pr];\t";
+            push(@trans,"stoichio$pr$R"); @done{$R}="yes";};};
+    foreach $P (@PP) {
+        if (@done{$P} eq "no") {
+            printf OUT "stoichio$pr$P=$stoichio{$P}->[$pr];\t";
+            push(@trans,"stoichio$pr$P"); @done{$P}="yes";};};
+    print OUT "\t%  process $pr\n";
+    close OUT;
     return();
-   }; #--> sub stoichiometries
-#==============================================================================================================================
+}; #--> sub stoichiometries
+#=======================================================================================================================
 sub equations_sub {
     ($fileout)=@_; %Appequation=(); %Desequation=();
-#-------------------------------------------------------------------------------------------------------------------------------- appear / desappear
+#----------------------------------------------------------------------------------------------------------------------- appear / desappear
     for ($pr=1; $pr<=$#process; $pr++ ) {
         @PR=split(/\s+/,@ProcessReactants[$pr]);
         @PTS=split(/\s+/,@ProcessTS[$pr]);
@@ -1808,7 +1826,14 @@ sub equations_sub {
                             if (!$Desequation{$cat}) {
                                 $Desequation{$cat}="rate$pr";
                             }else{
-                                $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};};};
+                                $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};};
+                    foreach $interp (@interpolated) {
+                        if ($Rname eq $interp) { $tmpcat=$interp;
+                            if (!$Desequation{$interp}) {
+                                $Desequation{$interp}="rate$pr";
+                            }else{
+                                $Desequation{$interp}="$Desequation{$interp}+rate$pr"; };};};
+                };
                 foreach $fpro (@PP) {
                     foreach $mol (@molecules) {
                         if ($fpro eq $mol) {
@@ -1827,7 +1852,19 @@ sub equations_sub {
                                 $Appequation{$cat}="(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
                             }else{
                                 $Appequation{$cat}="$Appequation{$cat}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
-                            };};};};};
+                            };};};
+                    foreach $interp (@interpolated) {
+                        if ($fpro eq $interp) {
+                            if ($tmpcat) {
+                                $tmp=$tmpcat;
+                            }else{
+                                $tmp=$tmpmol; };
+                            if (!$Appequation{$interp}) {
+                                $Appequation{$interp}="(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
+                            }else{
+                                $Appequation{$interp}="$Appequation{$interp}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
+                            };};};
+                };};
         }elsif (($typeproc[$pr] eq 'D') or ($typeproc[$pr] eq 'd')) { $tmpcat=();
             foreach $Rname (@PR) {
                 foreach $mol (@molecules) {
@@ -1841,70 +1878,112 @@ sub equations_sub {
                         if (!$Desequation{$cat}) {
                             $Desequation{$cat}="rate$pr";
                         }else{
-                            $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};};};
-
-
-
-
+                            $Desequation{$cat}="$Desequation{$cat}+rate$pr"; };};};
+                foreach $interp (@interpolated) {
+                    if ($Rname eq $interp) { $tmpcat=$interp;
+                        if (!$Desequation{$interp}) {
+                            $Desequation{$interp}="rate$pr";
+                        }else{
+                            $Desequation{$interp}="$Desequation{$interp}+rate$pr"; };};};
+            };
             foreach $fpro (@PP) {
-               foreach $mol (@molecules) { if ($fpro eq $mol) { $Pstoirate="$Pstoirate*stoichio$fpro";
-                   if (!$Appequation{$mol}) { $Appequation{$mol}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
-                   }else{ $Appequation{$mol}="$Appequation{$mol}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};};
-               foreach $cat (@catalysts) { if ($fpro eq $cat) {
-                   if (!$Appequation{$cat}) { $Appequation{$cat}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
-                   }else{ $Appequation{$cat}="$Appequation{$cat}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};};};			   
-      }else{ $tmpcat=();
+                foreach $mol (@molecules) {
+                    if ($fpro eq $mol) { $Pstoirate="$Pstoirate*stoichio$fpro";
+                        if (!$Appequation{$mol}) {
+                            $Appequation{$mol}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
+                        }else{
+                            $Appequation{$mol}="$Appequation{$mol}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};};
+                foreach $cat (@catalysts) {
+                    if ($fpro eq $cat) {
+                        if (!$Appequation{$cat}) {
+                            $Appequation{$cat}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
+                        }else{
+                            $Appequation{$cat}="$Appequation{$cat}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};};
+                foreach $interp (@interpolated) {
+                    if ($fpro eq $interp) {
+                        if (!$Appequation{$interp}) {
+                            $Appequation{$interp}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
+                        }else{
+                            $Appequation{$interp}="$Appequation{$interp}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};};
+            };
+        }else{ $tmpcat=();
             foreach $Rname (@PR) { $tmpcat=$Rname;
-                   if (!$Desequation{$Rname}) { $Desequation{$Rname}="rate$pr"; }else{ $Desequation{$Rname}="$Desequation{$Rname}+rate$pr"; };};  
+                if (!$Desequation{$Rname}) {
+                    $Desequation{$Rname}="rate$pr";
+                }else{
+                    $Desequation{$Rname}="$Desequation{$Rname}+rate$pr"; };};
             foreach $fpro (@PP){
-                   if (!$Appequation{$fpro}) { $Appequation{$fpro}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
-                   }else{ $Appequation{$fpro}="$Appequation{$fpro}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};};  
-   }; # for process
+                if (!$Appequation{$fpro}) {
+                    $Appequation{$fpro}="(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr";
+                }else{
+                    $Appequation{$fpro}="$Appequation{$fpro}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};
+        };
+    }; # for process
 #--------------------------------------------------------------------------------------------------------------------------------
-	  %tmp=(); $rows=0;
-      foreach $rs (@react_species) { $go="no"; if (($Appequation{$rs}) or ($Desequation{$rs})) { $go="yes"; };
-         if ($go eq "yes") { if (!$Appequation{$rs}) { $Appequation{$rs}=0; };
-		             if (!$Desequation{$rs}) { $Desequation{$rs}=0; };
-				     $equation{$rs}="$Appequation{$rs}-($Desequation{$rs})";
-				     @EQ[@y{$rs}]=$equation{$rs}; $rows++; };};
-	foreach $sur (@surfaces) { if (@y{$sur}) { $rows++; };};
+	%tmp=(); $rows=0;
+    foreach $rs (@react_species) { $go="no";
+        if (($Appequation{$rs}) or ($Desequation{$rs})) { $go="yes"; };
+        if ($go eq "yes") {
+            if (!$Appequation{$rs}) { $Appequation{$rs}=0; };
+            if (!$Desequation{$rs}) { $Desequation{$rs}=0; };
+            $equation{$rs}="$Appequation{$rs}-($Desequation{$rs})";
+            @EQ[@y{$rs}]=$equation{$rs}; $rows++; };};
+    foreach $sur (@surfaces) {
+        if (@y{$sur}) { $rows++; };};
     $rows=$rows-1;
+    if ($fileout ne "RateControl") { open OUT, ">>$fileout.m"; };
+    if ($fileout ne "const_TEMP") { print OUT " dydt=zeros($rows,1);\n"; };
+    @DRCeq=();
+    foreach $mol (@molecules) {
+        if ($equation{$mol}) { print OUT "   dydt(@y{$mol})=$equation{$mol}; % P$mol\n"; }; };
+    foreach $rs (@react_species) { $go="yes"; $tr="no";
+        foreach $mol (@molecules) {
+            if ($rs eq $mol) { $go="no"; $tr="yes"; };};
+        foreach $t (@transitions) {
+            if ($rs eq $t) { $go="no"; $tr="yes"; };};
+        foreach $sur (@surfaces) {
+            if ($rs eq $sur) { $go="no"; };};
+        if ($go eq "yes") {
+            print OUT "   dydt(@y{$rs})=$equation{$rs}; % coverage$rs\n";
+            @tmp{@sitetype{$rs}}="@tmp{@sitetype{$rs}} dydt(@y{$rs})"; };};
+    foreach $sur (@surfaces) { @balan=split(/\s+/,@tmp{@sitetype{$sur}});
+        foreach $b (@balan) {
+            if ($b) { push(@Nline,$b); }; }; @balan=@Nline; @Nline=();
+        print OUT "   dydt(@y{$sur})=-(";
+        foreach $b (@balan) {
+            if ($b ne @balan[$#balan]) {
+                print OUT "$b+";
+            }else{
+                print OUT "$b); % coverage$sur\n"; };};};
+    print OUT "end % ends function\n";
     if ($fileout ne "RateControl") {
-    	open OUT, ">>$fileout.m";
+        close OUT;
     };
-              if ($fileout ne "const_TEMP") { print OUT " dydt=zeros($rows,1);\n"; };  @DRCeq=();
-         foreach $mol (@molecules) { if ($equation{$mol}) { print OUT "   dydt(@y{$mol})=$equation{$mol}; % P$mol\n"; }; };
-         foreach $rs (@react_species) { $go="yes"; $tr="no"; foreach $mol (@molecules) { if ($rs eq $mol) { $go="no"; $tr="yes"; };};
-                                                             foreach $t (@transitions) { if ($rs eq $t) { $go="no"; $tr="yes"; };};
-		                                             foreach $sur (@surfaces) { if ($rs eq $sur) { $go="no"; };};
-			     if ($go eq "yes") { print OUT "   dydt(@y{$rs})=$equation{$rs}; % coverage$rs\n"; 
-						 @tmp{@sitetype{$rs}}="@tmp{@sitetype{$rs}} dydt(@y{$rs})"; };};
-         foreach $sur (@surfaces) { @balan=split(/\s+/,@tmp{@sitetype{$sur}});
-             foreach $b (@balan) { if ($b) { push(@Nline,$b); }; }; @balan=@Nline; @Nline=();
-	              print OUT "   dydt(@y{$sur})=-("; foreach $b (@balan) { if ($b ne @balan[$#balan]) { 
-        	      print OUT "$b+"; }else{ print OUT "$b); % coverage$sur\n"; };};};
-	print OUT "end % ends function\n"; 
-     if ($fileout ne "RateControl") {
-     close OUT;
-     };
     return(\@EQ);
-   }; #--> sub equations
+}; #--> sub equations
 #=============================================================================================================================
-   sub Reset_Conditions_0_sub {
-	($fileout)=@_;
-	open OUT, ">>$fileout.m";
-        $n=1;
-        foreach $mol (@molecules) { foreach $rs (@react_species) {
-                if ($mol eq $rs) {  $go="y"; foreach $t (@transitions) { if ($t eq $mol) { $go="n"; };};
-                        if ($go eq "y") { print OUT "     rP$mol=concentrations(end,$n); "; $n++; };};};}; print OUT "\n";
-        foreach $rs (@react_species) { $do='yes'; foreach $mol (@molecules) { if ($mol eq $rs) { $do='no'; };};
-                                                  foreach $t (@transitions) { if ($t eq $rs) { $do='no'; };};
-                                                  foreach $sur (@surfaces) { if (($sur eq $rs) and (!@freq{$sur})) {$do='no'; };};
-                if ($do eq 'yes') { print OUT "     rcoverage$rs=concentrations(end,$n); "; $n++; };}; print OUT "\n";
-        foreach $sur (@surfaces) { if ($y{$sur}) { print OUT "     rcoverage$sur=concentrations(end,$n); "; $n++; };}; print OUT "\n";
-#	close OUT;
+sub Reset_Conditions_0_sub {
+    ($fileout)=@_;
+    open OUT, ">>$fileout.m";
+    $n=1;
+    foreach $mol (@molecules) {
+        foreach $rs (@react_species) {
+            if ($mol eq $rs) {  $go="y";
+                foreach $t (@transitions) {
+                    if ($t eq $mol) { $go="n"; };};
+                if ($go eq "y") { print OUT "     rP$mol=concentrations(end,$n); "; $n++; };};};}; print OUT "\n";
+    foreach $rs (@react_species) { $do='yes';
+        foreach $mol (@molecules) {
+            if ($mol eq $rs) { $do='no'; };};
+        foreach $t (@transitions) {
+            if ($t eq $rs) { $do='no'; };};
+        foreach $sur (@surfaces) {
+            if (($sur eq $rs) and (!@freq{$sur})) {$do='no'; };};
+        if ($do eq 'yes') { print OUT "     rcoverage$rs=concentrations(end,$n); "; $n++; };}; print OUT "\n";
+    foreach $sur (@surfaces) {
+        if ($y{$sur}) { print OUT "     rcoverage$sur=concentrations(end,$n); "; $n++; };}; print OUT "\n";
     return();
-   }; #--> sub Reset_Conditions
+}; #--> sub Reset_Conditions
 #=============================================================================================================================
    sub Reset_Conditions_1_sub {
         ($fileout)=@_;
