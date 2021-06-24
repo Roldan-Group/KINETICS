@@ -922,14 +922,14 @@ sub Interpolate_sub {
     print OUT "\tQy$sys=[";
     foreach $interp (@tmp) { print OUT "PARTITION3D$interp\{j, 2} "; }; print OUT "];\n";
     if ($#tmp >= 4) {
-        print OUT "\tE$sys=Interp1(x$sys, Ey$sys, coverage$sys, 'pchip','extrap');\n";
-        print OUT "\tQ3D$sys=Interp1(x$sys, Qy$sys, coverage$sys, 'pchip', 'extrap');\n";
+        print OUT "\tE$sys=interp1(x$sys, Ey$sys, coverage$sys, 'pchip','extrap');\n";
+        print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'pchip', 'extrap');\n";
     }else{
-        print OUT "\tE$sys=Interp1(x$sys, Ey$sys, coverage$sys, 'makima','extrap');\n";
-        print OUT "\tQ3D$sys=Interp1(x$sys, Qy$sys, coverage$sys, 'makima', 'extrap');\n"; };
+        print OUT "\tE$sys=interp1(x$sys, Ey$sys, coverage$sys, 'makima','extrap');\n";
+        print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'makima', 'extrap');\n"; };
     print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, E$sys,':.');\n\n";
 #    close OUT;
-    return("E$sys(coverage$sys)","Q3D$sys(coverage$sys)");
+    return("E$sys","Q3D$sys");
 }; #--> sub Interpolate
 #=======================================================================================================================
 sub ProcessE_sub {
@@ -1183,8 +1183,20 @@ sub ProcessParameters_sub {
     foreach $TS (@PTS) { @do{$TS}="yes"; };
     foreach $R (@PR) {
         if ($done eq "no") {
-            if ($ttemp) {
-                print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; }; $done="yes"; };};
+            if ($ttemp) { $go="yes";
+                foreach $interp (@interpolated) {
+                    if ($R eq $interp) { $go="no";};};
+                if ($go eq "yes") {
+                    print OUT "   while ENERGY$R\{j,1} ~= T ; j=j+1; end\n"; $done="yes"; };};};};
+    if ($done eq "no") {
+        foreach $P (@PP) {
+            if ($done eq "no") {
+                if ($ttemp) { $go="yes";
+                    foreach $interp (@interpolated) {
+                        if ($P eq $interp) { $go="no" };};
+                    if ($go eq "yes") {
+                        print OUT "   while ENERGY$P\{j,1} ~= T ; j=j+1; end\n"; $done="yes"; };};};};};
+#-----------------------------------------------------------------------------------------------------------------------
     foreach $R (@PR) {
         if (@do{$R} eq "yes") { $qmol="no";
             foreach $mol (@molecules) {
@@ -1463,14 +1475,15 @@ sub InitialConcentrations_sub {
             if ($i eq "yes") {
                 foreach $interp (@interpolated) {
                     if ($interp eq $rs) {
-                        print OUT "coverage$interp=0";   # plus all the interpolating species * coverage (below)
-                        @tmp = split(/\s+/, @interpsys{$interp});
-                        foreach $l (@tmp) {
-                            if ($l) { push(@Nline, $l);};}; @tmp = @Nline; @Nline = ();
-                        foreach $t (@tmp) { $do="yes";
-                            foreach $sur (@surfaces) {
-                                if ($sur eq $t) { $do="no"; }; };
-                            if ($do eq "yes") { print OUT "+@nsitetype{$t}*$t"; };}; print OUT "; ";
+                        print OUT "coverage$interp=0; ";   # plus all the interpolating species * coverage (below)
+# 24/06/2021 Not necessary as coverate$interp is self-defined
+#                        @tmp = split(/\s+/, @interpsys{$interp});
+#                        foreach $l (@tmp) {
+#                            if ($l) { push(@Nline, $l);};}; @tmp = @Nline; @Nline = ();
+#                        foreach $t (@tmp) { $do="yes";
+#                            foreach $sur (@surfaces) {
+#                                if ($sur eq $t) { $do="no"; }; };
+#                            if ($do eq "yes") { print OUT "+@nsitetype{$t}*$t"; };}; print OUT "; ";
                     };};
                 push(@IniCon,"coverage$rs "); };};};
     foreach $sur (@surfaces) { $tmp2=(); @tmp3=split(/\s+/,@tmp{$sur});
@@ -1594,10 +1607,10 @@ sub ODE_call_sub {
                 push(@transfer,"Krate$pr"); };
         }else{
             if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
-                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
+                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr");
             }else{
-                print OUT "     Krate$pr=process$pr\{j,3} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
+                print OUT "     Krate$pr=process$pr\{j,3} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr"); };
         }; # if TPR
 	}; # for process
