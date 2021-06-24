@@ -924,10 +924,11 @@ sub Interpolate_sub {
     if ($#tmp >= 4) {
         print OUT "\tE$sys=interp1(x$sys, Ey$sys, coverage$sys, 'pchip','extrap');\n";
         print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'pchip', 'extrap');\n";
+        print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, interp1(x$sys, Ey$sys, 0:0.1:1, 'pchip', 'extrap'),'-b');\n\n";
     }else{
         print OUT "\tE$sys=interp1(x$sys, Ey$sys, coverage$sys, 'makima','extrap');\n";
-        print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'makima', 'extrap');\n"; };
-    print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, E$sys,':.');\n\n";
+        print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'makima', 'extrap');\n";
+        print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, interp1(x$sys, Ey$sys, 0:0.1:1, 'makima', 'extrap'),'-b');\n\n";};
 #    close OUT;
     return("E$sys","Q3D$sys");
 }; #--> sub Interpolate
@@ -1530,8 +1531,8 @@ sub ODE_call_sub {
                     foreach $l (@tmp) {
                         if ($l) { push(@Nline,$l); };}; @tmp=@Nline; @Nline=();
                     ($E,$Q3D)=&Interpolate_sub($interp); @en{$interp}=$E; @q{$interp}=$Q3D;
-                     push(@Ecov,"-(@en{$interp}-ENERGY@tmp[1]\(j,2))");  #----------------------------------------------- products - reactants  (subtracting)
-                    push(@Qcov,"*(PARTITION3D@tmp[1]/@q{$interp})");
+                     push(@Ecov,"-(@en{$interp}-ENERGY@tmp[1]\{j,2})");  #----------------------------------------------- products - reactants  (subtracting)
+                    push(@Qcov,"*(PARTITION3D@tmp[1]\{j,2}/@q{$interp})");
                 };};};
         @PTS=split(/\s+/,@ProcessTS[$pr]);
         foreach $l (@PTS) {
@@ -1542,8 +1543,8 @@ sub ODE_call_sub {
                     foreach $l (@tmp) {
                         if ($l) { push(@Nline,$l); };}; @tmp=@Nline; @Nline=();
                     ($E,$Q3D)=&Interpolate_sub($interp); @en{$interp}=$E; @q{$interp}=$Q3D;
-                    push(@Ecov,"+(@en{$interp}-ENERGY@tmp[1]\(j,2))");  #----------------------------------------------- products - reactants  (subtracting)
-                    push(@Qcov,"*(@q{$interp}/PARTITION3D@tmp[1])");
+                    push(@Ecov,"+(@en{$interp}-ENERGY@tmp[1]\{j,2})");  #----------------------------------------------- products - reactants  (subtracting)
+                    push(@Qcov,"*(@q{$interp}/PARTITION3D@tmp[1]\{j,2})");
                 };};};
         print OUT "\tAEcov$pr=0";
         foreach $ecov (@Ecov) { print OUT "$ecov"; }; print OUT ";\n";
