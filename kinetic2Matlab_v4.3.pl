@@ -387,7 +387,11 @@ foreach $exp (@experiments) {
                 @PR=split(/\s+/,@ProcessReactants[$pr]);
                 foreach $R (@PR) {
                     foreach $mol (@molecules) {
-                        if ($R eq $mol) { push(@TPRmol,$mol); };};};};
+# 25/06/2021 --- consider TPR for molecules ONLY once and ONLY the ones with pressure (in variables).
+                        if ($R eq $mol) { $go="yes";
+                            foreach $m (@TPRmol) {
+                                if ($m eq $mol) {$go="no"; };};
+                            if ($go eq "yes") { push(@TPRmol,$mol); };};};};};
         };
         foreach $TPRmolecule (@TPRmol) {
             ($IC)=&variables_sub($exp); $IC="@$IC"; @IniCon=split(/\s+/,$IC);
@@ -1336,6 +1340,7 @@ sub variables_sub {
     }elsif ($exp eq "RateControl") {
 # different OUTPUT style, definition of species in principle not required
 	}; # if exp
+#-----------------------------------------------------------------------------------------------------------------------
 # Now setting and printing the initial conditions
 	if ($exp eq "TPR") {
         print OUT " V=0.00;\n pH=0.00;\n";
@@ -1344,7 +1349,8 @@ sub variables_sub {
             if ((@typeproc[$pr] eq "A") or (@typeproc[$pr] eq "a")) {
                 @PR=split(/\s+/,@ProcessReactants[$pr]);
                 foreach $R (@PR) {
-                    if ($R eq $TPRmolecule) { @PP=split(/\s+/,@ProcessProducts[$pr]);
+                    if (($R eq $TPRmolecule) and (@pressure{$mol} != 0)) {
+                        @PP=split(/\s+/,@ProcessProducts[$pr]);
                         foreach $P (@PP) { $go="y";
                             foreach $sur (@surfaces) {
                                 if ($P eq $sur) { $go="n"; };};
@@ -1354,6 +1360,7 @@ sub variables_sub {
                             if ($go eq "y") { print OUT "for coverage$P = 0.1:0.3:1.0\n";
                                 push(@variables,$P); $TPRdone="y"; };
                         };};};};};
+
         ($IniCon)=&InitialConcentrations_sub($exp); @IC="@$IniCon"; open OUT,">>$exp.m";
         if ($ttemp) {
             print OUT "\nfor T = $itemp:$ttemp:$ftemp\n";    #################################### there was a i=1; before T loop
@@ -1470,17 +1477,10 @@ sub InitialConcentrations_sub {
             if ($rs eq $mol) { $go="no"; $m="yes"; };};
         foreach $t (@transitions) {
             if ($rs eq $t) { $go="no"; $tr="yes"; };};
-        foreach $sur (@surfaces) {
-            if ($rs eq $sur) { $go="no";
-            }elsif ((@sitetype{$sur} eq @sitetype{$rs}) and ($tr eq "no") and ($m eq "no")) {
-                @tmp{$sur}="@tmp{$sur} coverage$rs"; };};
-        if ($go eq "yes") { $i="yes"; # done with python	if (@freq{$rs}) { &localIR_sub($rs,@ipath{$rs}); };
-			foreach $v (@variables) {
-                if ($rs eq $v) { $i="no"; };};
-            if ($i eq "yes") {
-                foreach $interp (@interpolated) {
-                    if ($interp eq $rs) {
-                        print OUT "coverage$interp=0; ";   # plus all the interpolating species * coverage (below)
+        foreach $interp (@interpolated) {
+            if ($interp eq $rs) { $go="no";
+                print OUT "coverage$interp=0; "; # plus all the interpolating species * coverage (below)
+                push(@IniCon,"coverage$rs ");
 # 24/06/2021 Not necessary as coverate$interp is self-defined
 #                        @tmp = split(/\s+/, @interpsys{$interp});
 #                        foreach $l (@tmp) {
@@ -1489,8 +1489,17 @@ sub InitialConcentrations_sub {
 #                            foreach $sur (@surfaces) {
 #                                if ($sur eq $t) { $do="no"; }; };
 #                            if ($do eq "yes") { print OUT "+@nsitetype{$t}*$t"; };}; print OUT "; ";
-                    };};
-                push(@IniCon,"coverage$rs "); };};};
+            };};
+        foreach $sur (@surfaces) {
+            if ($rs eq $sur) { $go="no";
+            }elsif ((@sitetype{$sur} eq @sitetype{$rs}) and ($tr eq "no") and ($m eq "no")) {
+                @tmp{$sur}="@tmp{$sur} @nsitetype{$rs}*coverage$rs"; };};
+        if ($go eq "yes") { $i="yes"; # done with python	if (@freq{$rs}) { &localIR_sub($rs,@ipath{$rs}); };
+			foreach $v (@variables) {
+                if ($rs eq $v) { $i="no"; };};
+            if ($i eq "yes") {
+                print OUT "coverage$rs=@coverage{$rs}; ";
+                push(@IniCon,"coverage$rs "); };}; };
     foreach $sur (@surfaces) { $tmp2=(); @tmp3=split(/\s+/,@tmp{$sur});
         foreach $c (@tmp3) {
             if (!$tmp2) { $tmp2="$c";
