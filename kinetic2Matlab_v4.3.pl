@@ -539,7 +539,7 @@ sub thermo_sub {
             print OUT "area$sys=@Acat{@sitetype{$sys}}*Nsites$sys;\tfprintf(fileID, \'surface area = %.15E\\n\',area$sys);\n";
             $done=1;
         }else{
-            print OUT "area$sys=@Acat{@sitetype{$sur}};\tfprintf(fileID, \'surface area = %.15E\\n\',area$sys);\n";
+            print OUT "area$sys=@Acat{@sitetype{$sys}};\tfprintf(fileID, \'surface area = %.15E\\n\',area$sys);\n";
             $done=1; };
         print OUT "\t\t\t%_____________qtrans and qrots for a solid that does not move/rotate is one_____________\n";
         print OUT "    qtrans3D$sys=1;\n"; push(@variable,"qtrans3D$sys");
@@ -924,11 +924,15 @@ sub Interpolate_sub {
     if ($#tmp >= 4) {
         print OUT "\tE$sys=interp1(x$sys, Ey$sys, coverage$sys, 'pchip','extrap');\n";
         print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'pchip', 'extrap');\n";
-        print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, interp1(x$sys, Ey$sys, 0:0.1:1, 'pchip', 'extrap'),'-b');\n\n";
+        print OUT "\tif T == $itemp\n";
+        print OUT "\t\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, interp1(x$sys, Ey$sys, 0:0.1:1, 'pchip', 'extrap'),'-b');\n";
+        print OUT "\tend\n\n";
     }else{
         print OUT "\tE$sys=interp1(x$sys, Ey$sys, coverage$sys, 'makima','extrap');\n";
         print OUT "\tQ3D$sys=interp1(x$sys, Qy$sys, coverage$sys, 'makima', 'extrap');\n";
-        print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, interp1(x$sys, Ey$sys, 0:0.1:1, 'makima', 'extrap'),'-b');\n\n";};
+        print OUT "\tif T == $itemp\n";
+        print OUT "\tplot(x$sys, Ey$sys, 'o', 0:0.1:1, interp1(x$sys, Ey$sys, 0:0.1:1, 'makima', 'extrap'),'-b');\n";
+        print OUT "\tend\n\n"; };
 #    close OUT;
     return("E$sys","Q3D$sys");
 }; #--> sub Interpolate
@@ -1934,7 +1938,7 @@ sub equations_sub {
                     $Appequation{$fpro}="$Appequation{$fpro}+(stoichio$pr$fpro/stoichio$pr$tmpcat)*rate$pr"; };};
         };
     }; # for process
-#--------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------
 	%tmp=(); $rows=0;
     foreach $rs (@react_species) { $go="no";
         if (($Appequation{$rs}) or ($Desequation{$rs})) { $go="yes"; };
@@ -1945,7 +1949,7 @@ sub equations_sub {
             @EQ[@y{$rs}]=$equation{$rs}; $rows++; };};
     foreach $sur (@surfaces) {
         if (@y{$sur}) { $rows++; };};
-    $rows=$rows-1;
+# 25/06/2021    $rows=$rows-1;
     if ($fileout ne "RateControl") { open OUT, ">>$fileout.m"; };
     if ($fileout ne "const_TEMP") { print OUT " dydt=zeros($rows,1);\n"; };
     @DRCeq=();
