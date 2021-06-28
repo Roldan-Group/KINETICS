@@ -68,7 +68,8 @@ foreach $line (@in) {
             if ($tag[4]) { $ttemp=@tag[4]; }; };
         if (@tag[0] eq 'RTIME') {
             if ($tag[3]) { $itime=0.0; $ftime=@tag[2]; $ttime=@tag[3];
-            }else{ $itime=@tag[2]; }; };
+            }else{ $itime=@tag[2]; };
+            if ($ttime == 0) { print "  Time-step cannot be $ttime\n"; exit 0; }; };
         if (@tag[0] eq 'RVEXT') {    $nVext=@tag[2];
             if ($tag[3]) { $pVext=@tag[3]; };
             if ($tag[4]) { $sVext=@tag[4]; }; };
@@ -1716,7 +1717,8 @@ sub ODE_closingloops_sub {
         foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
         print OUT "\\n\',V,pH,T,results(end,:));\n";
         if ($ttemp) { print OUT " end % Temperature\n"; };
-        print OUT " end % coverage from adsorbed $TPRmolecule\n";
+        if (($TPRmolecule) and $pressure{$TPEmolecule} != 0) {
+            print OUT " end % coverage from adsorbed $TPRmolecule\n";}
     }elsif ($exp eq "const_TEMP") {
         print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
         foreach $Rs (@Rspecies) { print OUT "  %.15E"; };

@@ -8,6 +8,9 @@
 	USAGE: Plot_v.py file.mk.in
 		 : Plot_v.py file.mk.in  n n 1 0 0 all 1.0 0
 
+
+	** molecues and surface_species are only those systems with NO negative frequencies
+
 '''
 
 
@@ -200,10 +203,10 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 			else:
 				if temp == min(temp_range[:-1]):
 					label_comment = ''
-					if type(plot_molecules) is int:
-						label_comment = labels_species[plot_molecules] + "=" + str(round(species[i, plot_molecules], 2))
+					if type(plot_species) is int:
+						label_comment = labels_species[plot_species] + "=" + str(round(species[i, plot_species], 2))
 					else:
-						for j in range(len(plot_molecules)):
+						for j in range(len(plot_species)):
 							if species[i, j] != 0:
 								label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
 			if label_comment in plot_ini_species:
@@ -802,10 +805,10 @@ for i in range(len(conditions)):
 	else:
 		if v == min(v_range) and ph == min(ph_range) and temp == min(temp_range[:-1]):
 			label_comment = ''
-			if type(plot_molecules) == int:
-				label_comment = labels_species[plot_molecules] + "=" + str(round(species[i, plot_molecules], 2))
-			elif type(plot_molecules) == list:
-				for j in range(len(plot_molecules)):
+			if type(plot_species) == int:
+				label_comment = labels_species[plot_species] + "=" + str(round(species[i, plot_species], 2))
+			elif type(plot_species) == list:
+				for j in range(len(plot_species)):
 					if species[i, j] != 0:
 						label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
 			if label_comment != '':
@@ -848,8 +851,9 @@ if experiment == "const_TEMP" or experiment == "variable_TEMP":
 					plot_v, plot_ph, plot_temp, plot_time, plot_systems, plot_ini_composition)
 elif experiment == "TPR":
 	for spe in plot_systems:
+		ir = IRs(freq_path, [labels_species[spe]])
 		Species_2D(experiment, labels_species, conditions, species, time_range,
-					plot_v, plot_ph, plot_temp, plot_time, spe, plot_ini_composition)
+					plot_v, plot_ph, plot_temp, plot_time, spe, plot_ini_composition, ir)
 
 
 
