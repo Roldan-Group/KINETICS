@@ -6,8 +6,10 @@
 
 
 	USAGE: Plot_v.py file.mk.in
-							thermo krate exp V pH T t spec colour
-		 : Plot_v.py file.mk.in  n n 1 0 0 all 1.0 0
+							thermo krate const_T V pH T t spec initial_comp? colour
+		 : Plot_v.py file.mk.in  n n 1 0 0 all 1.0 0 0 XX
+							thermo krate TPR V pH spec initial_comp?
+		 : Plot_v.py file.mk.in  n n 1 0 0 0 0
 
 
 	** molecues and surface_species are only those systems with NO negative frequencies
