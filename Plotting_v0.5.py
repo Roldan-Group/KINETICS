@@ -6,6 +6,7 @@
 
 
 	USAGE: Plot_v.py file.mk.in
+							thermo krate exp V pH T t spec colour
 		 : Plot_v.py file.mk.in  n n 1 0 0 all 1.0 0
 
 
