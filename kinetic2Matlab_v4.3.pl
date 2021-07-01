@@ -946,63 +946,53 @@ sub ProcessE_sub {
     ($typeP,$pr)=@_;
     open OUT, ">>processes.m";
 #    print OUT "\n";
-    @Etmp=(); @Esyms=();
-    foreach $R (@PR) {
+    @Etmp=(); @Esyms=("T");
+    foreach $R (@PR) { push(@Esyms, "E$R");
         foreach $interp (@interpolated) {
-            if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
-                print OUT "%   $interp=@tmp[2];\n"; };};
+            if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   $interp=@tmp[2];\n"; };};
         if (@en{$R}) { push(@Etmp,"+stoichio$pr$R*@en{$R}");
-        }else{ push(@Etmp,"+stoichio$pr$R*E$R"); push(@Esyms,"E$R"); };
+        }else{ push(@Etmp,"+stoichio$pr$R*E$R"); };
     };
     if (@PTS) { @Etmp2=();
-        foreach $TS (@PTS) {
+        foreach $TS (@PTS) { push(@Esyms, "E$TS");
             foreach $interp (@interpolated) {
-                if ($interp eq $TS) { @tmp=split(/\s+/,@interpsys{$R});
-                print OUT "%   $interp=@tmp[2];\n"; };}
+                if ($interp eq $TS) { @tmp=split(/\s+/,@interpsys{$R}); print OUT "%   $interp=@tmp[2];\n"; };}
             @imafrq=split(/\s+/,@imafreq{$TS});           # Quantum tunnelling [J. Chem. Phys. 2006, 124, 044706.]
             print OUT "   Qtunnel$TS=(kb*T/toeV)*log(";
             foreach $if (@imafrq) {
                 print OUT "sinh($if*(h*c)/(2*kb*T))/($if*(h*c)/(2*kb*T))*"; }; print OUT "1);\n";
             if (@en{$TS}) { push(@Etmp2,"+@en{$TS}+Qtunnel$TS");
-            }else{ push(@Etmp2,"+E$TS+Qtunnel$TS"); push(@Esyms,"E$TS"); };
+            }else{ push(@Etmp2,"+E$TS+Qtunnel$TS"); };
         };
-        print OUT "syms";
-        foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
-        print OUT "   Ereactants$pr=0@Etmp;\n";
-        print OUT "   Ets$pr=0@Etmp2;\n";
     }elsif (!@PTS) {
         if (($typeP eq 'A') or ($typeP eq 'a')) {
             @Etmp2=();
             foreach $R (@PR) {
+                if (!grep("E$R", @Esyms)) {push(@Esyms, "E$R"); };
                 foreach $interp (@interpolated) {
-                    if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$R});
-                print OUT "%   $interp=@tmp[2];\n"; };}
+                    if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$R}); print OUT "%   $interp=@tmp[2];\n"; };}
                 if (@en{$R}) { push(@Etmp2,"+stoichio$pr$R*@en{$R}");
-                }else{ push(@Etmp2,"+stoichio$pr$R*E$R"); push(@Esyms,"E$R");};
+                }else{ push(@Etmp2,"+stoichio$pr$R*E$R");};
                 foreach $mol (@molecules) {
                     if ($R eq $mol) { push(@Etmp2,"+stoichio$pr$R*(-Z$R+Z2D$R)"); push(@Esyms,"Z$R Z2D$R"); }; };
             };
-            print OUT "syms";
-            foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
-            print OUT "   Ereactants$pr=0@Etmp;\n";
-            print OUT "   Ets$pr=0@Etmp2;\n";
         }else{
             @Etmp2=();
-            foreach $P (@PP) {
+            foreach $P (@PP) { push(@Esyms,"E$P");
                 foreach $interp (@interpolated) {
-                    if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$R});
-                print OUT "%   $interp=@tmp[2];\n"; };} print OUT "\n";
+                    if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$R}); print OUT "%   $interp=@tmp[2];\n"; };}
+                print OUT "\n";
                 if (@en{$P}) { push(@Etmp2,"+stoichio$pr$P*@en{$P}");
-                }else{ push(@Etmp2,"+stoichio$pr$P*E$P"); push(@Esyms,"E$P"); };
+                }else{ push(@Etmp2,"+stoichio$pr$P*E$P"); };
                 foreach $mol (@molecules) {
                     if ($P eq $mol) { push(@Etmp2,"+stoichio$pr$P*(-Z$P+Z2D$P)"); push(@Esyms,"Z$P Z2D$P"); }; };
             };
-            print OUT "syms";
-            foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
-            print OUT "   Ereactants$pr=0@Etmp;\n";
-            print OUT "   Ets$pr=0@Etmp2;\n";
         }; # if A D or R
     }; # if TS
+    print OUT "syms";
+    foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
+    print OUT "   Ereactants$pr=0@Etmp;\n";
+    print OUT "   Ets$pr=0@Etmp2;\n";
 	print OUT "AE$pr=Ets$pr-Ereactants$pr;\n";
     close OUT;
     return();
@@ -1010,7 +1000,7 @@ sub ProcessE_sub {
 #=======================================================================================================================
 sub ProcessQ_sub {
     ($typeP,$pr)=@_;
-    @Qtmp=(); @Qsyms=();
+    @Qtmp=(); @Qsyms=("T");
     if (($typeP eq 'A') or ($typeP eq 'a')) {
         foreach $R (@PR) { $go='no';
             foreach $mol (@molecules) {
@@ -1714,17 +1704,17 @@ sub ODE_closingloops_sub {
     open OUT, ">>$exp.m";
     if ($exp eq "TPR") {
         print OUT "\n   fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
-        foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
+        foreach $Rs (@Rspecies) { print OUT "  %.5G"; };
         print OUT "\\n\',V,pH,T,results(end,:));\n";
         if ($ttemp) { print OUT " end % Temperature\n"; };
         if (($TPRmolecule) and $pressure{$TPEmolecule} != 0) {
             print OUT " end % coverage from adsorbed $TPRmolecule\n";}
     }elsif ($exp eq "const_TEMP") {
         print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
-        foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
+        foreach $Rs (@Rspecies) { print OUT "  %.5G"; };
         print OUT "\\n\',V,pH,T,results(i,:));\n   end\n";
         if ($nVext) {
-            print OUT "   if T == 300\n     fprintf(fileID2, \' %.3f %.3f %.6f %.15E\\n\',T, abs(subs(V/$ftime)),V,RedoxIntensity);\n   end\n\n"; };
+            print OUT "   if T == 300\n     fprintf(fileID2, \' %.3f %.3f %.6f %.5G\\n\',T, abs(subs(V/$ftime)),V,RedoxIntensity);\n   end\n\n"; };
         foreach $mol (@molecules) {
             if (($ipressure{$mol}) and ($fpressure{$mol})) {
                 print OUT " end % P$mol\n"; }; };
@@ -1739,7 +1729,7 @@ sub ODE_closingloops_sub {
             print OUT " end % Vext\n"; };
     }elsif ($exp eq "variable_TEMP") {
         print OUT "\n   for i = 1:$timeSteps\n      fprintf(fileID,\' %.2f  %.2f  %.2f  %.6f";
-        foreach $Rs (@Rspecies) { print OUT "  %.15E"; };
+        foreach $Rs (@Rspecies) { print OUT "  %.5G"; };
         print OUT "\\n\',V,pH,T,results(i,:));\n   end\n";
         if ($ttemp) { print OUT " end % Temperature\n"; };
         foreach $mol (@molecules) {
@@ -1975,7 +1965,7 @@ sub equations_sub {
             if ($rs eq $sur) { $go="no"; };};
         if ($go eq "yes") {
             print OUT "   dydt(@y{$rs})=$equation{$rs}; % coverage$rs\n";
-            @tmp{@sitetype{$rs}}="@tmp{@sitetype{$rs}} dydt(@y{$rs})"; };};
+            @tmp{@sitetype{$rs}}="@tmp{@sitetype{$rs}} @nsitetype{$rs}*dydt(@y{$rs})"; };}; # << corrected by the site's relative area
     foreach $sur (@surfaces) { @balan=split(/\s+/,@tmp{@sitetype{$sur}});
         foreach $b (@balan) {
             if ($b) { push(@Nline,$b); }; }; @balan=@Nline; @Nline=();
