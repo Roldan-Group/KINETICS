@@ -866,7 +866,7 @@ sub process_sub {
     foreach $r (@PR) {
         printf OUT3 "%3s*%s ",$stoichio{$r}->[$pr],$r;	$processWidth=$processWidth+max(map length, $r)+3; };
     print OUT3 ">";
-    foreach $ts (@PTS) { pintf OUT3 " $ts "; 				$processWidth=$processWidth+max(map length, $ts)+3; };
+    foreach $ts (@PTS) { printf OUT3 " $ts "; 				$processWidth=$processWidth+max(map length, $ts)+3; };
     print OUT3 ">";
     foreach $p (@PP) { printf OUT3 " $stoichio{$p}->[$pr]*%-s",$p; 	$processWidth=$processWidth+max(map length, $p)+3; };
     printf OUT3 "%-*s\t",40-($processWidth);
