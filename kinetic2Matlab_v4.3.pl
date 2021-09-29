@@ -1950,7 +1950,7 @@ sub equations_sub {
             @EQ[@y{$rs}]=$equation{$rs}; $rows++; };};
     foreach $sur (@surfaces) {
         if (@y{$sur}) { $rows++; };};
-# 25/06/2021    $rows=$rows-1;
+    $rows=$rows-1;
     if ($fileout ne "RateControl") { open OUT, ">>$fileout.m"; };
     if ($fileout ne "const_TEMP") { print OUT " dydt=zeros($rows,1);\n"; };
     @DRCeq=();
