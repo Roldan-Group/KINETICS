@@ -15,8 +15,8 @@ import numpy as np
 from ase import Atoms
 from ase.io import read, write
 
-Parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE", "RCOVERAGE",
-			  "INTERPOLATE", "END"]
+parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "SYMFACTOR", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE",
+			  "RCOVERAGE", "INTERPOLATE", "END"]
 
 #print("\n")
 
@@ -38,9 +38,9 @@ def Common_Properties(system, name):
 
 #..............................................................................................................
 
-def System_Properties(File, system, ssites):
+def System_Properties(File, system, ssites, symmetry_factor):
 	del system.constraints
-	symmetry_factor = None
+#	symmetry_factor = None			# Alberto 26/10/2022 commented
 	Area = None
 
 	system_type = "Molecule"
@@ -67,8 +67,7 @@ def System_Properties(File, system, ssites):
 #			system_type = "Molecule"
 
 # Searches for the symmetry of the Molecule
-	if system_type == "Molecule":
-
+	if system_type == "Molecule" and symmetry_factor is None:
 		output = open(File,"r")
 # if File is from VASP (OUTCAR) ----------------------------------------------------------------- not completed
 		try:
@@ -227,6 +226,7 @@ system = None
 name = None
 frequencies = None
 frequencies_2D = None
+symmetry_factor = None
 Inertia_moments = None
 ssites = None
 sites = None
@@ -250,6 +250,8 @@ for line in lines:
 		File = words[2]
 	elif words[0] == "FREQPATH":
 		FreqFile = words[2]
+	elif words[0] == "SYMFACTOR":
+		symmetry_factor = words[2]
 	elif words[0] == "ISITES":
 		try:
 			n_sites = float(words[2])
@@ -287,7 +289,7 @@ for line in lines:
 				fd = open(File)
 				system = read(File, index=-1)
 				xyzPath, mag = Common_Properties(system, name)
-				system_type, symmetry_factor, Area = System_Properties(File, system, ssites)
+				system_type, symmetry_factor, Area = System_Properties(File, system, ssites, symmetry_factor)
 				Inertia_moments = system.get_moments_of_inertia()
 
 				software = None
@@ -406,7 +408,7 @@ for line in lines:
 		icoverage = None
 		rcoverage = None
 		interpolate = None
-	elif words[0] not in Parameters:
+	elif words[0] not in parameters:
 # write lines not related with the data from the systems
 	   ifile.write (line)
 ifile.close()

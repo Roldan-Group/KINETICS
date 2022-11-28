@@ -260,17 +260,19 @@ foreach $line (@in) {
     if ( $line ) { @tag=split(/\s+/,$line);
         foreach $t (@tag) {
             if (($t) or (looks_like_number($t))) { push(@Nline,$t); }; }; @tag=@Nline; @Nline=();
-        if ((@tag[0] eq 'PROCESS') or (@tag[0] eq 'PROCESS=')) {
+        if ((@tag[0] eq 'PROCESS') or (@tag[0] eq 'PROCESS=')) {                                                        # process
             @tmp=split(/=/,$line); @itmp=split(/\s+/,@tmp[1]); $t=0; $c=0; @proc=();
             foreach $t (@itmp) {
                 if ($t) { push(@Nline,$t); }; }; @itmp=@Nline; @Nline=();
+            $t=0;
             while (($c ne '#') and (@itmp[$t])) { push(@proc,@itmp[$t]); $t++; @cc=split(//,@itmp[$t]); $c=@cc[0]; };
             @process[$nprocess]="@proc"; $nprocess++;
         };# if PROCESS
-        if ((@tag[0] eq 'STOICHIOMETRY') or (@tag[0] eq 'STOICHIOMETRY=')) {
+        if ((@tag[0] eq 'STOICHIOMETRY') or (@tag[0] eq 'STOICHIOMETRY=')) {                                            # stoichiometry
             @tmp=split(/=/,$line); @itmp=split(/\s+/,@tmp[1]); $t=0;$c=0; @stoi=();
             foreach $t (@itmp) {
                 if ($t) { push(@Nline,$t); }; }; @itmp=@Nline; @Nline=();
+            $t=0;
             while (($c ne '#') and (@itmp[$t])) { push(@stoi,@itmp[$t]); $t++; @cc=split(//,@itmp[$t]); $c=@cc[0];};
             @stoichiometry[$#process]="@stoi";
         };# if STOICHIOMETRY
