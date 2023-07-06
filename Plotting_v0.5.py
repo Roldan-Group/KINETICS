@@ -12,7 +12,7 @@
 		 : Plot_v.py file.mk.in  n n 1 0 0 0 0
 
 
-	** molecues and surface_species are only those systems with NO negative frequencies
+	** molecules and surface_species are only those systems with NO negative frequencies
 
 '''
 
@@ -598,6 +598,7 @@ else:
 systems = []
 molecules = []
 surface_species = []
+surface = []
 processes = []
 freq_path = {}
 for line in lines:
@@ -609,12 +610,14 @@ for line in lines:
 	if words[0] == "FREQPATH":
 		freq_path[systems[-1]] = words[2]
 	if words[0] == "FREQ":
-		freq = ["no" for i in words[2:] if float(i) < 0]
+		freq = ["no" for i in words[2:] if float(i) < -100]		# -100 to include frustrated Rotations & Translations
 	if words[0] == "IPRESSURE" or words[0] == "RPRESSURE":
 		molecules.append(systems[-1])
 	if words[0] == "ICOVERAGE" or words[0] == "RCOVERAGE":
 		if "no" not in freq:
 			surface_species.append(systems[-1])
+	if words[0] == "IACAT":
+		surface.append(systems[-1])
 	if words[0] == "PROCESS":
 		processes.append(words[2])
 
@@ -839,23 +842,23 @@ plot_systems = [i for i in range(len(labels_species)) if labels_species[i] in pl
 if experiment == "const_TEMP" or experiment == "variable_TEMP":
 	if type(plot_temp) is float and type(plot_time) is list:
 		ir = IRs(freq_path, plot_species)
-		Species_2D(experiment, labels_species, conditions, species, time_range,
+		Species_2D(experiment, labels_species, conditions, species, time_range[:-1],
 					plot_v, plot_ph, plot_temp, plot_time, plot_systems, plot_ini_composition, ir)
 
 	elif type(plot_temp) is list and type(plot_time) is float:
 		ir = IRs(freq_path, plot_species)
-		Species_2D(experiment, labels_species, conditions, species, time_range,
+		Species_2D(experiment, labels_species, conditions, species, time_range[:-1],
 					plot_v, plot_ph, plot_temp, plot_time, plot_systems, plot_ini_composition, ir)
 	elif type(plot_temp) is list and type(plot_time) is list:
 		if len(plot_systems) > 1:
 			print("Select the right conditions T, t, and number of species")
 			exit()
-		Species_3D(experiment, labels_species, conditions, species, time_range,
+		Species_3D(experiment, labels_species, conditions, species, time_range[:-1],
 					plot_v, plot_ph, plot_temp, plot_time, plot_systems, plot_ini_composition)
 elif experiment == "TPR":
 	for spe in plot_systems:
 		ir = IRs(freq_path, [labels_species[spe]])
-		Species_2D(experiment, labels_species, conditions, species, time_range,
+		Species_2D(experiment, labels_species, conditions, species, time_range[:-1],
 					plot_v, plot_ph, plot_temp, plot_time, spe, plot_ini_composition, ir)
 
 
