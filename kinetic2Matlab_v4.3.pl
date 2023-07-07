@@ -1607,14 +1607,14 @@ sub ODE_call_sub {
             }else{ print OUT " AEph$pr=0;\n"; };
 #-----------------------------------------------------------------------------------------------------------------------
             if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
-                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
+                print OUT "     Krate$pr=process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr");
             }else{
                 print OUT "     Krate$pr=process$pr\{j,3} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr"); };
         }else{
             if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
-                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
+                print OUT "     Krate$pr=process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr");
             }else{
                 print OUT "     Krate$pr=process$pr\{j,3} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
@@ -2144,12 +2144,12 @@ sub Reset_Conditions_0_sub {
 
 		for ($i=1; $i<=$#process; $i++ ) { if (($i eq $pr) or ($i eq $reverse[$pr])) {
 			if (($typeproc[$i] eq "A") or ($typeproc[$i] eq "a")) {
-        	       		print OUT "clear Krate$i;  Krate$i=process$i\{j,2}*process$i\{j,4}*exp(-((AEv$i+AEph$i+$BARRIER)*toeV)/(kb*T));\n";
+        	       		print OUT "clear Krate$i;  Krate$i=process$i\{j,4}*exp(-((AEv$i+AEph$i+$BARRIER)*toeV)/(kb*T));\n";
 	       		}else{  print OUT "clear Krate$i;  Krate$i=process$i\{j,3}*exp(-((AEv$i+AEph$i+$BARRIER)*toeV)/(kb*T));\n"; };
 			$done[$pr]=1; $done[$reverse[$pr]]=1;
 		}else{
 			if (($typeproc[$i] eq "A") or ($typeproc[$reverse[$i]] eq "a")) {
-        	               	print OUT "clear Krate$i;  Krate$i=process$i\{j,2}*process$i\{j,4}*exp(-((AEv$i+AEph$i)*toeV)/(kb*T));\n";
+        	               	print OUT "clear Krate$i;  Krate$i=process$i\{j,4}*exp(-((AEv$i+AEph$i)*toeV)/(kb*T));\n";
 	                }else{  print OUT "clear Krate$i;  Krate$i=process$i\{j,3}*exp(-((AEv$i+AEph$i)*toeV)/(kb*T));\n"; };
 		};};
                 ()=&Reset_Conditions_1_sub($fileout); open OUT, ">>$fileout.m";
