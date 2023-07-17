@@ -1121,7 +1121,8 @@ sub ProcessK_sub {
             if ($R eq $interp) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};};
     if (($typeP eq 'A') or ($typeP eq 'a')) {
         print OUT "sticky$pr=(Qts$pr/Qreactants$pr)*exp(-(AE$pr*toeV/(kb*T)));\n";
-        print OUT "Arrhenius$pr=area$tmp*1/((2*pi*Mass$tmp*kb*T)^(1/2));\n";
+        # print OUT "Arrhenius$pr=area$tmp*1/((2*pi*Mass$tmp*kb*T)^(1/2));\n";
+        print OUT "Arrhenius$pr=Av*h**2/(2*pi*Mass$tmp*kb*T)*(kb*tT/(2*pi*Mass$tmp))**0.5/0.0224;\n";  ## Copied from Xiuyuan
         print OUT "Krate$pr=Arrhenius$pr*sticky$pr;\n";
     }else{
         print OUT "Arrhenius$pr=(kb*T/h)*(Qts$pr/Qreactants$pr);\n";

@@ -610,7 +610,7 @@ for line in lines:
 	if words[0] == "FREQPATH":
 		freq_path[systems[-1]] = words[2]
 	if words[0] == "FREQ":
-		freq = ["no" for i in words[2:] if float(i) < -150]		# -150 to include frustrated Rotations & Translations, e.g. NH3 rotation
+		freq = ["no" for i in words[2:] if float(i) < -150]		# Alberto -150 to include frustrated Rotations & Translations, e.g. NH3 rotation
 	if words[0] == "IPRESSURE" or words[0] == "RPRESSURE":
 		molecules.append(systems[-1])
 	if words[0] == "ICOVERAGE" or words[0] == "RCOVERAGE":
