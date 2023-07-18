@@ -510,7 +510,12 @@ def	Extract_numeric_data(experiment, labels_species, conditions, species, time_r
 ######################################################################################################################
 
 # reads the initial file mk.in
-input_file = sys.argv[1]
+if sys.argv[1].endswith("mk.in"):
+	input_file = sys.argv[1]
+else:
+	print("   >>> Give the input file *.mk.in")
+	exit()
+
 try:
 	f = open(input_file)
 	lines = f.readlines()
