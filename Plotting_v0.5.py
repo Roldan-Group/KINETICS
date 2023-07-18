@@ -54,6 +54,7 @@ def Line_colour():
 
 	return str(icolour[int(answer)])
 
+
 # Library containing the parameters fitting the Shomate equations from NIST
 def Library (system):
 	shomate_equation = {
@@ -67,6 +68,7 @@ def Library (system):
 		"CO2":   [298, 1200, 24.99735,   55.18696,  -33.69137,  7.948387, -0.136638,  -403.6075,  228.2431, -393.5224],
 						 }
 	return shomate_equation[system]
+
 
 def Thermodynamics(syst):
 	# define the Thermodynamic functions
@@ -177,8 +179,8 @@ def Reaction_Constants(processes):
 	plt.show()
 
 
-def	Species_2D(experiment, labels_species, conditions, species, time_range,
-					   plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species, ir):
+def Species_2D(experiment, labels_species, conditions, species, time_range, temp_range,
+				  plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species, ir):
 # plot_species is plot_systems
 	y = {}
 	if type(plot_temp) is list:
@@ -213,7 +215,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 							if species[i, j] != 0:
 								label_comment += labels_species[j] + "=" + str(round(species[i, j], 2))
 			if label_comment in plot_ini_species:
-# multiple temperatures, one time
+				# multiple temperatures, one time
 				if type(plot_temp) is list and temp in plot_temp:
 					if time == plot_time:
 						if type(plot_species) is list:
@@ -229,7 +231,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 								y[labels_species[spec]] = [species[i, spec]]
 							else:
 								y[labels_species[spec]].append(species[i, spec])
-# one temperature, multiple times
+				# one temperature, multiple times
 				elif type(plot_temp) is float and temp == plot_temp:
 					if time in plot_time:
 						if type(plot_species) is list:
@@ -246,15 +248,15 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 							else:
 								y[labels_species[spec]].append(species[i, spec])
 	if experiment != "TPR":
-		plt.ylabel("$\\theta_{i}$ (ML)", size="16")
-		plt.yticks(np.arange(0, 1, step=0.1))
+		plt.ylabel("$\\chi_{i}$", size="16")
+		# plt.yticks(np.arange(0, 1, step=0.1))
 		plt.subplots_adjust(left=0.15, right=0.75, top=0.9, bottom=0.15)
 		for spec in y:
 			if len(y) > 1:
-				plt.plot(x, y[spec], ls="-", label=spec + "$_{" + plot_ini_species + "}$")
+				plt.plot(x, y[spec], ls="-", label=spec + "$_{t=0;" + plot_ini_species + "}$")
 			else:
 				line_color = Line_colour()
-				plt.plot(x, y[spec], ls="-", color=line_color, label=spec + "$_{" + plot_ini_species + "}$")
+				plt.plot(x, y[spec], ls="-", color=line_color, label=spec + "$_{t=0;" + plot_ini_species + "}$")
 	else:
 		plt.ylabel("$\\frac{\\delta P_{i}}{\\delta T}$ (a.u.)", size="16")
 		plt.yticks([])
@@ -273,7 +275,7 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 						y_tpr = []
 						y_tpr.append(0)
 						comment = str(spec) + "= " + str(round(y[spec][j], 2))
-#	plt.ylim(-0.01, 1.01)
+	# plt.ylim(-0.01, 1.01)
 #	plt.title(name)
 	plt.legend(bbox_to_anchor=(1.0, 1), loc='upper left')
 #	plt.savefig("./KINETICS/PLOTS/"+experiment+"/"+name+".svg",
@@ -306,7 +308,6 @@ def	Species_2D(experiment, labels_species, conditions, species, time_range,
 		IR_3D(experiment, plot_temp, plot_time, frequencies, new_x, ir_z_spectra, [i for i in y])
 		Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
 						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
-
 
 
 def	Species_3D(experiment, labels_species, conditions, species, time_range,
@@ -363,6 +364,7 @@ def	Species_3D(experiment, labels_species, conditions, species, time_range,
 	Extract_numeric_data(experiment, labels_species, conditions, species, time_range,
 						 plot_v, plot_ph, plot_temp, plot_time, plot_species, plot_ini_species)
 
+
 def SaveFig(experiment):
 	answer = str(input("Would you like to save the figure (y/n)?\n"))
 	if answer == "y":
@@ -398,6 +400,7 @@ def IR_3D(experiment, plot_temp, plot_time, x, y, z, spec_names):
 #				bbox_inches='tight', dpi=300, orientation='landscape', transparent=True)
 	SaveFig(experiment)
 	plt.show()
+
 
 def Species(molecules, surface_species):
 	labels_spe = []
@@ -841,18 +844,17 @@ if experiment != "TPR":
 		plot_ini_composition = initial_compositions[int(comp)]
 else:
 	plot_ini_composition = initial_compositions
-
+# ---------- PLOTTING ---------
 plot_systems = [i for i in range(len(labels_species)) if labels_species[i] in plot_species]
 
 if experiment == "const_TEMP" or experiment == "variable_TEMP":
 	if type(plot_temp) is float and type(plot_time) is list:
 		ir = IRs(freq_path, plot_species)
-		Species_2D(experiment, labels_species, conditions, species, time_range[:-1],
+		Species_2D(experiment, labels_species, conditions, species, time_range[:-1], temp_range[:-1],
 					plot_v, plot_ph, plot_temp, plot_time, plot_systems, plot_ini_composition, ir)
-
 	elif type(plot_temp) is list and type(plot_time) is float:
 		ir = IRs(freq_path, plot_species)
-		Species_2D(experiment, labels_species, conditions, species, time_range[:-1],
+		Species_2D(experiment, labels_species, conditions, species, time_range[:-1], temp_range[:-1],
 					plot_v, plot_ph, plot_temp, plot_time, plot_systems, plot_ini_composition, ir)
 	elif type(plot_temp) is list and type(plot_time) is list:
 		if len(plot_systems) > 1:
