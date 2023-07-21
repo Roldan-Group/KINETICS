@@ -903,9 +903,12 @@ sub Import_sub {
 #	    print OUT "    IR$sys=readtable(\'./IRs/originals/$sys/intensities/IRSPECTRA\');\n";
 	    foreach $mol (@molecules) {
             if ($sys eq $mol) {
-                print OUT "q3Dnotrans$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3Dnotrans$sys.dat\');\n";
-                print OUT "qt$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans2D$sys.dat\');\n";
-                print OUT "qv$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib2D$sys.dat\');\n";
+                # Alberto 19/07/2023 - Adapted to read qrot and others instead of Q3Dnotrans
+                print OUT "qt2d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans2D$sys.dat\');\n";
+                print OUT "qt3d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans3D$sys.dat\');\n";
+                print OUT "qv2d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib2D$sys.dat\');\n";
+                print OUT "qv3d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib3D$sys.dat\');\n";
+                print OUT "qr$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qrot3D$sys.dat\');\n";
                 print OUT "ZPE2D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE2D$sys.dat\');\n";
                 print OUT "ZPE$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE$sys.dat\');\n";
                 print OUT "Mass$sys=@Tmass{$sys}; Nsites$sys=@nsitetype{$sys};\n";
@@ -1003,31 +1006,36 @@ sub ProcessE_sub {
 sub ProcessQ_sub {
     ($typeP,$pr)=@_;
     @Qtmp=(); @Qsyms=("T");
-    if (($typeP eq 'A') or ($typeP eq 'a')) {
-        foreach $R (@PR) { $go='no';
-            foreach $mol (@molecules) {
-                if ($R eq $mol) { $go='yes'; };
-            };
-            if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R");
-                push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
-            }else{
-                if (@q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
-                    foreach $inter (@interpolated) {
-                        if ($inter eq $R) { push(@Qsyms,"Q3D$R");};
-                    };
-                }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
+    # Alberto 19/07/2023  REACTANT is a 3D free molecule or a 3D system
+    #if (($typeP eq 'A') or ($typeP eq 'a')) {
+    #    foreach $R (@PR) { $go='no';
+    #        foreach $mol (@molecules) {
+    #            if ($R eq $mol) { $go='yes'; };
+    #        };
+    #        if ($go eq 'yes') {
+    #            push(@Qtmp,"*Q3D$R^stoichio$pr$R");     # Alberto Reactant is the free molecule
+    #            push(@Qsyms,"Q3D$R");
+    #            # push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R");
+    #            # push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
+    #        }else{
+    #            if (@q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+    #                foreach $inter (@interpolated) {
+    #                    if ($inter eq $R) { push(@Qsyms,"Q3D$R");};
+    #                };
+    #            }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
+    #        foreach $interp (@interpolated) {
+    #            if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
+    #                print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+    #    };
+    #}else{
+    foreach $R (@PR) {   # shifted ones towards left as if process is A has been removed
+        if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
             foreach $interp (@interpolated) {
-                if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
-                    print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-        };
-    }else{
-        foreach $R (@PR) {
-            if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) { push(@Qsyms,"Q3D$R"); @tmp=split(/\s+/,@interpsys{$R});
-                        @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-            }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};
-    };
+                if ($interp eq $R) { push(@Qsyms,"Q3D$R"); @tmp=split(/\s+/,@interpsys{$R});
+                    @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+        }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};
+    # };  because if process is A have been removed
+    # if TS exists
     if (@PTS) { @Qtmp2=();
         foreach $TS (@PTS) {
             if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}");
@@ -1036,13 +1044,16 @@ sub ProcessQ_sub {
                         @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
             }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };
         };
+    # Alberto 19/07/2023 -- changed Q3Dnotrans by qvib3D/qvib2D, qtrans/qtrans2D, and qrot accounting
+    #                       for the different A and D degrees of freedom
     }elsif (!@PTS) { @Qtmp2=();
         if (($typeP eq 'A') or ($typeP eq 'a')) {
             foreach $R (@PR) { $go='no';
                 foreach $mol (@molecules) {
                     if ($R eq $mol) { $go='yes'; };
                 };
-                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
+                if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
+                    push(@Qsyms,"qvib2D$R qtrans2D$R qrot$R");
                 }else{
                     if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R");
                         foreach $interp (@interpolated) {
@@ -1054,7 +1065,7 @@ sub ProcessQ_sub {
             foreach $P (@PP) { $go='no';
                 foreach $mol (@molecules) {
                     if ($P eq $mol) {  $go='yes'; }; };
-                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+                if ($go eq 'yes') { push(@Qtmp2,"*(qvib3D$P*qtrans2D$P*qrot$P)^stoichio$pr$P"); push(@Qsyms,"qvib3D$P qtrans2D$P qrot$P");
                 }else{
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
                         foreach $interp (@interpolated) {
@@ -1066,12 +1077,12 @@ sub ProcessQ_sub {
             foreach $R (@PR) { $go='no';
                 foreach $mol (@molecules) {
                     if ($R eq $mol) { $go='yes'; }; };
-                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R"); };
+                if ($go eq 'yes') { push(@Qtmp2,"*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R"); push(@Qsyms,"vib3D$R qtrans2D$R qrot$R"); };
             };
             foreach $P (@PP) { $go='no';
                 foreach $mol (@molecules) {
                     if ($P eq $mol) {  $go='yes'; }; };
-                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+                if ($go eq 'yes') { push(@Qtmp2,"*(qvib3D$P*qtrans2D$P*qrot$P)^stoichio$pr$P"); push(@Qsyms,"vib3D$P qtrans2D$P qrot$P");
                 }else{
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
                         foreach $interp (@interpolated) {
@@ -1206,8 +1217,8 @@ sub ProcessParameters_sub {
                 if ($R eq $mol) { $qmol="yes" };
             };
             if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
-                print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
-                print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
+                print OUT "      Q3D$R=PARTITION3D$R\{j,2}; qtrans2D$R=qt2d$R\{j,2};";
+                print OUT " qvib2D$R=qv2d$R\{j,2}; qrot$R=qr$R\{j,2};\n"; @do{$R}="no";
             }else{
 # 31/05/2021
                 foreach $interp (@interpolated) {
@@ -1233,8 +1244,8 @@ sub ProcessParameters_sub {
                 if ($P eq $mol) { $qmol="yes" };
             };
             if ($qmol eq "yes") {    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-                print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
-                print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
+                print OUT "      Q3D$P=PARTITION3D$P\{j,2}; qtrans2D$P=qt2d$P\{j,2};";
+                print OUT " qvib3D$P=qv3d$P\{j,2}; qrot$P=qr$P\{j,2};\n"; @do{$P}="no";
             }else{
                 foreach $interp (@interpolated) {
                     if ($interp eq $P) { @tmp=split(/\s+/,@interpsys{$interp});
@@ -1657,9 +1668,9 @@ sub ODE_call_sub {
     print OUT "\n   tspan=[$itime $ftime];\n   IC=[@Rspecies];\n";
 # alberto 09/2019
 	if ($exp ne "TPR") { $ode="myode";
-        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1;
+        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-10,'AbsTol',1e-10);\n",$#Rspecies+1;
     }else{ $ode="mytpr";
-        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1; };
+        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-10,'AbsTol',1e-10);\n",$#Rspecies+1; };
     print OUT "\nsolution=ode15s(\@(t,y) $ode(t,y,";
     foreach $trn (@transfer) {
         if ($trn ne @transfer[$#transfer]) { print OUT "$trn,";

@@ -253,10 +253,12 @@ def Species_2D(experiment, labels_species, conditions, species, time_range, temp
 		plt.subplots_adjust(left=0.15, right=0.75, top=0.9, bottom=0.15)
 		for spec in y:
 			if len(y) > 1:
-				plt.plot(x, y[spec], ls="-", label=spec + "$_{t=0;" + plot_ini_species + "}$")
+				# plt.plot(x, y[spec], ls="-", label=spec + "$_{t=0;" + plot_ini_species + "}$")
+				plt.plot(x, y[spec], ls="-", label=spec)
 			else:
 				line_color = Line_colour()
-				plt.plot(x, y[spec], ls="-", color=line_color, label=spec + "$_{t=0;" + plot_ini_species + "}$")
+				# plt.plot(x, y[spec], ls="-", color=line_color, label=spec + "$_{t=0;" + plot_ini_species + "}$")
+				plt.plot(x, y[spec], ls="-", color=line_color, label=spec)
 	else:
 		plt.ylabel("$\\frac{\\delta P_{i}}{\\delta T}$ (a.u.)", size="16")
 		plt.yticks([])
