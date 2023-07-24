@@ -1668,9 +1668,9 @@ sub ODE_call_sub {
     print OUT "\n   tspan=[$itime $ftime];\n   IC=[@Rspecies];\n";
 # alberto 09/2019
 	if ($exp ne "TPR") { $ode="myode";
-        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-10,'AbsTol',1e-10);\n",$#Rspecies+1;
+        printf OUT "   options=odeset('Refine',1,'NonNegative',(1:%d),'RelTol',1e-10,'AbsTol',1e-10);\n",$#Rspecies+1;
     }else{ $ode="mytpr";
-        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-10,'AbsTol',1e-10);\n",$#Rspecies+1; };
+        printf OUT "   options=odeset('Refine',1,'NonNegative',(1:%d),'RelTol',1e-10,'AbsTol',1e-10);\n",$#Rspecies+1; };
     print OUT "\nsolution=ode15s(\@(t,y) $ode(t,y,";
     foreach $trn (@transfer) {
         if ($trn ne @transfer[$#transfer]) { print OUT "$trn,";
