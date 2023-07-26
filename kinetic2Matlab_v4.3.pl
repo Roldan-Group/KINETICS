@@ -1085,8 +1085,8 @@ sub ProcessQ_sub {
                         push(@Qtmp2, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
                         push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
                     }elsif (($typeP eq 'DA') or ($typeP eq 'da')) { $comment="DIRECT ADSORPTION";
-                        push(@Qtmp2,"*qvib2D$R^stoichio$pr$R");
-                        push(@Qsyms,"qvib2D$R"); };
+                        push(@Qtmp2,"*(qvib2D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
+                        push(@Qsyms,"qvib2D$R qtrans2D$R qrot$R"); };
                 }else{
                     if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R");
                         foreach $interp (@interpolated) {
@@ -1171,10 +1171,10 @@ sub ProcessK_sub {
         foreach $interp (@interpolated) {
             if ($R eq $interp) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};};
     if (($typeP eq 'IA') or ($typeP eq 'ia') or ($typeP eq 'DA') or ($typeP eq 'da')) {
-        print OUT "sticky$pr=(Qts$pr/Qreactants$pr)*exp(-(AE$pr*toeV/(kb*T)));\n";
+        print OUT "sticky$pr=(Qts$pr/Qreactants$pr);\n"; # Alberto : since the change to D/I adsorption *exp(-(AE$pr*toeV/(kb*T)));\n";
         print OUT "Arrhenius$pr=area$tmp*1/((2*pi*Mass$tmp*kb*T)^(1/2));\n";
         # print OUT "Arrhenius$pr=Av*h^2/(2*pi*Mass$tmp*kb*T)*(kb*T/(2*pi*Mass$tmp))^0.5/0.0224;\n";  ## Copied from Xiuyuan
-        print OUT "Krate$pr=Arrhenius$pr*sticky$pr;\n";
+        print OUT "Krate$pr=sticky$pr*Arrhenius$pr*exp(-(AE$pr*toeV/(kb*T)));\n";
     }else{
         print OUT "Arrhenius$pr=(kb*T/h)*(Qts$pr/Qreactants$pr);\n";
         print OUT "Krate$pr=Arrhenius$pr*exp(-(AE$pr*toeV/(kb*T)));\n"; };
