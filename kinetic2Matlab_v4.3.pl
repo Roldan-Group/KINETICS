@@ -959,8 +959,10 @@ sub ProcessE_sub {
     foreach $R (@PR) { push(@Esyms, "E$R");
         foreach $interp (@interpolated) {
             if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   $interp=@tmp[2];\n"; };};
-        if (@en{$R}) { push(@Etmp,"+stoichio$pr$R*@en{$R}");
-        }else{ push(@Etmp,"+stoichio$pr$R*E$R"); };
+        if (($typeP eq 'DA') or ($typeP eq 'da')) {
+            if (@en{$R}) {push(@Etmp, "+stoichio$pr$R*@en{$R}");
+            }else{ push(@Etmp, "+stoichio$pr$R*E$R");};
+        }elsif (($typeP eq 'IA') or ($typeP eq 'ia')) {push(@Etmp, "+stoichio$pr$R*E$R");};
     };
     if (@PTS) { @Etmp2=();
         foreach $TS (@PTS) { push(@Esyms, "E$TS");
@@ -989,17 +991,15 @@ sub ProcessE_sub {
         }elsif (($typeP eq 'IA') or ($typeP eq 'ia')) {
             @Etmp2 = ();
             $comment = "INDIRECT ADSORPTION";
-            foreach $R (@PR) {
-                if (!grep("E$R", @Esyms)) { push(@Esyms, "E$R");};
+            foreach $P (@PP) {
+                if (!grep("Z$P", @Esyms)) {push(@Esyms, "Z$P");};
                 foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        print OUT "%   $interp=@tmp[2];\n";};}
-                if (@en{$R}) { push(@Etmp2, "+stoichio$pr$R*@en{$R}");
-                }else{ push(@Etmp2, "+stoichio$pr$R*E$R"); push(@Esyms, "E$R");};
-                foreach $mol (@molecules) {
-                        if ($R eq $mol) {
-                            push(@Etmp2, "+stoichio$pr$R*(@en{$R}-Z$R+Z2D$R)"); push(@Esyms, "Z$R Z2D$R"); };};};
+                    if ($interp eq $P) {
+                        @tmp = split(/\s+/, @interpsys{$P});
+                        print OUT "%   $interp=@tmp[2];\n";
+                    };};
+                push(@Etmp2, "+stoichio$pr$P*Z$P");
+            };
         }elsif (($typeP eq 'MD') or ($typeP eq 'md') or ($typeP eq 'ID') or ($typeP eq 'id')) {
             @Etmp2 = (); $comment="IMMOBILE DESORPTION";
              foreach $P (@PP) { push(@Esyms,"E$P");
@@ -1081,12 +1081,13 @@ sub ProcessQ_sub {
                 foreach $mol (@molecules) {
                     if ($R eq $mol) { $go='yes'; };};
                 if ($go eq 'yes') {
-                    if (($typeP eq 'IA') or ($typeP eq 'ia')) { $comment = "INDIRECT ADSORPTION";
-                        push(@Qtmp2, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
-                        push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
-                    }elsif (($typeP eq 'DA') or ($typeP eq 'da')) { $comment="DIRECT ADSORPTION";
-                        push(@Qtmp2,"*(qvib2D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
-                        push(@Qsyms,"qvib2D$R qtrans2D$R qrot$R"); };
+                    # Alberto : The partition function ONLY affects the Sticky
+                    # if (($typeP eq 'IA') or ($typeP eq 'ia')) { $comment = "INDIRECT ADSORPTION";
+                    push(@Qtmp2, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
+                    push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
+                    # }elsif (($typeP eq 'DA') or ($typeP eq 'da')) { $comment="DIRECT ADSORPTION";
+                    #     push(@Qtmp2,"*(qvib3D$R*qrot$R)^stoichio$pr$R");
+                    #     push(@Qsyms,"qvib3D$R qrot$R"); };
                 }else{
                     if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R");
                         foreach $interp (@interpolated) {
@@ -1098,13 +1099,12 @@ sub ProcessQ_sub {
                 foreach $mol (@molecules) {
                     if ($P eq $mol) {  $go='yes'; }; };
                 if ($go eq 'yes') {
-                    if (($typeP eq 'MD') or ($typeP eq 'md')) {
-                        $comment = "MOBILE DESORPTION";
+                    if (($typeP eq 'MD') or ($typeP eq 'md')) { $comment = "MOBILE DESORPTION";
                         push(@Qtmp2, "*(qvib3D$P*qtrans2D$P*qrot$P)^stoichio$pr$P");
                         push(@Qsyms, "qvib3D$P qtrans2D$P qrot$P");
                     }elsif (($typeP eq 'ID') or ($typeP eq 'id')) { $comment="IMMOBILE DESORPTION";
-                        push(@Qtmp2,"*qvib2D$P^stoichio$pr$P");
-                        push(@Qsyms,"qvib2D$P"); };
+                        push(@Qtmp2,"*(qvib3D$P*qrot$P)^stoichio$pr$P");
+                        push(@Qsyms,"qvib3D$P qrot$P"); };
                 }else{
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
                         foreach $interp (@interpolated) {
@@ -1711,9 +1711,10 @@ sub ODE_call_sub {
     print OUT "\n   tspan=[$itime $ftime];\n   IC=[@Rspecies];\n";
 # alberto 09/2019
 	if ($exp ne "TPR") { $ode="myode";
-        printf OUT "   options=odeset('Refine',3,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-7);\n",$#Rspecies+1;
+        # Alberto : removed 'Refine',3 from odeset options.
+        printf OUT "   options=odeset('NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-7);\n",$#Rspecies+1;
     }else{ $ode="mytpr";
-        printf OUT "   options=odeset('Refine',3,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-7);\n",$#Rspecies+1; };
+        printf OUT "   options=odeset('NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-7);\n",$#Rspecies+1; };
     print OUT "\nsolution=ode15s(\@(t,y) $ode(t,y,";
     foreach $trn (@transfer) {
         if ($trn ne @transfer[$#transfer]) { print OUT "$trn,";
