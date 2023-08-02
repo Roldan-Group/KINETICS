@@ -1026,28 +1026,13 @@ sub ProcessE_sub {
 sub ProcessQ_sub {
     ($typeP,$pr)=@_;
     @Qtmp=(); @Qsyms=("T");
-    if (($typeP eq 'DA') or ($typeP eq 'da')) {
-        foreach $R (@PR) {
-                if ($q{$R}) {push(@Qtmp, "*@q{$R}^stoichio$pr$R");
-                    foreach $interp (@interpolated) {
-                        if ($interp eq $R) {push(@Qsyms, "Q3D$R");print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
-                            @tmp = split(/\s+/, @interpsys{$R});@tmp = split(/\s+/, @interpsys{$interp});};};
-                }else{
-                    foreach $mol (@molecules) { $go="no";
-                        if ($R eq $mol) {$go = 'yes';};};
-                        if ($go eq 'yes') {
-                            push(@Qtmp, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
-                            push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
-                        }else{
-                            push(@Qtmp, "*Q3D$R^stoichio$pr$R");push(@Qsyms, "Q3D$R");};};};
-    }else{
-        foreach $R (@PR) {
-            if ($q{$R}) {push(@Qtmp, "*@q{$R}^stoichio$pr$R");
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) {push(@Qsyms, "Q3D$R");print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
-                        @tmp = split(/\s+/, @interpsys{$R});@tmp = split(/\s+/, @interpsys{$interp});};};
-            }else{
-                push(@Qtmp, "*Q3D$R^stoichio$pr$R");push(@Qsyms, "Q3D$R");};};};
+    foreach $R (@PR) {
+        if ($q{$R}) {push(@Qtmp, "*@q{$R}^stoichio$pr$R");
+            foreach $interp (@interpolated) {
+                if ($interp eq $R) {push(@Qsyms, "Q3D$R");print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
+                    @tmp = split(/\s+/, @interpsys{$R});@tmp = split(/\s+/, @interpsys{$interp});};};
+        }else{
+            push(@Qtmp, "*Q3D$R^stoichio$pr$R");push(@Qsyms, "Q3D$R");};};
     # if TS exists
     if (@PTS) { @Qtmp2=();
         foreach $TS (@PTS) {
@@ -1062,37 +1047,40 @@ sub ProcessQ_sub {
     }elsif (!@PTS) { @Qtmp2=(); $comment=();
         if (($typeP eq 'IA') or ($typeP eq 'ia')) {
             $comment = "INDIRECT ADSORPTION";
-            foreach $R (@PR) {$go = 'no';
-                foreach $mol (@molecules) {
-                    if ($R eq $mol) {$go = 'yes';};};
-                if ($go eq 'yes') {
-                    push(@Qtmp2, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
-                    push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
-                }else{
-                    if (@q{$R}) {
-                        push(@Qtmp2, "@q{$R}^stoichio$pr$R");
-                        foreach $interp (@interpolated) {
-                            if ($interp eq $R) {
-                                push(@Qsyms, "Q3D$R");
-                                @tmp = split(/\s+/, @interpsys{$R});
-                                @tmp = split(/\s+/, @interpsys{$interp});
-                                print OUT "%   Q3D$interp=Q3D@tmp[2];\n";  };};
+            foreach $R (@PR) {
+                if (@q{$R}) {push(@Qtmp2, "@q{$R}^stoichio$pr$R");
+                    foreach $interp (@interpolated) {
+                        if ($interp eq $R) {
+                            @tmp = split(/\s+/, @interpsys{$R});
+                            @tmp = split(/\s+/, @interpsys{$interp});
+                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";push(@Qsyms, "Q3D$R");  };};
+                }else{ $go = 'no';
+                    foreach $mol (@molecules) {
+                        if ($R eq $mol) {$go = 'yes';};};
+                    if ($go eq 'yes') {
+                        push(@Qtmp2, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
+                        push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
                     }else{
                         push(@Qtmp2, "*Q3D$R^stoichio$pr$R");
-                        push(@Qsyms, "Q3D$R"); };};
-            };
+                        push(@Qsyms, "Q3D$R");};};};
         }elsif (($typeP eq 'DA') or ($typeP eq 'da')) {
             $comment = "DIRECT ADSORPTION";
-            foreach $P (@PP) {
-                if (@q{$p}) {
-                    push(@Qtmp2, "@q{$P}^stoichio$pr$P");
+            foreach $R (@PR) {
+                if (@q{$R}) {
+                    push(@Qtmp2, "@q{$R}^stoichio$pr$R");
                     foreach $interp (@interpolated) {
-                        if ($interp eq $P) {
-                            push(@Qsyms, "Q3D$P");
-                            @tmp = split(/\s+/, @interpsys{$P});
+                        if ($interp eq $R) {
+                            @tmp = split(/\s+/, @interpsys{$R});
                             @tmp = split(/\s+/, @interpsys{$interp});
-                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";};};
-                }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P");};};
+                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";push(@Qsyms, "Q3D$R");};};
+                }else{$go = 'no';
+                    foreach $mol (@molecules) {
+                        if ($R eq $mol) {$go = 'yes';};};
+                        if ($go eq 'yes') {
+                            push(@Qtmp2, "*(qvib3D$R*qrot$R)^stoichio$pr$R");
+                            push(@Qsyms, "qvib3D$R qrot$R");
+                        }else{
+                            push(@Qtmp2,"*Q3D$P^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};};
         }elsif (($typeP eq 'MD') or ($typeP eq 'md') or ($typeP eq 'ID') or ($typeP eq 'id')) {
             foreach $P (@PP) {
                 if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
@@ -1107,8 +1095,8 @@ sub ProcessQ_sub {
                                 push(@Qtmp2, "*(qvib3D$P*qtrans2D$P*qrot$P)^stoichio$pr$P");
                                 push(@Qsyms, "qvib3D$P qtrans2D$P qrot$P");
                             }elsif (($typeP eq 'ID') or ($typeP eq 'id')) { $comment="IMMOBILE DESORPTION";
-                                push(@Qtmp2,"*qvib3D$P^stoichio$pr$P");
-                                push(@Qsyms,"qvib3D$P"); };
+                                push(@Qtmp2,"*(qvib3D$P*qrot$P)^stoichio$pr$P");
+                                push(@Qsyms,"qvib3D$P qrot$P"); };
                         }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};
         }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
             foreach $R (@PR) { $go='no';
