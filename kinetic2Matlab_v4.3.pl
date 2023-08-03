@@ -535,7 +535,7 @@ sub thermo_sub {
         print OUT "  area$sys=@Acat{@sitetype{$sys}}*Nsites$sys;\t\tfprintf(fileID, \' area on the surface = %.15E m^2\\n\',area$sys);\n";
         print OUT "\t\t\t%_________________Translational Partition Function (qtrans) as defined in DOI:10.1002/3527602658_________________\n";
         print OUT "    qtrans3D$sys=Vol$sys*((2*pi*Mass$sys*kb*T)^(3/2))/(h^3);	% free molecule moving in 3 dimensions\n";
-        print OUT "    qtrans2D$sys=((area$sys)*2*pi*Mass$sys*kb*T)/(h^2);	% free molecule moving in 2 dimensions (hovering on surface)\n";
+        print OUT "    qtrans2D$sys=area$sys*(2*pi*Mass$sys*kb*T)/(h^2);	% free molecule moving in 2 dimensions (hovering on surface)\n";
         push(@variable,"qtrans3D$sys");  push(@variable,"qtrans2D$sys");
         print OUT "\t\t\t%_____________Rotational Partition Function (qrot) as defined in DOI:10.1002/3527602658_____________\n";
         if (@linear{$sys} eq "yes"){
@@ -957,7 +957,8 @@ sub ProcessE_sub {
     open OUT, ">>processes.m";
 #    print OUT "\n";
     @Etmp=(); @Esyms=("T");
-    foreach $R (@PR) { push(@Esyms, "E$R");
+    foreach $R (@PR) {
+        push(@Esyms, "E$R");
         foreach $interp (@interpolated) {
             if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   $interp=@tmp[2];\n"; };};
         if (@en{$R}) {push(@Etmp, "+stoichio$pr$R*@en{$R}");
@@ -965,7 +966,8 @@ sub ProcessE_sub {
     };
     @Etmp2 = ();
     if (@PTS) {
-        foreach $TS (@PTS) { push(@Esyms, "E$TS");
+        foreach $TS (@PTS) {
+            push(@Esyms, "E$TS");
             foreach $interp (@interpolated) {
                 if ($interp eq $TS) { @tmp=split(/\s+/,@interpsys{$TS}); print OUT "%   $interp=@tmp[2];\n"; };}
             @imafrq=split(/\s+/,@imafreq{$TS});           # Quantum tunnelling [J. Chem. Phys. 2006, 124, 044706.]
@@ -977,54 +979,81 @@ sub ProcessE_sub {
         };
     }elsif (!@PTS) {
         if (($typeP eq 'DA') or ($typeP eq 'da')) {
-            $comment = "DIRECT ADSORPTION: Volumetric qtrans does not contribute to E";
+            $comment = "DIRECT ADSORPTION: TS with 3D qtrans reduction to molecular E";
             foreach $R (@PR) {
-                if (!grep("E$R", @Esyms)) {push(@Esyms, "E$R");};
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) {
                         @tmp = split(/\s+/, @interpsys{$R});
                         print OUT "%   $interp=@tmp[2];\n";
                     };}
-                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-(3/2)*kb*T)");
+                $go="no";
+                foreach $mol (@molecules) {
+                    if ($mol eq $R) {$go="yes";};};
+                if ($go eq "yes") {
+                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-(3/2)*kb*T)");
+                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R-(3/2)*kb*T)");};
                 }else{
-                    push(@Etmp2, "+stoichio$pr$R*(E$R-(3/2)*kb*T)");
-                    push(@Esyms, "E$R");
+                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*@en{$R}");
+                    }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
                 };
             };
         }elsif (($typeP eq 'IA') or ($typeP eq 'ia')) {
-            $comment = "INDIRECT ADSORPTION: Only 2D qtrans contributes to E";
+            $comment = "INDIRECT ADSORPTION: TS with 1D qtrans reduction to molecular E";
             foreach $R (@PR) {
-                if (!grep("E$R", @Esyms)) {push(@Esyms, "E$R");};
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) {
                         @tmp = split(/\s+/, @interpsys{$R});
                         print OUT "%   $interp=@tmp[2];\n";
                     };}
-                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-(1/2)*kb*T)");
+                $go="no";
+                foreach $mol (@molecules) {
+                    if ($mol eq $R) {$go="yes";};};
+                if ($go eq "yes") {
+                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-(1/2)*kb*T)");
+                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R-(1/2)*kb*T)");};
                 }else{
-                    push(@Etmp2, "+stoichio$pr$R*(E$R-(1/2)*kb*T)");
-                    push(@Esyms, "E$R");
+                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*@en{$R}");
+                    }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
                 };
             };
         }elsif (($typeP eq 'MD') or ($typeP eq 'md')) {
-             $comment="MOBILE DESORPTION: Only 2D qtrans contributes to E";
-             foreach $P (@PP) { push(@Esyms,"E$P");
+             $comment="MOBILE DESORPTION: TS with 1D qtrans reduction in the molecuar E";
+             foreach $P (@PP) {
+                 push(@Esyms, "E$P");
                  foreach $interp (@interpolated) {
                     if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
-                 print OUT "\n";
-                 if (@en{$P}) { push(@Etmp2,"+stoichio$pr$P*(@en{$P}-(1/2)*kb*T)");
-                 }else{ push(@Etmp2,"+stoichio$pr$P*(E$P-(1/2)*kb*T)");};};
+                 $go="no";
+                 foreach $mol (@molecules) {
+                     if ($mol eq $P) {$go="yes";};};
+                 if ($go eq "yes") {
+                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}-(1/2)*kb*T)");
+                    }else{push(@Etmp2, "+stoichio$pr$P*(E$P-(1/2)*kb*T)");};
+                 }else{
+                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
+                    }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
+                };
+             };
         }elsif (($typeP eq 'ID') or ($typeP eq 'id')) {
-             $comment="IMMOBILE DESORPTION: Volumetric qtrans does not contribute to E";
-             foreach $P (@PP) { push(@Esyms,"E$P");
+             $comment="IMMOBILE DESORPTION: TS with 3D qtrans reduction to molecular E";
+             foreach $P (@PP) {
+                 push(@Esyms, "E$P");
                  foreach $interp (@interpolated) {
                     if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
-                 print OUT "\n";
-                 if (@en{$P}) { push(@Etmp2,"+stoichio$pr$P*(@en{$P}-(3/2)*kb*T)");
-                 }else{ push(@Etmp2,"+stoichio$pr$P*(E$P-(3/2)*kb*T)");};};
+                 $go="no";
+                 foreach $mol (@molecules) {
+                     if ($mol eq $P) {$go="yes";};};
+                 if ($go eq "yes") {
+                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}-(3/2)*kb*T)");
+                    }else{push(@Etmp2, "+stoichio$pr$P*(E$P-(3/2)*kb*T)");};
+                 }else{
+                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
+                    }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
+                };
+             };
         }else{
             @Etmp2=(); $comment = " SURFACE REACTION";
-            foreach $P (@PP) { push(@Esyms,"E$P");
+            foreach $P (@PP) {
+                push(@Esyms, "E$P");
                 foreach $interp (@interpolated) {
                     if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };}
                 print OUT "\n";
@@ -1046,20 +1075,23 @@ sub ProcessQ_sub {
     ($typeP,$pr)=@_;
     @Qtmp=(); @Qsyms=("T");
     foreach $R (@PR) {
+        push(@Qsyms, "Q3D$R");
         if ($q{$R}) {push(@Qtmp, "*@q{$R}^stoichio$pr$R");
             foreach $interp (@interpolated) {
-                if ($interp eq $R) {push(@Qsyms, "Q3D$R");print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
+                if ($interp eq $R) {print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
                     @tmp = split(/\s+/, @interpsys{$R});@tmp = split(/\s+/, @interpsys{$interp});};};
-        }else{
-            push(@Qtmp, "*Q3D$R^stoichio$pr$R");push(@Qsyms, "Q3D$R");};};
+        }else{push(@Qtmp, "*Q3D$R^stoichio$pr$R");};};
     # if TS exists
     if (@PTS) { @Qtmp2=();
         foreach $TS (@PTS) {
+            push(@Qsyms, "Q3D$TS");
             if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}");
                 foreach $interp (@interpolated) {
-                    if ($interp eq $TS) { push(@Qsyms,"Q3D$TS"); @tmp=split(/\s+/,@interpsys{$TS});
-                        @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-            }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };
+                    if ($interp eq $TS) {
+                        @tmp=split(/\s+/,@interpsys{$TS});
+                        @tmp=split(/\s+/,@interpsys{$interp});
+                        print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+            }else{ push(@Qtmp2,"*Q3D$TS");  };
         };
     # Alberto 19/07/2023 -- changed Q3Dnotrans by qvib3D/qvib2D, qtrans/qtrans2D, and qrot accounting
     #                       for the different A and D degrees of freedom
@@ -1067,21 +1099,28 @@ sub ProcessQ_sub {
         if (($typeP eq 'IA') or ($typeP eq 'ia')) {
             $comment = "INDIRECT ADSORPTION";
             foreach $R (@PR) {
-                if (@q{$R}) {push(@Qtmp2, "@q{$R}^stoichio$pr$R");
+                if (@q{$R}) {
+                    push(@Qtmp2, "@q{$R}^stoichio$pr$R");
                     foreach $interp (@interpolated) {
                         if ($interp eq $R) {
                             @tmp = split(/\s+/, @interpsys{$R});
                             @tmp = split(/\s+/, @interpsys{$interp});
-                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";push(@Qsyms, "Q3D$R");  };};
-                }else{ $go = 'no';
+                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
+                        };};
+                }
+                else {
+                    $go = 'no';
                     foreach $mol (@molecules) {
                         if ($R eq $mol) {$go = 'yes';};};
                     if ($go eq 'yes') {
                         push(@Qtmp2, "*(qvib3D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
                         push(@Qsyms, "qvib3D$R qtrans2D$R qrot$R");
-                    }else{
+                    }
+                    else {
                         push(@Qtmp2, "*Q3D$R^stoichio$pr$R");
-                        push(@Qsyms, "Q3D$R");};};};
+                    };
+                };
+            };
         }elsif (($typeP eq 'DA') or ($typeP eq 'da')) {
             $comment = "DIRECT ADSORPTION";
             foreach $R (@PR) {
@@ -1091,7 +1130,7 @@ sub ProcessQ_sub {
                         if ($interp eq $R) {
                             @tmp = split(/\s+/, @interpsys{$R});
                             @tmp = split(/\s+/, @interpsys{$interp});
-                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";push(@Qsyms, "Q3D$R");};};
+                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";};};
                 }else{$go = 'no';
                     foreach $mol (@molecules) {
                         if ($R eq $mol) {$go = 'yes';};};
@@ -1099,13 +1138,17 @@ sub ProcessQ_sub {
                             push(@Qtmp2, "*(qvib3D$R*qrot$R)^stoichio$pr$R");
                             push(@Qsyms, "qvib3D$R qrot$R");
                         }else{
-                            push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};};
+                            push(@Qtmp2,"*Q3D$R^stoichio$pr$R");};};};
         }elsif (($typeP eq 'MD') or ($typeP eq 'md') or ($typeP eq 'ID') or ($typeP eq 'id')) {
             foreach $P (@PP) {
-                if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
+                if (@q{$P}) {
+                    push(@Qsyms, "Q3D$P");
+                    push(@Qtmp2,"@q{$P}^stoichio$pr$P");
                     foreach $interp (@interpolated) {
-                        if ($interp eq $P) { push(@Qsyms,"Q3D$P"); @tmp=split(/\s+/,@interpsys{$P});
-                            @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+                        if ($interp eq $P) {
+                            @tmp=split(/\s+/,@interpsys{$P});
+                            @tmp=split(/\s+/,@interpsys{$interp});
+                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
                 }else{$go='no';
                     foreach $mol (@molecules) {
                         if ($P eq $mol) {  $go='yes'; }; };
@@ -1116,7 +1159,9 @@ sub ProcessQ_sub {
                             }elsif (($typeP eq 'ID') or ($typeP eq 'id')) { $comment="IMMOBILE DESORPTION";
                                 push(@Qtmp2,"*(qvib3D$P*qrot$P)^stoichio$pr$P");
                                 push(@Qsyms,"qvib3D$P qrot$P"); };
-                        }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};
+                        }else{
+                            push(@Qsyms, "Q3D$P");
+                            push(@Qtmp2,"*Q3D$P^stoichio$pr$P");};};};
         }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
             foreach $R (@PR) { $go='no';
                 foreach $mol (@molecules) {
@@ -1130,11 +1175,14 @@ sub ProcessQ_sub {
                 if ($go eq 'yes') { push(@Qtmp2,"*(qvib3D$P*qtrans2D$P*qrot$P)^stoichio$pr$P");
                     push(@Qsyms,"vib3D$P qtrans2D$P qrot$P");
                 }else{
+                    push(@Qsyms, "Q3D$P");
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
                         foreach $interp (@interpolated) {
-                            if ($interp eq $P) { push(@Qsyms,"Q3D$P"); @tmp=split(/\s+/,@interpsys{$P});
-                                @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};
+                            if ($interp eq $P) {
+                                @tmp=split(/\s+/,@interpsys{$P});
+                                @tmp=split(/\s+/,@interpsys{$interp});
+                                print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); };};};
         };
     };
     open OUT, ">>processes.m";
