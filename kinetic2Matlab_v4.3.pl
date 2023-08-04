@@ -980,7 +980,7 @@ sub ProcessE_sub {
         };
     }elsif (!@PTS) {
         if (($typeP eq 'DA') or ($typeP eq 'da')) {
-            $comment = "DIRECT ADSORPTION: TS with 3D qtrans reduction to molecular E";
+            $comment = "DIRECT ADSORPTION: TS with 3D qtrans reduction to molecular E --> (+) because E is negative";
             foreach $R (@PR) {
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) {
@@ -991,15 +991,15 @@ sub ProcessE_sub {
                 foreach $mol (@molecules) {
                     if ($mol eq $R) {$go="yes";};};
                 if ($go eq "yes") {
-                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-((3/2)*kb*T/toeV))");
-                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R-((3/2)*kb*T/toeV))");};
+                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+((3/2)*kb*T/toeV))");
+                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R+((3/2)*kb*T/toeV))");};
                 }else{
                     if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*@en{$R}");
                     }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
                 };
             };
         }elsif (($typeP eq 'IA') or ($typeP eq 'ia')) {
-            $comment = "INDIRECT ADSORPTION: TS with 1D qtrans reduction to molecular E";
+            $comment = "INDIRECT ADSORPTION: TS with 1D qtrans reduction to molecular E --> (+) because E is negative";
             foreach $R (@PR) {
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) {
@@ -1010,47 +1010,94 @@ sub ProcessE_sub {
                 foreach $mol (@molecules) {
                     if ($mol eq $R) {$go="yes";};};
                 if ($go eq "yes") {
-                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-((1/2)*kb*T/toeV))");
-                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R-((1/2)*kb*T/toeV))");};
+                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+((1/2)*kb*T/toeV))");
+                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R+((1/2)*kb*T/toeV))");};
                 }else{
                     if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*@en{$R}");
                     }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
                 };
             };
         }elsif (($typeP eq 'MD') or ($typeP eq 'md')) {
-             $comment="MOBILE DESORPTION: TS with 1D qtrans reduction in the molecuar E";
-             foreach $P (@PP) {
-                 push(@Esyms, "E$P");
-                 foreach $interp (@interpolated) {
-                    if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
-                 $go="no";
-                 foreach $mol (@molecules) {
-                     if ($mol eq $P) {$go="yes";};};
-                 if ($go eq "yes") {
-                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}-((1/2)*kb*T/toeV))");
-                    }else{push(@Etmp2, "+stoichio$pr$P*(E$P-((1/2)*kb*T/toeV))");};
-                 }else{
-                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
-                    }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
+            $comment="MOBILE DESORPTION: E_TS is at the electronic ground state with 2D qtrans & qrot ::Chorkendorff p124";
+            foreach $R (@PR) {
+                foreach $interp (@interpolated) {
+                    if ($interp eq $R) {
+                        @tmp = split(/\s+/, @interpsys{$R});
+                        print OUT "%   $interp=@tmp[2];\n";
+                    };};
+                push(@Esyms, "Z$R");
+                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-Z$R)");
+                }else{
+                    push(@Etmp2, "+stoichio$pr$R*(E$R-Z$R)");
                 };
-             };
+            };
+            foreach $P (@PP) {
+                foreach $mol (@molecules) {
+                    if ($mol eq $P) {
+                        # AT THE ELECTRONIC GROUND STATE
+                        # push(@Etmp2, "+stoichio$pr$mol*(Z2D$mol+((2/2)*kb*T/toeV))+(kb*T/toeV)");
+                        #push(@Esyms, "Z2D$mol");
+                        push(@Etmp2, "+stoichio$pr$mol*((2/2)*kb*T/toeV)+(kb*T/toeV)");
+                    };
+                };
+            };
+            #''' the TS should be close to the reactant!
+            #$comment="MOBILE DESORPTION: TS with 1D qtrans reduction in the molecuar E --> (+) because E is negative";
+            #foreach $P (@PP) {
+            #    push(@Esyms, "E$P");
+            #    foreach $interp (@interpolated) {
+            #        if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
+            #    $go="no";
+            #    foreach $mol (@molecules) {
+            #        if ($mol eq $P) {$go="yes";};};
+            #    if ($go eq "yes") {
+            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}+((1/2)*kb*T/toeV))");
+            #        }else{push(@Etmp2, "+stoichio$pr$P*(E$P+((1/2)*kb*T/toeV))");};
+            #    }else{
+            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
+            #        }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
+            #    };
+            #};
         }elsif (($typeP eq 'ID') or ($typeP eq 'id')) {
-             $comment="IMMOBILE DESORPTION: TS with 3D qtrans & qrot reduction to molecular E";
-             foreach $P (@PP) {
-                 push(@Esyms, "E$P");
-                 foreach $interp (@interpolated) {
-                    if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
-                 $go="no";
-                 foreach $mol (@molecules) {
-                     if ($mol eq $P) {$go="yes";};};
-                 if ($go eq "yes") {
-                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}-((3/2)*kb*T/toeV))-(kb*T/toeV)");
-                    }else{push(@Etmp2, "+stoichio$pr$P*(E$P-((3/2)*kb*T/toeV))-(kb*T/toeV)");};
-                 }else{
-                    if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
-                    }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
+            $comment="IMMOBILE DESORPTION: E_TS is at the electronic ground state (-ZPE) ::Chorkendorff p124";
+            foreach $R (@PR) {
+                foreach $interp (@interpolated) {
+                    if ($interp eq $R) {
+                        @tmp = split(/\s+/, @interpsys{$R});
+                        print OUT "%   $interp=@tmp[2];\n";
+                    };};
+                push(@Esyms, "Z$R");
+                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-Z$R)");
+                }else{
+                    push(@Etmp2, "+stoichio$pr$R*(E$R-Z$R)");
                 };
-             };
+            };
+            # AT THE ELECTRONIC GROUND STATE
+            # foreach $P (@PP) {
+            #    foreach $mol (@molecules) {
+            #        if ($mol eq $P) {
+            #            push(@Etmp2, "+stoichio$pr$mol*(Z2D$mol+(kb*T/toeV))");
+            #            push(@Esyms, "Z2D$mol");
+            #        };
+            #    };
+            #};
+            #''' the TS should be close to the reactant!
+            # $comment="IMMOBILE DESORPTION: TS with 3D qtrans & qrot reduction to molecular E --> (+) because E is negative";
+            # foreach $P (@PP) {
+            #     push(@Esyms, "E$P");
+            #     foreach $interp (@interpolated) {
+            #        if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
+            #     $go="no";
+            #     foreach $mol (@molecules) {
+            #         if ($mol eq $P) {$go="yes";};};
+            #     if ($go eq "yes") {
+            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}+((3/2)*kb*T/toeV))+(kb*T/toeV)");
+            #        }else{push(@Etmp2, "+stoichio$pr$P*(E$P+((3/2)*kb*T/toeV))+(kb*T/toeV)");};
+            #     }else{
+            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
+            #        }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
+            #    };
+            # };
         }else{
             @Etmp2=(); $comment = " SURFACE REACTION";
             foreach $P (@PP) {
