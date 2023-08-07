@@ -955,7 +955,7 @@ sub Interpolate_sub {
 sub ProcessE_sub {
     ($typeP,$pr)=@_;
     open OUT, ">>processes.m";
-#    print OUT "\n";
+    # print OUT "\n";
     @Etmp=(); @Esyms=("T"); @Etmp2 = ();
     #--------------------------------------------------------------- Reactants
     foreach $R (@PR) {
@@ -1017,28 +1017,31 @@ sub ProcessE_sub {
                     }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
                 };
             };
-        }elsif (($typeP eq 'MD') or ($typeP eq 'md')) {
-            $comment="MOBILE DESORPTION: E_TS is at the electronic ground state with 2D qtrans & qrot ::Chorkendorff p124";
+        }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
+
+
+            poner dentro del loop the T:
+                if Egas > Eads and Eads-Egas >= 0.1
+                    $comment="IMMOBILE DESORPTION: E_TS is the molecule + kbT ::Chorkendorff p124";
+                    Ets= Egas + kbT/toeV
+                elsif Egas > Eads and Eads-Egas < 0.1
+                    $comment="MOBILE DESORPTION: E_TS is the molecule + 2D qtrans & qrot ::Chorkendorff p124";
+                    Ets=Egas + (kbT+2/3 kbT)/toeV
+
+
+
+
+            $comment="MOBILE DESORPTION: E_TS is the reactant with kbT and molecular 2D qtrans & qrot ::Chorkendorff p124";
             foreach $R (@PR) {
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) {
                         @tmp = split(/\s+/, @interpsys{$R});
                         print OUT "%   $interp=@tmp[2];\n";
                     };};
-                push(@Esyms, "Z$R");
-                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-Z$R)");
+                #push(@Esyms, "Z$R");
+                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+(kb*T)/toeV)");
                 }else{
-                    push(@Etmp2, "+stoichio$pr$R*(E$R-Z$R)");
-                };
-            };
-            foreach $P (@PP) {
-                foreach $mol (@molecules) {
-                    if ($mol eq $P) {
-                        # AT THE ELECTRONIC GROUND STATE
-                        # push(@Etmp2, "+stoichio$pr$mol*(Z2D$mol+((2/2)*kb*T/toeV))+(kb*T/toeV)");
-                        #push(@Esyms, "Z2D$mol");
-                        push(@Etmp2, "+stoichio$pr$mol*((2/2)*kb*T/toeV)+(kb*T/toeV)");
-                    };
+                    push(@Etmp2, "+stoichio$pr$R*(E$R+((2/2)*kb*T/toeV)+(kb*T/toeV))");
                 };
             };
             #''' the TS should be close to the reactant!
@@ -1059,17 +1062,17 @@ sub ProcessE_sub {
             #    };
             #};
         }elsif (($typeP eq 'ID') or ($typeP eq 'id')) {
-            $comment="IMMOBILE DESORPTION: E_TS is at the electronic ground state (-ZPE) ::Chorkendorff p124";
+            $comment="IMMOBILE DESORPTION: E_TS is the reactant with kbT ::Chorkendorff p124";
             foreach $R (@PR) {
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) {
                         @tmp = split(/\s+/, @interpsys{$R});
                         print OUT "%   $interp=@tmp[2];\n";
                     };};
-                push(@Esyms, "Z$R");
-                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}-Z$R)");
+                #push(@Esyms, "Z$R");
+                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+(kb*T)/toeV)");
                 }else{
-                    push(@Etmp2, "+stoichio$pr$R*(E$R-Z$R)");
+                    push(@Etmp2, "+stoichio$pr$R*(E$R+(kb*T)/toeV)");
                 };
             };
             # AT THE ELECTRONIC GROUND STATE
