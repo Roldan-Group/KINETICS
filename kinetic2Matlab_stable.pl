@@ -1,7 +1,7 @@
 #;- Perl -*-
 #
 ########   Alberto Roldan
-#
+
 #
 # 	Adsorption reaction coordinate = Z, then to obtain the sticky coeficient on Adsorption process
 #   		without a determined transition state, free molecule frequencies on X and Y will be used.
@@ -17,11 +17,11 @@
 #   version 3.x - V active [EEXCH] = number of exchanged electrons   ---   E=E0+n_e * KbT*ln[Q_p/Q_r]
 #		- Degree of Rate and Selectivity control (DRC & DSC)
 #   version 4.x - It reads all the needed information from file.mk.in so it is DFT-Software independent
-#               - Differentiates between direct/indirect adsorption and mobile/immobile desorption
 #
 #
 ####################
 #       AMEND AREA PER SITE: ISITE = 4 A; A= 1E-18 ---> 1A = A/4 * n_of_molecule
+#
 #
 eval '(exit $?0)' && eval 'exec perl -S $0 ${1+"$@"}' && eval 'exec perl -S $0 $argv:q' if 0;
 
@@ -225,7 +225,7 @@ foreach $cat (@catalysts) {
     if (!$e0{$cat}) { print "  $cat energy\t... fail\n"; exit 0; };
     if (!@freq{$cat}) { print "  $cat frequencies (@nf{$cat})\t... fail\n"; exit 0; };
     if (!@degeneration{$cat}) { print "  $cat degeneration (@deg_comment{$cat})\t... fail\n"; exit 0; };
-    if (!@Acat{@sitetype{$cat}}) { print "  $cat area active sites selection\t... fail\n"; exit 0; };
+    if (!@Acat{@sitetype{$cat}}) { print "  $cat active sites selection\t... fail\n"; exit 0; };
     if (!@sitetype{$cat}) { print "  $cat active sites selection\t... fail\n"; exit 0; };
 }; # foreach
 print "\t\t... done\n";   
@@ -282,9 +282,7 @@ foreach $line (@in) {
 print "\t\t... done\n";
 #----------------------------------------------------------------------------------------------------------------------- coments
 foreach $pro (@process) { @tmp=split(/\s+/,@pro); $typeproc=$tmp[0];
-    if (($typeproc != 'IA') or ($typeproc != 'ia') or ($typeproc != 'DA') or ($typeproc != 'da') or     # ----- Indirect/Direct Adsorption
-        ($typeproc != 'ID') or ($typeproc != 'id') or ($typeproc != 'MD') or ($typeproc != 'md') or     # ----- Immobile/Mobile Desorption
-        ($typeproc != 'R') or ($typeproc != 'r')) {
+    if (($typeproc != 'A') or ($typeproc != 'a') or ($typeproc != 'D') or ($typeproc != 'd') or ($typeproc != 'R') or ($typeproc != 'r')) {
         print "\n -  Please, provide the process type for $pro - \n\n" ; exit 0 ;};
 }; #--> foreach process
 #=================================================================================================================== STARTING MICROKINETIC ANALYSIS
@@ -388,8 +386,7 @@ foreach $exp (@experiments) {
         ()=&ODE_import_sub($exp);
         @TPRmol=();
         for ($pr=1; $pr<=$#process; $pr++ ) {
-            if ((@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia") or
-                (@typeproc[$pr] eq "DA") or (@typeproc[$pr] eq "da")) {
+            if ((@typeproc[$pr] eq "A") or (@typeproc[$pr] eq "a")) {
                 @PR=split(/\s+/,@ProcessReactants[$pr]);
                 foreach $R (@PR) {
                     foreach $mol (@molecules) {
@@ -534,7 +531,7 @@ sub thermo_sub {
         print OUT "  area$sys=@Acat{@sitetype{$sys}}*Nsites$sys;\t\tfprintf(fileID, \' area on the surface = %.15E m^2\\n\',area$sys);\n";
         print OUT "\t\t\t%_________________Translational Partition Function (qtrans) as defined in DOI:10.1002/3527602658_________________\n";
         print OUT "    qtrans3D$sys=Vol$sys*((2*pi*Mass$sys*kb*T)^(3/2))/(h^3);	% free molecule moving in 3 dimensions\n";
-        print OUT "    qtrans2D$sys=area$sys*(2*pi*Mass$sys*kb*T)/(h^2);	% free molecule moving in 2 dimensions (hovering on surface)\n";
+        print OUT "    qtrans2D$sys=((area$sys)*2*pi*Mass$sys*kb*T)/(h^2);	% free molecule moving in 2 dimensions (hovering on surface)\n";
         push(@variable,"qtrans3D$sys");  push(@variable,"qtrans2D$sys");
         print OUT "\t\t\t%_____________Rotational Partition Function (qrot) as defined in DOI:10.1002/3527602658_____________\n";
         if (@linear{$sys} eq "yes"){
@@ -903,18 +900,14 @@ sub Import_sub {
         open OUT, ">>$file.m";
         print OUT "ENERGY$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/G$sys.dat\');\n";
         print OUT "PARTITION3D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3D$sys.dat\');\n";
-        print OUT "ZPE$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE$sys.dat\');\n";
 #	    print OUT "    IR$sys=readtable(\'./IRs/originals/$sys/intensities/IRSPECTRA\');\n";
 	    foreach $mol (@molecules) {
             if ($sys eq $mol) {
-                # Alberto 19/07/2023 - Adapted to read qrot and others instead of Q3Dnotrans
-                print OUT "qt2d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans2D$sys.dat\');\n";
-                print OUT "qt3d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans3D$sys.dat\');\n";
-                print OUT "qv2d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib2D$sys.dat\');\n";
-                print OUT "qv3d$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib3D$sys.dat\');\n";
-                print OUT "qr$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qrot3D$sys.dat\');\n";
+                print OUT "q3Dnotrans$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/Q3Dnotrans$sys.dat\');\n";
+                print OUT "qt$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qtrans2D$sys.dat\');\n";
+                print OUT "qv$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/qvib2D$sys.dat\');\n";
                 print OUT "ZPE2D$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE2D$sys.dat\');\n";
-                # print OUT "ZPE$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE$sys.dat\');\n";    # Alberto: added as default
+                print OUT "ZPE$sys=readtable(\'./THERMODYNAMICS/DATA/$sys/ZPE$sys.dat\');\n";
                 print OUT "Mass$sys=@Tmass{$sys}; Nsites$sys=@nsitetype{$sys};\n";
                 print OUT "area$sys=@Acat{@sitetype{$sys}}*Nsites$sys;\n"; };}; # if mol
                 print OUT "\n";
@@ -954,166 +947,52 @@ sub Interpolate_sub {
 sub ProcessE_sub {
     ($typeP,$pr)=@_;
     open OUT, ">>processes.m";
-    # print OUT "\n";
-    @Etmp=(); @Esyms=("T"); @Etmp2 = ();
-    #--------------------------------------------------------------- Reactants
-    foreach $R (@PR) {
-        push(@Esyms, "E$R");
+#    print OUT "\n";
+    @Etmp=(); @Esyms=("T");
+    foreach $R (@PR) { push(@Esyms, "E$R");
         foreach $interp (@interpolated) {
             if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   $interp=@tmp[2];\n"; };};
-        if (@en{$R}) {push(@Etmp, "+stoichio$pr$R*@en{$R}");
-        }else{ push(@Etmp, "+stoichio$pr$R*E$R");};
+        if (@en{$R}) { push(@Etmp,"+stoichio$pr$R*@en{$R}");
+        }else{ push(@Etmp,"+stoichio$pr$R*E$R"); };
     };
-    #--------------------------------------------------------------- TS
-    if (@PTS) {
-        foreach $TS (@PTS) {
-            push(@Esyms, "E$TS");
+    if (@PTS) { @Etmp2=();
+        foreach $TS (@PTS) { push(@Esyms, "E$TS");
             foreach $interp (@interpolated) {
-                if ($interp eq $TS) { @tmp=split(/\s+/,@interpsys{$TS}); print OUT "%   $interp=@tmp[2];\n"; };}
+                if ($interp eq $TS) { @tmp=split(/\s+/,@interpsys{$R}); print OUT "%   $interp=@tmp[2];\n"; };}
             @imafrq=split(/\s+/,@imafreq{$TS});           # Quantum tunnelling [J. Chem. Phys. 2006, 124, 044706.]
             print OUT "   Qtunnel$TS=(kb*T/toeV)*log(";
             foreach $if (@imafrq) {
                 print OUT "sinh($if*(h*c)/(2*kb*T))/($if*(h*c)/(2*kb*T))*"; }; print OUT "1);\n";
             if (@en{$TS}) { push(@Etmp2,"+@en{$TS}+Qtunnel$TS");
-            }else{ push(@Etmp2,"+E$TS+Qtunnel$TS");};
+            }else{ push(@Etmp2,"+E$TS+Qtunnel$TS"); };
         };
     }elsif (!@PTS) {
-        if (($typeP eq 'DA') or ($typeP eq 'da')) {
-            $comment = "DIRECT ADSORPTION: TS with 3D qtrans reduction to molecular E --> (+) because E is negative";
+        if (($typeP eq 'A') or ($typeP eq 'a')) {
+            @Etmp2=();
             foreach $R (@PR) {
+                if (!grep("E$R", @Esyms)) {push(@Esyms, "E$R"); };
                 foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        print OUT "%   $interp=@tmp[2];\n";
-                    };}
-                $go="no";
+                    if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$R}); print OUT "%   $interp=@tmp[2];\n"; };}
+                if (@en{$R}) { push(@Etmp2,"+stoichio$pr$R*@en{$R}");
+                }else{ push(@Etmp2,"+stoichio$pr$R*E$R");};
                 foreach $mol (@molecules) {
-                    if ($mol eq $R) {$go="yes";};};
-                if ($go eq "yes") {
-                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+((3/2)*kb*T/toeV))");
-                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R+((3/2)*kb*T/toeV))");};
-                }else{
-                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*@en{$R}");
-                    }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
-                };
+                    if ($R eq $mol) { push(@Etmp2,"+stoichio$pr$R*(-Z$R+Z2D$R)"); push(@Esyms,"Z$R Z2D$R"); }; };
             };
-        }elsif (($typeP eq 'IA') or ($typeP eq 'ia')) {
-            $comment = "INDIRECT ADSORPTION: TS with 1D qtrans reduction to molecular E --> (+) because E is negative";
-            foreach $R (@PR) {
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        print OUT "%   $interp=@tmp[2];\n";
-                    };}
-                $go="no";
-                foreach $mol (@molecules) {
-                    if ($mol eq $R) {$go="yes";};};
-                if ($go eq "yes") {
-                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+((1/2)*kb*T/toeV))");
-                    }else{push(@Etmp2, "+stoichio$pr$R*(E$R+((1/2)*kb*T/toeV))");};
-                }else{
-                    if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*@en{$R}");
-                    }else{push(@Etmp2, "+stoichio$pr$R*E$R");};
-                };
-            };
-        }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
-
-
-            poner dentro del loop the T:
-                if Egas > Eads and Eads-Egas >= 0.1
-                    $comment="IMMOBILE DESORPTION: E_TS is the molecule + kbT ::Chorkendorff p124";
-                    Ets= Egas + kbT/toeV
-                elsif Egas > Eads and Eads-Egas < 0.1
-                    $comment="MOBILE DESORPTION: E_TS is the molecule + 2D qtrans & qrot ::Chorkendorff p124";
-                    Ets=Egas + (kbT+2/3 kbT)/toeV
-
-
-
-
-            $comment="MOBILE DESORPTION: E_TS is the reactant with kbT and molecular 2D qtrans & qrot ::Chorkendorff p124";
-            foreach $R (@PR) {
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        print OUT "%   $interp=@tmp[2];\n";
-                    };};
-                #push(@Esyms, "Z$R");
-                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+(kb*T)/toeV)");
-                }else{
-                    push(@Etmp2, "+stoichio$pr$R*(E$R+((2/2)*kb*T/toeV)+(kb*T/toeV))");
-                };
-            };
-            #''' the TS should be close to the reactant!
-            #$comment="MOBILE DESORPTION: TS with 1D qtrans reduction in the molecuar E --> (+) because E is negative";
-            #foreach $P (@PP) {
-            #    push(@Esyms, "E$P");
-            #    foreach $interp (@interpolated) {
-            #        if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
-            #    $go="no";
-            #    foreach $mol (@molecules) {
-            #        if ($mol eq $P) {$go="yes";};};
-            #    if ($go eq "yes") {
-            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}+((1/2)*kb*T/toeV))");
-            #        }else{push(@Etmp2, "+stoichio$pr$P*(E$P+((1/2)*kb*T/toeV))");};
-            #    }else{
-            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
-            #        }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
-            #    };
-            #};
-        }elsif (($typeP eq 'ID') or ($typeP eq 'id')) {
-            $comment="IMMOBILE DESORPTION: E_TS is the reactant with kbT ::Chorkendorff p124";
-            foreach $R (@PR) {
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        print OUT "%   $interp=@tmp[2];\n";
-                    };};
-                #push(@Esyms, "Z$R");
-                if (@en{$R}) {push(@Etmp2, "+stoichio$pr$R*(@en{$R}+(kb*T)/toeV)");
-                }else{
-                    push(@Etmp2, "+stoichio$pr$R*(E$R+(kb*T)/toeV)");
-                };
-            };
-            # AT THE ELECTRONIC GROUND STATE
-            # foreach $P (@PP) {
-            #    foreach $mol (@molecules) {
-            #        if ($mol eq $P) {
-            #            push(@Etmp2, "+stoichio$pr$mol*(Z2D$mol+(kb*T/toeV))");
-            #            push(@Esyms, "Z2D$mol");
-            #        };
-            #    };
-            #};
-            #''' the TS should be close to the reactant!
-            # $comment="IMMOBILE DESORPTION: TS with 3D qtrans & qrot reduction to molecular E --> (+) because E is negative";
-            # foreach $P (@PP) {
-            #     push(@Esyms, "E$P");
-            #     foreach $interp (@interpolated) {
-            #        if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };};
-            #     $go="no";
-            #     foreach $mol (@molecules) {
-            #         if ($mol eq $P) {$go="yes";};};
-            #     if ($go eq "yes") {
-            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*(@en{$P}+((3/2)*kb*T/toeV))+(kb*T/toeV)");
-            #        }else{push(@Etmp2, "+stoichio$pr$P*(E$P+((3/2)*kb*T/toeV))+(kb*T/toeV)");};
-            #     }else{
-            #        if (@en{$P}) {push(@Etmp2, "+stoichio$pr$P*@en{$P}");
-            #        }else{push(@Etmp2, "+stoichio$pr$P*E$P");};
-            #    };
-            # };
         }else{
-            @Etmp2=(); $comment = " SURFACE REACTION";
-            foreach $P (@PP) {
-                push(@Esyms, "E$P");
+            @Etmp2=();
+            foreach $P (@PP) { push(@Esyms,"E$P");
                 foreach $interp (@interpolated) {
-                    if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$P}); print OUT "%   $interp=@tmp[2];\n"; };}
+                    if ($interp eq $P) {  @tmp=split(/\s+/,@interpsys{$R}); print OUT "%   $interp=@tmp[2];\n"; };}
                 print OUT "\n";
                 if (@en{$P}) { push(@Etmp2,"+stoichio$pr$P*@en{$P}");
                 }else{ push(@Etmp2,"+stoichio$pr$P*E$P"); };
+                foreach $mol (@molecules) {
+                    if ($P eq $mol) { push(@Etmp2,"+stoichio$pr$P*(-Z$P+Z2D$P)"); push(@Esyms,"Z$P Z2D$P"); }; };
             };
         }; # if A D or R
     }; # if TS
     print OUT "syms";
-    foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\t\t\t\% $comment\n";
+    foreach $s (@Esyms) { print OUT " $s"; }; print OUT "\n";
     print OUT "   Ereactants$pr=0@Etmp;\n";
     print OUT "   Ets$pr=0@Etmp2;\n";
 	print OUT "AE$pr=Ets$pr-Ereactants$pr;\n";
@@ -1123,182 +1002,87 @@ sub ProcessE_sub {
 #=======================================================================================================================
 sub ProcessQ_sub {
     ($typeP,$pr)=@_;
-    @Qtmp=(); @Qsyms=("T"); @Qtmp2=(); $comment=();
-    # -------------------------------------------------------- Reactants
-    if (($typeP eq 'IA') or ($typeP eq 'ia')) {
-        foreach $R (@PR) {
-            push(@Qsyms, "Q3D$R");
-            if (@q{$R}) {
-                push(@Qtmp, "@q{$R}^stoichio$pr$R");
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        @tmp = split(/\s+/, @interpsys{$interp});
-                        print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
-                    };
-                };
+    @Qtmp=(); @Qsyms=("T");
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
+        foreach $R (@PR) { $go='no';
+            foreach $mol (@molecules) {
+                if ($R eq $mol) { $go='yes'; };
+            };
+            if ($go eq 'yes') { push(@Qtmp,"*(qtrans2D$R*Q3Dnotrans$R)^stoichio$pr$R");
+                push(@Qsyms,"qtrans2D$R Q3Dnotrans$R");
             }else{
-                $go = 'no';
-                foreach $mol (@molecules) {
-                    if ($R eq $mol) {$go = 'yes';};};
-                if ($go eq 'yes') {
-                    push(@Qtmp, "*(qvib3D$R*qrot$R)^stoichio$pr$R");
-                    push(@Qsyms, "qvib3D$R qrot$R");
-                }else{
-                    push(@Qtmp, "*Q3D$R^stoichio$pr$R");
-                };
-            };
-        };
-    }elsif (($typeP eq 'DA') or ($typeP eq 'da')) {
-        foreach $R (@PR) {
-            push(@Qsyms, "Q3D$R");
-            if (@q{$R}) {
-                push(@Qtmp, "@q{$R}^stoichio$pr$R");
-                foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        @tmp = split(/\s+/, @interpsys{$interp});
-                        print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
+                if (@q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
+                    foreach $inter (@interpolated) {
+                        if ($inter eq $R) { push(@Qsyms,"Q3D$R");};
                     };
-                };
-            }
-            else {
-                $go = 'no';
-                foreach $mol (@molecules) {
-                    if ($R eq $mol) {$go = 'yes';};};
-                if ($go eq 'yes') {
-                    push(@Qtmp, "*(qtrans2D$R*qvib3D$R*qrot$R)^stoichio$pr$R");
-                    push(@Qsyms, "qtrans2D$R qvib3D$R qrot$R");
-                }
-                else {
-                    push(@Qtmp, "*Q3D$R^stoichio$pr$R");
-                };
-            };
+                }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
+            foreach $interp (@interpolated) {
+                if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
+                    print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
         };
-    }else {
+    }else{
         foreach $R (@PR) {
-            push(@Qsyms, "Q3D$R");
-            if ($q{$R}) {
-                push(@Qtmp, "*@q{$R}^stoichio$pr$R");
+            if ($q{$R}) { push(@Qtmp,"*@q{$R}^stoichio$pr$R");
                 foreach $interp (@interpolated) {
-                    if ($interp eq $R) {
-                        print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
-                        @tmp = split(/\s+/, @interpsys{$R});
-                        @tmp = split(/\s+/, @interpsys{$interp});
-                    };
-                };
-            }
-            else {push(@Qtmp, "*Q3D$R^stoichio$pr$R");
-            };
-        };
+                    if ($interp eq $R) { push(@Qsyms,"Q3D$R"); @tmp=split(/\s+/,@interpsys{$R});
+                        @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+            }else{ push(@Qtmp,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R");};};
     };
-    # -------------------------------------------------------- TS
-    if (@PTS) {
+    if (@PTS) { @Qtmp2=();
         foreach $TS (@PTS) {
-            push(@Qsyms, "Q3D$TS");
             if ($q{$TS}) { push(@Qtmp2,"*@q{$TS}");
                 foreach $interp (@interpolated) {
-                    if ($interp eq $TS) {
-                        @tmp=split(/\s+/,@interpsys{$TS});
-                        @tmp=split(/\s+/,@interpsys{$interp});
-                        print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-            }else{ push(@Qtmp2,"*Q3D$TS");  };
+                    if ($interp eq $TS) { push(@Qsyms,"Q3D$TS"); @tmp=split(/\s+/,@interpsys{$TS});
+                        @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+            }else{ push(@Qtmp2,"*Q3D$TS"); push(@Qsyms,"Q3D$TS"); };
         };
-    # Alberto 19/07/2023 -- changed Q3Dnotrans by qvib3D/qvib2D, qtrans/qtrans2D, and qrot accounting
-    #                       for the different A and D degrees of freedom
-    }elsif (!@PTS) {
-        if (($typeP eq 'IA') or ($typeP eq 'ia')) {
-            $comment = "INDIRECT ADSORPTION";
-            foreach $R (@PR) {
-                if (@q{$R}) {
-                    push(@Qtmp2, "@q{$R}^stoichio$pr$R");
-                    foreach $interp (@interpolated) {
-                        if ($interp eq $R) {
-                            @tmp = split(/\s+/, @interpsys{$R});
-                            @tmp = split(/\s+/, @interpsys{$interp});
-                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";
-                        };
-                    };
-                }else{
-                    $go = 'no';
-                    foreach $mol (@molecules) {
-                        if ($R eq $mol) {$go = 'yes';};};
-                    if ($go eq 'yes') {
-                        push(@Qtmp2, "*(qvib2D$R*qrot$R)^stoichio$pr$R");
-                        push(@Qsyms, "qvib2D$R qrot$R");
-                    }
-                    else {
-                        push(@Qtmp2, "*Q3D$R^stoichio$pr$R");
-                    };
+    }elsif (!@PTS) { @Qtmp2=();
+        if (($typeP eq 'A') or ($typeP eq 'a')) {
+            foreach $R (@PR) { $go='no';
+                foreach $mol (@molecules) {
+                    if ($R eq $mol) { $go='yes'; };
                 };
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R");
+                }else{
+                    if (@q{$R}) { push(@Qtmp2,"@q{$R}^stoichio$pr$R");
+                        foreach $interp (@interpolated) {
+                            if ($interp eq $R) { push(@Qsyms,"Q3D$R"); @tmp=split(/\s+/,@interpsys{$R});
+                                @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+                    }else{ push(@Qtmp2,"*Q3D$R^stoichio$pr$R"); push(@Qsyms,"Q3D$R"); }; };
             };
-        }elsif (($typeP eq 'DA') or ($typeP eq 'da')) {
-            $comment = "DIRECT ADSORPTION";
-            foreach $R (@PR) {
-                if (@q{$R}) {
-                    push(@Qtmp2, "@q{$R}^stoichio$pr$R");
-                    foreach $interp (@interpolated) {
-                        if ($interp eq $R) {
-                            @tmp = split(/\s+/, @interpsys{$R});
-                            @tmp = split(/\s+/, @interpsys{$interp});
-                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n";};};
-                }else{$go = 'no';
-                    foreach $mol (@molecules) {
-                        if ($R eq $mol) {$go = 'yes';};};
-                        if ($go eq 'yes') {
-                            push(@Qtmp2, "*(qvib2D$R*qrot$R)^stoichio$pr$R");
-                            push(@Qsyms, "qvib2D$R qrot$R");
-                        }else{
-                            push(@Qtmp2,"*Q3D$R^stoichio$pr$R");};};};
-        }elsif (($typeP eq 'MD') or ($typeP eq 'md') or ($typeP eq 'ID') or ($typeP eq 'id')) {
-            foreach $P (@PP) {
-                if (@q{$P}) {
-                    push(@Qsyms, "Q3D$P");
-                    push(@Qtmp2,"@q{$P}^stoichio$pr$P");
-                    foreach $interp (@interpolated) {
-                        if ($interp eq $P) {
-                            @tmp=split(/\s+/,@interpsys{$P});
-                            @tmp=split(/\s+/,@interpsys{$interp});
-                            print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-                }else{$go='no';
-                    foreach $mol (@molecules) {
-                        if ($P eq $mol) {  $go='yes'; }; };
-                        if ($go eq 'yes') {
-                            if (($typeP eq 'MD') or ($typeP eq 'md')) { $comment = "MOBILE DESORPTION";
-                                push(@Qtmp2, "*(qvib2D$P*qtrans2D$P*qrot$P)^stoichio$pr$P");
-                                push(@Qsyms, "qvib2D$P qtrans2D$P qrot$P");
-                            }elsif (($typeP eq 'ID') or ($typeP eq 'id')) { $comment="IMMOBILE DESORPTION";
-                                push(@Qtmp2,"*(qvib2D$P)^stoichio$pr$P");
-                                push(@Qsyms,"qvib2D$P"); };
-                        }else{
-                            push(@Qsyms, "Q3D$P");
-                            push(@Qtmp2,"*Q3D$P^stoichio$pr$P");};};};
+        }elsif (($typeP eq 'D') or ($typeP eq 'd')) {
+            foreach $P (@PP) { $go='no';
+                foreach $mol (@molecules) {
+                    if ($P eq $mol) {  $go='yes'; }; };
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
+                }else{
+                    if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
+                        foreach $interp (@interpolated) {
+                            if ($interp eq $P) { push(@Qsyms,"Q3D$P"); @tmp=split(/\s+/,@interpsys{$P});
+                                @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};
+            };
         }elsif (($typeP eq 'R') or ($typeP eq 'r')) {
             foreach $R (@PR) { $go='no';
                 foreach $mol (@molecules) {
                     if ($R eq $mol) { $go='yes'; }; };
-                if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$R*qtrans2D$R*qrot$R)^stoichio$pr$R");
-                    push(@Qsyms,"qvib2D$R qtrans2D$R qrot$R"); };
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$R^stoichio$pr$R"); push(@Qsyms,"qvib2D$R"); };
             };
             foreach $P (@PP) { $go='no';
                 foreach $mol (@molecules) {
                     if ($P eq $mol) {  $go='yes'; }; };
-                if ($go eq 'yes') { push(@Qtmp2,"*(qvib2D$P*qtrans2D$P*qrot$P)^stoichio$pr$P");
-                    push(@Qsyms,"qvib2D$P qtrans2D$P qrot$P");
+                if ($go eq 'yes') { push(@Qtmp2,"*qvib2D$P^stoichio$pr$P"); push(@Qsyms,"qvib2D$P");
                 }else{
-                    push(@Qsyms, "Q3D$P");
                     if (@q{$P}) { push(@Qtmp2,"@q{$P}^stoichio$pr$P");
                         foreach $interp (@interpolated) {
-                            if ($interp eq $P) {
-                                @tmp=split(/\s+/,@interpsys{$P});
-                                @tmp=split(/\s+/,@interpsys{$interp});
-                                print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
-                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); };};};
+                            if ($interp eq $P) { push(@Qsyms,"Q3D$P"); @tmp=split(/\s+/,@interpsys{$P});
+                                @tmp=split(/\s+/,@interpsys{$interp}); print OUT "%   Q3D$interp=Q3D@tmp[2];\n"; };};
+                    }else{ push(@Qtmp2,"*Q3D$P^stoichio$pr$P"); push(@Qsyms,"Q3D$P"); };};};
         };
     };
     open OUT, ">>processes.m";
     print OUT "syms";
-    foreach $s (@Qsyms) { print OUT " $s"; }; print OUT "\n";   # Alberto: no $comment added
+    foreach $s (@Qsyms) { print OUT " $s"; }; print OUT "\n";
     print OUT "   Qreactants$pr=1@Qtmp;\n";
     print OUT "   Qts$pr=1@Qtmp2;\n";
     close OUT;
@@ -1335,12 +1119,12 @@ sub ProcessK_sub {
             if ($R eq $cat) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};
         foreach $interp (@interpolated) {
             if ($R eq $interp) { push(@r,"y(@y{$R})^stoichio$pr$R"); };};};
-    if (($typeP eq 'IA') or ($typeP eq 'ia') or ($typeP eq 'DA') or ($typeP eq 'da')) {
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
         print OUT "sticky$pr=(Qts$pr/Qreactants$pr)*exp(-(AE$pr*toeV/(kb*T)));\n";
-        print OUT "Arrhenius$pr=area$tmp*1/((2*pi*Mass$tmp*kb*T)^(1/2));\n";    # units of m*kg^-1*s^-1
-        print OUT "Krate$pr=sticky$pr*Arrhenius$pr;\n";
+        print OUT "Arrhenius$pr=area$tmp*1/((2*pi*Mass$tmp*kb*T)^(1/2));\n";
+        print OUT "Krate$pr=Arrhenius$pr*sticky$pr;\n";
     }else{
-        print OUT "Arrhenius$pr=(kb*T/h)*(Qts$pr/Qreactants$pr);\n";        # units of s^-1
+        print OUT "Arrhenius$pr=(kb*T/h)*(Qts$pr/Qreactants$pr);\n";
         print OUT "Krate$pr=Arrhenius$pr*exp(-(AE$pr*toeV/(kb*T)));\n"; };
     foreach $rpr (@r) { $nrate="$nrate*$rpr"; };
     push(@rates,"rate$pr=$nrate");
@@ -1388,9 +1172,9 @@ sub ProcessParameters_sub {
     if ($spH) { $row=$row+($fpH-$ipH)/$spH; };
     open OUT, ">>processes.m";
     print OUT " fileID=fopen(\"./KINETICS/PROCESS/ReactionParameters$pr.dat\",'a+');";
-    if (($typeP eq 'IA') or ($typeP eq 'ia') or ($typeP eq 'DA') or ($typeP eq 'da')) {
-        print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\t\t ΔE$pr(eV)\\n\');\n";
-    }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr \t\tAE$pr(eV)\\n\');\n";
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
+        print OUT " fprintf(fileID, \'#  T \t sticky$pr \t\t Arrhenius$pr \t\t Krate$pr\\n\');\n";
+    }else{ print OUT " fprintf(fileID, \'#  T \t Arrhenius$pr \t\t Krate$pr\\n\');\n";
     };
     print OUT "\n";
     if ($ttemp) {   print OUT "j=1;\nfor T = $itemp:$ttemp:$ftemp\n";
@@ -1421,17 +1205,16 @@ sub ProcessParameters_sub {
                 if ($R eq $mol) { $qmol="yes" };
             };
             if ($qmol eq "yes") {   print OUT "      E$R=ENERGY$R\{j,2}; Z$R=ZPE$R\{j,2}; Z2D$R=ZPE2D$R\{j,2};\n";
-                print OUT "      Q3D$R=PARTITION3D$R\{j,2}; qtrans2D$R=qt2d$R\{j,2}; qtrans3D$R=qt3d$R\{j,2};";
-                print OUT " qvib2D$R=qv2d$R\{j,2}; qvib3D$R=qv3d$R\{j,2}; qrot$R=qr$R\{j,2};\n"; @do{$R}="no";
+                print OUT "      Q3D$R=PARTITION3D$R\{j,2}; Q3Dnotrans$R=q3Dnotrans$R\{j,2};";
+                print OUT " qtrans2D$R=qt$R\{j,2}; qvib2D$R=qv$R\{j,2};\n"; @do{$R}="no";
             }else{
 # 31/05/2021
                 foreach $interp (@interpolated) {
                     if ($interp eq $R) { @tmp=split(/\s+/,@interpsys{$interp});
                         print OUT "      E$interp=ENERGY@tmp[2]\{j,2}; Q3D$interp=PARTITION3D@tmp[2]\{j,2};\n";
-                        print OUT "Z$interp=ZPE$tmp[2]\{j,2};\n"; @do{$interp}="no";};};
+                        @do{$interp}="no";};};
                 if (@do{$R} eq "yes") {
-                    print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2}; Z$R=ZPE$R\{j,2};\n";
-                    @do{$R}="no"; };};};
+                    print OUT "      E$R=ENERGY$R\{j,2}; Q3D$R=PARTITION3D$R\{j,2};\n"; @do{$R}="no"; };};};
     }; #foreach PR
     foreach $TS (@PTS) {
         if (@do{$TS} eq "yes") {
@@ -1439,10 +1222,9 @@ sub ProcessParameters_sub {
             foreach $interp (@interpolated) {
                 if ($interp eq $TS) { @tmp=split(/\s+/,@interpsys{$interp});
                     print OUT "      E$interp=ENERGY@tmp[2]\{j,2}; Q3D$interp=PARTITION3D@tmp[2]\{j,2};\n";
-                    print OUT "Z$interp=ZPE$tmp[2]\{j,2};\n"; @do{$interp}="no";};};
+                    @do{$interp}="no";};};
             if (@do{$TS} eq "yes") {
-                print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2}; Z$TS=ZPE$TS\{j,2};\n";
-                @do{$TS}="no"; };};
+                print OUT "      E$TS=ENERGY$TS\{j,2}; Q3D$TS=PARTITION3D$TS\{j,2};\n"; @do{$TS}="no"; };};
     }; #foreach PTS
     foreach $P (@PP) {
         if (@do{$P} eq "yes") { $qmol="no";
@@ -1450,23 +1232,20 @@ sub ProcessParameters_sub {
                 if ($P eq $mol) { $qmol="yes" };
             };
             if ($qmol eq "yes") {    print OUT "      E$P=ENERGY$P\{j,2}; Z$P=ZPE$P\{j,2}; Z2D$P=ZPE2D$P\{j,2};\n";
-                print OUT "      Q3D$P=PARTITION3D$P\{j,2}; qtrans2D$P=qt2d$P\{j,2}; qtrans3D$P=qt3d$P\{j,2};";
-                print OUT " qvib2D$P=qv2d$P\{j,2}; qvib3D$P=qv3d$P\{j,2}; qrot$P=qr$P\{j,2};\n"; @do{$P}="no";
+                print OUT "      Q3D$P=PARTITION3D$P\{j,2}; Q3Dnotrans$P=q3Dnotrans$P\{j,2};";
+                print OUT " qtrans2D$P=qt$P\{j,2}; qvib2D$P=qv$P\{j,2};\n"; @do{$P}="no";
             }else{
                 foreach $interp (@interpolated) {
                     if ($interp eq $P) { @tmp=split(/\s+/,@interpsys{$interp});
-                        print OUT "      E$interp=ENERGY@tmp[2]\{j,2}; Q3D$interp=PARTITION3D@tmp[2]\{j,2}; ";
-                        print OUT "Z$interp=ZPE$tmp[2]\{j,2};\n"; @do{$interp}="no";};};
+                        print OUT "      E$interp=ENERGY@tmp[2]\{j,2}; Q3D$interp=PARTITION3D@tmp[2]\{j,2};\n";
+                        @do{$interp}="no";};};
                 if (@do{$P} eq "yes") {
-                    print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2}; Z$P=ZPE$P\{j,2};\n";
-                    @do{$P}="no";
+                    print OUT "      E$P=ENERGY$P\{j,2}; Q3D$P=PARTITION3D$P\{j,2};\n"; @do{$P}="no";
                 };};};
     }; #foreach PR
-    if (($typeP eq 'IA') or ($typeP eq 'ia') or ($typeP eq 'DA') or ($typeP eq 'da')) {
-        print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E %.4f\\n', T, subs(sticky$pr), subs(Arrhenius$pr), ";
-        print OUT "subs(Krate$pr), subs(AE$pr));\n";
-    }else{ print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %.4f\\n', T, subs(Arrhenius$pr), subs(Krate$pr), ";
-        print OUT "subs(AE$pr));\n"; };
+    if (($typeP eq 'A') or ($typeP eq 'a')) {
+        print OUT " fprintf(fileID, '%.4f %1.15E %1.15E %1.15E\\n', T, subs(sticky$pr), subs(Arrhenius$pr), subs(Krate$pr));\n";
+    }else{ print OUT " fprintf(fileID, '%.4f %1.15E %1.15E\\n', T, subs(Arrhenius$pr), subs(Krate$pr));\n"; };
     if ($ttemp) {  print OUT "end\nfclose(fileID);\n"; }else{ print OUT "fclose(fileID);\n"; };
     print OUT "\n\n";
     close OUT;
@@ -1560,8 +1339,7 @@ sub variables_sub {
         print OUT " V=0.00;\n pH=0.00;\n";
         $TPRdone="n";
         for ($pr=1; $pr<=$#process; $pr++ ) {
-            if ((@typeproc[$pr] eq "DA") or (@typeproc[$pr] eq "da")
-                or (@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia")) {
+            if ((@typeproc[$pr] eq "A") or (@typeproc[$pr] eq "a")) {
                 @PR=split(/\s+/,@ProcessReactants[$pr]);
                 foreach $R (@PR) {
                     if (($R eq $TPRmolecule) and (@pressure{$mol} != 0)) {
@@ -1828,17 +1606,15 @@ sub ODE_call_sub {
                 }else{ print OUT " AEph$pr=0;\n"; };
             }else{ print OUT " AEph$pr=0;\n"; };
 #-----------------------------------------------------------------------------------------------------------------------
-            if (($typeproc[$pr] eq "DA") or ($typeproc[$pr] eq "da")
-                or (@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia")) {
-                print OUT "     Krate$pr=process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
+            if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
+                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr");
             }else{
                 print OUT "     Krate$pr=process$pr\{j,3} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T)) * exp(-((AEv$pr+AEph$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr"); };
         }else{
-            if (($typeproc[$pr] eq "DA") or ($typeproc[$pr] eq "da")
-                or (@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia")) {
-                print OUT "     Krate$pr=process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
+            if (($typeproc[$pr] eq "A") or ($typeproc[$pr] eq "a")) {
+                print OUT "     Krate$pr=process$pr\{j,2}*process$pr\{j,4} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
                 push(@transfer,"Krate$pr");
             }else{
                 print OUT "     Krate$pr=process$pr\{j,3} * AQcov$pr*exp(-((AEcov$pr)*toeV)/(kb*T));\n";
@@ -1880,10 +1656,9 @@ sub ODE_call_sub {
     print OUT "\n   tspan=[$itime $ftime];\n   IC=[@Rspecies];\n";
 # alberto 09/2019
 	if ($exp ne "TPR") { $ode="myode";
-        # Alberto : removed 'Refine',3 from odeset options.
-        printf OUT "   options=odeset('NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-7);\n",$#Rspecies+1;
+        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1;
     }else{ $ode="mytpr";
-        printf OUT "   options=odeset('NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-7);\n",$#Rspecies+1; };
+        printf OUT "   options=odeset('Refine',5,'NonNegative',(1:%d),'RelTol',1e-7,'AbsTol',1e-5);\n",$#Rspecies+1; };
     print OUT "\nsolution=ode15s(\@(t,y) $ode(t,y,";
     foreach $trn (@transfer) {
         if ($trn ne @transfer[$#transfer]) { print OUT "$trn,";
@@ -2059,8 +1834,7 @@ sub equations_sub {
         @PR=split(/\s+/,@ProcessReactants[$pr]);
         @PTS=split(/\s+/,@ProcessTS[$pr]);
         @PP=split(/\s+/,@ProcessProducts[$pr]);
-        if (($typeproc[$pr] eq 'DA') or ($typeproc[$pr] eq 'da')
-            or (@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia")) { $tmpmol=(); $tmpcat=();
+        if (($typeproc[$pr] eq 'A') or ($typeproc[$pr] eq 'a')) { $tmpmol=(); $tmpcat=();
             if ($exp ne "TPR") {
                 foreach $Rname (@PR) {
                     foreach $mol (@molecules) {
@@ -2113,8 +1887,7 @@ sub equations_sub {
                                 $Appequation{$interp}="$Appequation{$interp}+(stoichio$pr$fpro/stoichio$pr$tmpmol)*rate$pr";
                             };};};
                 };};
-        }elsif (($typeproc[$pr] eq 'MD') or ($typeproc[$pr] eq 'md')
-            or (@typeproc[$pr] eq "ID") or (@typeproc[$pr] eq "id")) { $tmpcat=();
+        }elsif (($typeproc[$pr] eq 'D') or ($typeproc[$pr] eq 'd')) { $tmpcat=();
             foreach $Rname (@PR) {
                 foreach $mol (@molecules) {
                     if ($Rname eq $mol) {
@@ -2370,15 +2143,13 @@ sub Reset_Conditions_0_sub {
                 printf OUT "%%%%%%%%%%%%%%%%%%%%%%%%%%    R$reverse[$pr]   @process[$reverse[$pr]]    %%%%%%%%%%\n\n";
 
 		for ($i=1; $i<=$#process; $i++ ) { if (($i eq $pr) or ($i eq $reverse[$pr])) {
-			if (($typeproc[$i] eq "DA") or ($typeproc[$i] eq "da")
-                or (@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia")) {
-        	       		print OUT "clear Krate$i;  Krate$i=process$i\{j,4}*exp(-((AEv$i+AEph$i+$BARRIER)*toeV)/(kb*T));\n";
+			if (($typeproc[$i] eq "A") or ($typeproc[$i] eq "a")) {
+        	       		print OUT "clear Krate$i;  Krate$i=process$i\{j,2}*process$i\{j,4}*exp(-((AEv$i+AEph$i+$BARRIER)*toeV)/(kb*T));\n";
 	       		}else{  print OUT "clear Krate$i;  Krate$i=process$i\{j,3}*exp(-((AEv$i+AEph$i+$BARRIER)*toeV)/(kb*T));\n"; };
 			$done[$pr]=1; $done[$reverse[$pr]]=1;
 		}else{
-			if (($typeproc[$i] eq "DA") or ($typeproc[$reverse[$i]] eq "da")
-                or (@typeproc[$pr] eq "IA") or (@typeproc[$pr] eq "ia")) {
-        	               	print OUT "clear Krate$i;  Krate$i=process$i\{j,4}*exp(-((AEv$i+AEph$i)*toeV)/(kb*T));\n";
+			if (($typeproc[$i] eq "A") or ($typeproc[$reverse[$i]] eq "a")) {
+        	               	print OUT "clear Krate$i;  Krate$i=process$i\{j,2}*process$i\{j,4}*exp(-((AEv$i+AEph$i)*toeV)/(kb*T));\n";
 	                }else{  print OUT "clear Krate$i;  Krate$i=process$i\{j,3}*exp(-((AEv$i+AEph$i)*toeV)/(kb*T));\n"; };
 		};};
                 ()=&Reset_Conditions_1_sub($fileout); open OUT, ">>$fileout.m";
@@ -2466,7 +2237,8 @@ sub Reset_Conditions_0_sub {
         print OUT "fclose(DRCfile);\n";
     return();
    }; #--> sub DRC_print
-#=============================================================================================================================
+
+#=============================================================================================================================   
    sub DSC_sub {
           ($fileout)=@_;
 
