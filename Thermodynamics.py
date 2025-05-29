@@ -371,14 +371,14 @@ class Enthalpy:
         '''Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
         ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P)'''
         temp = sp.symbols("temperature")
-        return sp.diff(properties["entropy3d"], temp)
+        return temp*sp.diff(properties["entropy3d"], temp)
 
     @staticmethod
     def cp2d(properties):
         ''' Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
         ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P) '''
         temp = sp.symbols("temperature")
-        return sp.diff(properties["entropy2d"], temp)
+        return temp*sp.diff(properties["entropy2d"], temp)
 
 
 
