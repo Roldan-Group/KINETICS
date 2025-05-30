@@ -15,7 +15,7 @@ import numpy as np
 from ase import Atoms
 from ase.io import read, write
 
-parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "SYMFACTOR", "ISITES", "SSITES", "IPRESSURE", "RPRESSURE", "ICOVERAGE",
+parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "SYMFACTOR", "ISITES", "MOLSITE", "IPRESSURE", "RPRESSURE", "ICOVERAGE",
 			  "RCOVERAGE", "INTERPOLATE", "END"]
 
 #print("\n")
@@ -115,15 +115,13 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 # Looking for frequencies from VASP
 			if len(words) > 7 and "f" in words[1] and 'THz' in words[4] and 'cm-1' in words[8]:
 				frequencies.append(float(words[7]))
-			elif len(words) > 6 and "f/i" in words[1] and 'THz' in words[3] and 'cm-1' in words[7]:
-				frequencies.append(-float(words[6]))
-# Looking for frequency displacements and freq2D from VASP
+				# Looking for frequency displacements and freq2D from VASP
 				nline += 1
 				positions = []
 				new_positions = []
 				if system_type == "Molecule":
 					for i in range(len(chemical_symbols)):
-						words = [ i.strip() for i in lines[nline].split() if i]
+						words = [i.strip() for i in lines[nline].split() if i]
 						nline += 1
 						positions.append([float(words[j]) for j in range(3)])
 						new_positions.append([float(words[j]) + float(words[j+3]) for j in range(3)])
@@ -131,10 +129,32 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 					system = Atoms(chemical_symbols, positions = positions, pbc=[True,True,True])
 					new_system = Atoms(chemical_symbols, positions = new_positions, pbc=[True,True,True])
 					shift = new_system.get_center_of_mass() - system.get_center_of_mass()
-					shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
-					if shift_module > 0.1:
-						frequencies_2D += [frequencies[-1]]
+					#shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
+					'''if shift_module > 0.1:
+						frequencies_2D += [frequencies[-1]]'''  # Alberto 29/05/2025
+					if np.abs(shift[2]) < 0.1:
+						frequencies_2D += [frequencies[-1]]  # Alberto 29/05/2025
+			elif len(words) > 6 and "f/i" in words[1] and 'THz' in words[3] and 'cm-1' in words[7]:
+				frequencies.append(-float(words[6]))
+				# Looking for frequency displacements and freq2D from VASP
+				nline += 1
+				positions = []
+				new_positions = []
+				if system_type == "Molecule":
+					for i in range(len(chemical_symbols)):
+						words = [i.strip() for i in lines[nline].split() if i]
+						nline += 1
+						positions.append([float(words[j]) for j in range(3)])
+						new_positions.append([float(words[j]) + float(words[j+3]) for j in range(3)])
 
+					system = Atoms(chemical_symbols, positions = positions, pbc=[True,True,True])
+					new_system = Atoms(chemical_symbols, positions = new_positions, pbc=[True,True,True])
+					shift = new_system.get_center_of_mass() - system.get_center_of_mass()
+					#shift_module = np.sqrt(shift[0]**2 + shift[1]**2 + shift[2]**2)
+					'''if shift_module > 0.1:
+						frequencies_2D += [frequencies[-1]]'''  # Alberto 29/05/2025
+					if np.abs(shift[2]) < 0.1:
+						frequencies_2D += [frequencies[-1]]  # Alberto 29/05/2025
 	elif software == "FHI-aims":
 		word = [i.strip() for i in ff.readline().split(" ") if i][-1]
 		try:
@@ -252,7 +272,7 @@ for line in lines:
 		FreqFile = words[2]
 	elif words[0] == "SYMFACTOR":
 		symmetry_factor = words[2]
-	elif words[0] == "ISITES":
+	elif words[0] == "MOLSITE":
 		try:
 			n_sites = float(words[2])
 			sites = str(words[3])
@@ -260,7 +280,7 @@ for line in lines:
 			n_sites = 1.0
 			sites = str(words[2])
 			continue
-	elif words[0] == "SSITES":
+	elif words[0] == "ISITES":
 		ssites = []
 		for i in words[2:]:
 			try:
@@ -359,7 +379,7 @@ for line in lines:
 				for IM in Inertia_moments:
 					ifile.write (" %.3g" %(IM*1.66053904E-47))
 				ifile.write ("   # kg*m^2\n")
-				ifile.write(" ISITES = {} {}\n" .format(n_sites, sites))
+				ifile.write(" MOLSITE = {} {}\n" .format(n_sites, sites))
 				if ipressure is not None:
 					ifile.write(" IPRESSURE = %.3f\n" %(float(ipressure)))
 				elif rpressure is not None:

@@ -4,9 +4,7 @@
 """
 
 import pathlib
-
-from numpy.doc.constants import constants
-from sympy as sp
+import sympy as sp
 
 
 def printData(rconditions, name, nadsorbates, properties, constants, datalabel, data):

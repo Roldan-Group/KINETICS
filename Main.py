@@ -4,9 +4,9 @@
         by Alberto Roldan
 """
 
-import os, sys
-from sympy as sp
-from Thermodynamics import PartitionFunctions
+import os, sys, re
+import sympy as sp
+#from Thermodynamics import PartitionFunctions
 
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
@@ -27,14 +27,10 @@ def mkread(inputfile):
     process = 0         # process number, key of processes starting from 1
     systems = {}        # species
     for line in open(inputfile).readlines():
-        if len(line) >= 1 and line.startswith("#") is False:
+        if not re.match(r'^\s*$', line) and line.startswith("#") is False:
             line = line.split("=")
             head = line[0].strip()
-            tail = []
-            i = 0
-            while line[1].split()[i][0] != "#" and i < len(line[1].split()):
-                tail.append(line[1].split()[i].strip())
-                i += 1
+            tail = [i.strip() for i in line[1].split()]
             ''' Reaction conditions are stored in a dictionary (rconditions), including:
                 - External potential (vext): constant or ramp (initial, final, step)
                 - pH (ph): constant or ramp (initial, final, step) 
@@ -72,50 +68,27 @@ def mkread(inputfile):
             if head == "PROCESS":
                 processes[str(process + 1)] = {}    # dictionary of items for process
                 processes[str(process + 1)]["kind"] = str(tail[0][0])  # kind of process
-                # getting reactants
-                i = 1
-                reactants = []
-                rstoichio = []
-                while tail[i] != ">" or tail[i] != ">>":
-                    try:
-                        rstoichio.append(float(tail[i]))
-                    except ValueError:
-                        if tail[i] != "+":
-                            reactants.append(str(tail[i]))
-                    i += 1
-                ''' It may be the case stoichiometry = 1 is neglected.
-                Then, it is check that the number of species is the same than
-                the number of stoichiometries or it is added a stoichio = 1.'''
-                while len(reactants) > len(rstoichio):
-                    rstoichio.append(float(1))
-                processes[str(process + 1)]["reactants"] = reactants  # reactants
-                processes[str(process + 1)]["rstoichio"] = rstoichio
-                # getting ts
-                if tail[i] == ">":
-                    i += 1  # added due to the ">"
-                    ts = []
-                    while tail[i] != ">":
-                        if tail[i] != "+":
-                            ts.append(str(tail[i]))
-                        i += 1
-                    processes[str(process + 1)]["ts"] = ts  # ts
-                # getting products
-                i += 1  # added due to the ">" or ">>"
-                products = []
-                pstoichio = []
-                for j in range(len(tail[i:])):
-                    try:
-                        pstoichio.append(float(tail[j]))
-                    except ValueError:
-                        if tail[j] != "+":
-                            products.append(str(tail[j]))
-                ''' It may be the case that stoichiometry = 1 is neglected.
-                Then, it is check that the number of species is the same than
-                the number of stoichiometries or 1 it is added to stoichio.'''
-                while len(products) > len(pstoichio):
-                    pstoichio.append(float(1))
-                processes[str(process + 1)]["products"] = products  # products
-                processes[str(process + 1)]["pstoichio"] = pstoichio
+                reaction = ''.join(tail[1:]).split(">")
+                for i in range(3):      # [reactants, TSs, products]
+                    species = []
+                    stoichio = []
+                    for j in reaction[i].split("+"):
+                        k = j[0:len(j.rsplit(r'[0-9]'))]
+                        try:
+                            stoichio.append(float(k))
+                            species.append(str(j[len(j.rsplit(r'[0-9]')):]))
+                        except ValueError:
+                            stoichio.append(1.0)
+                            species.append(str(j))
+                    if i == 0:
+                        processes[str(process + 1)]["reactants"] = species  # reactants
+                        processes[str(process + 1)]["rstoichio"] = stoichio
+                    elif i == 1:
+                        processes[str(process + 1)]["ts"] = species
+                        processes[str(process + 1)]["tsstoichio"] = stoichio
+                    else:
+                        processes[str(process + 1)]["products"] = species  # products
+                        processes[str(process + 1)]["pstoichio"] = stoichio
             ''' Systems, i.e. the species involved, in a nested dictionary (systems) with key = name,
             including:
                 - number of adsorbates (nadsorbates), accounting for the systems' coverage.
@@ -180,8 +153,8 @@ def mkread(inputfile):
                 print(freq)
 
                 systems[name][nadsorbates]["freq3d"] = sorted(freq, reverse=True)   # species frequencies 3D
-            if head == "FREQ2D":
-                freq2d = []                   # species frequencies only considering x and y displacements
+            if head == "FREQ2D":            # species frequencies only considering x and y displacements
+                freq2d = []                 # i.e. displacement of their center of mass < 0.1 on the Z-axis.
                 for i in tail:
                     try:
                         freq2d.append(float(i))
@@ -189,9 +162,9 @@ def mkread(inputfile):
                         pass
                 systems[name][nadsorbates]["freq2d"] = sorted(freq2d, reverse=True)   # species frequencies only considering x and y displacements
             if head == "IMASS":
-                systems[name][nadsorbates]["mass"] = float(tail[0])
+                systems[name][nadsorbates]["imass"] = [float(i) for i in tail]
             if head == "INATOMS":
-                systems[name][nadsorbates]["natoms"] = int(tail[0])
+                systems[name][nadsorbates]["natoms"] = [int(i) for i in tail]
             if head == "SYMFACTOR":
                 systems[name][nadsorbates]["symfactor"] = int(tail[0])
             if head == "INERTIA":
@@ -201,10 +174,13 @@ def mkread(inputfile):
                         inertia.append(float(i))
                     except ValueError:
                         pass
-                systems[name][nadsorbates]["inertia"] = inertia   # molecule's inertia moment(s) in Kg/m^2
+                if len(inertia) == 1:
+                    systems[name][nadsorbates]["inertia"] = inertia[0]   # molecule's inertia moment(s) in Kg/m^2
+                else:
+                    systems[name][nadsorbates]["inertia"] = inertia   # molecule's inertia moment(s) in Kg/m^2
                 if isinstance(inertia, float):      # molecular linearity
                     systems[name][nadsorbates]["linear"] = "yes"
-                elif inertia[0] ==inertia[1] or inertia[0] == inertia[2] or inertia[1] == inertia[2]:
+                elif inertia[0] == inertia[1] or inertia[0] == inertia[2] or inertia[1] == inertia[2]:
                     systems[name][nadsorbates]["linear"] = "yes"
                 else:
                     systems[name][nadsorbates]["linear"] = "no"
@@ -246,7 +222,7 @@ def mkread(inputfile):
     for name in systems.keys():
         if "area" in systems[name][list(systems[name].keys())[0]].keys():
             systems[name]["kind"] = "surface"
-        elif "mass" in systems[name][list(systems[name].keys())[0]].keys():
+        elif "imass" in systems[name][list(systems[name].keys())[0]].keys():
             systems[name]["kind"] = "molecule"
         else:
             systems[name]["kind"] = "adsorbed"
@@ -261,6 +237,11 @@ def mkread(inputfile):
         if systems[name]["kind"] == "adsorbed" and "coverage0" not in systems[nadsorbates].keys():
             systems[name]["coverage0"] = 0.
         for nadsorbates in systems[name].keys():
+            if systems[name][nadsorbates]["kind"] == "molecule":
+                mass = 0
+                for i in range(len(systems[name][nadsorbates]["imass"])):
+                    mass += systems[name][nadsorbates]["imass"][i] * systems[name][nadsorbates]["natoms"][i]
+                systems[name][nadsorbates]["mass"] = mass / (6.02214076e23 * 1000)    # in kg
             if "freqpath" not in systems[name][nadsorbates].keys():
                 systems[name][nadsorbates]["freqpath"] = systems[name][nadsorbates]["syspath"]
             if "degeneration" not in systems[name][nadsorbates].keys():
@@ -326,4 +307,5 @@ def mkread(inputfile):
 
 rconditions, processes, systems = mkread(str(sys.argv[1]))
 
-systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants))
+print(rconditions, processes, systems)
+#systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants))
