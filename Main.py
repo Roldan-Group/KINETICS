@@ -6,7 +6,8 @@
 
 import os, sys, re
 import sympy as sp
-#from Thermodynamics import PartitionFunctions
+import json
+from Thermodynamics import PartitionFunctions
 
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
@@ -30,7 +31,12 @@ def mkread(inputfile):
         if not re.match(r'^\s*$', line) and line.startswith("#") is False:
             line = line.split("=")
             head = line[0].strip()
-            tail = [i.strip() for i in line[1].split()]
+            tail = []
+            for i in line[1].split():
+                if i != "#" :
+                    tail.append(i)
+                else:
+                    break
             ''' Reaction conditions are stored in a dictionary (rconditions), including:
                 - External potential (vext): constant or ramp (initial, final, step)
                 - pH (ph): constant or ramp (initial, final, step) 
@@ -78,8 +84,9 @@ def mkread(inputfile):
                             stoichio.append(float(k))
                             species.append(str(j[len(j.rsplit(r'[0-9]')):]))
                         except ValueError:
-                            stoichio.append(1.0)
-                            species.append(str(j))
+                            if len(j) > 0:
+                                stoichio.append(1.0)
+                                species.append(str(j))
                     if i == 0:
                         processes[str(process + 1)]["reactants"] = species  # reactants
                         processes[str(process + 1)]["rstoichio"] = stoichio
@@ -114,26 +121,29 @@ def mkread(inputfile):
             if head == "SYSTEM":
                 name = str(tail[0])         # species name
                 systems[name] = {}
-                nadsorbates = 1
                 try:
-                    nadsorbates = int(tail[1])    # number of adsorbates in system
-                except ValueError:
-                        pass
-                systems[name][str(nadsorbates)] = {}
+                    nadsorbates = str(tail[1])    # number of adsorbates in system
+                except:
+                    nadsorbates = str(1)  # number of adsorbates in system by default
+                    pass
+                systems[name][nadsorbates] = {}
             if head == "SYSPATH":
-                systems[name][nadsorbates]["syspath"] = str(tail[0])
+                systems[name][nadsorbates]["syspath"] = tail[0]
             if head == "FREQPATH":
                 systems[name][nadsorbates]["freqpath"] = str(tail[0])
             if head == "E0":             # species energy
                 systems[name][nadsorbates]["energy0"] = float(tail[0])
             if head == "ISITES":
+                nsites = []
                 sites = []                  # catalyst adsorption sites
                 for i in tail:
                     try:
-                        a = float(i)
+                        nsites.append(float(i))
                     except ValueError:
                         sites.append(str(i))
-                systems[name][nadsorbates]["site"] = sites   # catalyst adsorption sites
+                if len(nsites) < len(sites):
+                    systems[name][nadsorbates]["nsite"] = [1 for i in range(len(sites))]
+                systems[name][nadsorbates]["sites"] = sites   # catalyst adsorption sites
             if head == "IACAT":
                 areas = []                   # adsorption areas
                 for i in tail:
@@ -149,9 +159,6 @@ def mkread(inputfile):
                         freq.append(float(i))
                     except ValueError:
                         pass
-
-                print(freq)
-
                 systems[name][nadsorbates]["freq3d"] = sorted(freq, reverse=True)   # species frequencies 3D
             if head == "FREQ2D":            # species frequencies only considering x and y displacements
                 freq2d = []                 # i.e. displacement of their center of mass < 0.1 on the Z-axis.
@@ -162,9 +169,9 @@ def mkread(inputfile):
                         pass
                 systems[name][nadsorbates]["freq2d"] = sorted(freq2d, reverse=True)   # species frequencies only considering x and y displacements
             if head == "IMASS":
-                systems[name][nadsorbates]["imass"] = [float(i) for i in tail]
+                systems[name][nadsorbates]["imass"] = list([float(i) for i in tail])
             if head == "INATOMS":
-                systems[name][nadsorbates]["natoms"] = [int(i) for i in tail]
+                systems[name][nadsorbates]["natoms"] = list([int(i) for i in tail])
             if head == "SYMFACTOR":
                 systems[name][nadsorbates]["symfactor"] = int(tail[0])
             if head == "INERTIA":
@@ -184,33 +191,34 @@ def mkread(inputfile):
                     systems[name][nadsorbates]["linear"] = "yes"
                 else:
                     systems[name][nadsorbates]["linear"] = "no"
+            '''A molecule will adsorb on one a site with a particular area (marea). If the molecules has more than 
+            site to adsorbed, differente systems needs to be described'''
             if head == "MOLSITE":
-                equivalents = []        # molecular area equivalent of molsite
-                molsites = []           # molecular adsorption sites
+                equivalent = None
                 for i in tail:
                     try:
-                        equivalents.append(float(i))
+                        equivalent = float(i)   # molecular area equivalent of molsite
                     except ValueError:
-                        molsites.append(str(i))
+                        molsite = str(i)   # molecular adsorption site)
                 ''' It may be the case equivalent = 1 is neglected.
                 Then, it is check that the len(equivalents) is the same than
                 the number of molsites or 1 is added to equivalent.'''
-                while len(molsites) > len(equivalents):
-                    equivalents.append(float(1))
-                systems[name][nadsorbates]["molsite"] = molsites   # molecular adsorption sites
-                systems[name][nadsorbates]["nmolsite"] = equivalents   # molecular area equivalent of molsite
+                if equivalent == None:
+                    equivalent = float(1)
+                systems[name][nadsorbates]["molsite"] = molsite   # molecular adsorption site
+                systems[name][nadsorbates]["nmolsite"] = equivalent   # molecular area equivalent of molsite
             if head == "DEGENERATION":
                 systems[name][nadsorbates]["degeneration"] = int(tail[0])
             if head == "IPRESSURE":
                 if len(tail) == 1:
-                    rconditions[name]["pressure0"] = float(tail[0])     # constant
+                    systems[name]["pressure0"] = float(tail[0])     # constant
                 else:
-                    rconditions[name]["pressure0"] = [float(i) for i in tail]   # ramp
+                    systems[name]["pressure0"] = [float(i) for i in tail]   # ramp
             if head == "ICOVERAGE":
                 if len(tail) == 1:
-                    rconditions[name]["coverage0"] = float(tail[0])     # constant
+                    systems[name]["coverage0"] = float(tail[0])     # constant
                 else:
-                    rconditions[name]["coverage0"] = [float(i) for i in tail]   # ramp
+                    systems[name]["coverage0"] = [float(i) for i in tail]   # ramp
     ''' Checks in systems to assign the kind of system and check:
         - the kind, 
         - the path for the frequencies,
@@ -226,81 +234,89 @@ def mkread(inputfile):
             systems[name]["kind"] = "molecule"
         else:
             systems[name]["kind"] = "adsorbed"
+
         if systems[name]["kind"] == "surface":
-            for nadsorbates in systems[name].keys():
-                if len(systems[name][nadsorbates]["area"]) != len(systems[name][nadsorbates]["site"]):
-                    print("   ERROR: the number of sites and areas in {}{} is\ "
-                          "not the same.".format(name,nadsorbates))
-                    exit(0)
-        if systems[name]["kind"] == "molecule" and "pressure0" not in systems[name].keys():
-            systems[name]["pressure0"] = 0.
-        if systems[name]["kind"] == "adsorbed" and "coverage0" not in systems[nadsorbates].keys():
-            systems[name]["coverage0"] = 0.
-        for nadsorbates in systems[name].keys():
-            if systems[name][nadsorbates]["kind"] == "molecule":
-                mass = 0
-                for i in range(len(systems[name][nadsorbates]["imass"])):
-                    mass += systems[name][nadsorbates]["imass"][i] * systems[name][nadsorbates]["natoms"][i]
-                systems[name][nadsorbates]["mass"] = mass / (6.02214076e23 * 1000)    # in kg
-            if "freqpath" not in systems[name][nadsorbates].keys():
-                systems[name][nadsorbates]["freqpath"] = systems[name][nadsorbates]["syspath"]
-            if "degeneration" not in systems[name][nadsorbates].keys():
-                systems[name][nadsorbates]["degeneration"] = 1
-            if systems[name][nadsorbates]["kind"] != "surface" and\
-                    len(systems[name][nadsorbates]["freq3d"]) == 0:
-                print("   ERROR: frequencies for {}{} are not provided".format(name,nadsorbates))
-                exit(0)
-            if systems[name][nadsorbates]["kind"] == "molecule" and\
-                    len(systems[name][nadsorbates]["freq2d"]) == 0:
-                print("   ERROR: 2D frequencies for {}{} are not provided".format(name,nadsorbates))
-                exit(0)
-            ''' It may be the case that the number of adsorbates in an adsorbed 
-                system has not been neglected or provided (nadsorbates = 0). 
-                To maintain the physical meaning, nadsorbates is redefined as 1.'''
-            if systems[name][nadsorbates]["kind"] == "adsorbed" and nadsorbates == str(0):
-                if len(systems[name].keys()) == 1:
-                    systems[name][str(1)] = systems[name][str(0)]
-                    del systems[name][str(0)]
-                else:
-                    print("   ERROR: the number of adsorbates in {} is conflicting or not provided".format(name))
-                    exit(0)
+            for key in systems[name].keys():
+                if key not in ["kind"]:       # only for nadsorbates
+                    if len(systems[name][key]["area"]) != len(systems[name][key]["sites"]):
+                        print("   ERROR: the number of sites and areas in {}{} is not the same.".format(name,key))
+                        exit()
+                    if ("freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0):
+                        print("   NOTE: frequencies for {}{} are not provided".format(name, key))
+        if systems[name]["kind"] == "molecule":
+            if "pressure0" not in systems[name].keys():
+                systems[name]["pressure0"] = 0.
+            for key in systems[name].keys():
+                if key not in ["kind", "pressure0"]:       # only for nadsorbates
+                    mass = 0
+                    for i in range(len(systems[name][key]["imass"])):
+                        mass = systems[name][key]['imass'][i] * systems[name][key]['natoms'][i]
+                    systems[name][key]["mass"] = mass / (6.02214076e23 * 1000)    # in kg
+                    if "freqpath" not in systems[name][key].keys():
+                        systems[name][key]["freqpath"] = systems[name][key]["syspath"]
+                    if "degeneration" not in systems[name][key].keys():
+                        systems[name][key]["degeneration"] = 1
+                    if "freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0:
+                        print("   ERROR: frequencies for {}{} are not provided".format(name, key))
+                        exit()
+                    if "freq2d" not in systems[name][key].keys() or len(systems[name][key]["freq2d"]) == 0:
+                        print("   ERROR: 2D frequencies for {}{} are not provided".format(name, key))
+                        exit()
+        if systems[name]["kind"] == "adsorbed":
+            if "coverage0" not in systems[name].keys():
+                systems[name]["coverage0"] = 0.
+            for key in systems[name].keys():
+                if key not in ["kind", "coverage0"]:       # only for nadsorbates
+                    if ("freq3d" not in systems[name][key].kesy() or len(systems[name][key]["freq3d"]) == 0):
+                        print("   NOTE: frequencies for {}{} are not provided".format(name, key))
+                        exit()
+
     ''' Once the systems has defined as molecule or surface, 
     looking for the area occupied for each molecule (marea)'''
     sites = {}
     for name in systems.keys():
         if systems[name]["kind"] == "surface":
-            for nadsorbates in systems[name].keys():
-                sites[str(systems[name][nadsorbates]["site"])] = float(systems[name][nadsorbates]["area"])
+            for key in systems[name].keys():
+                if key not in ["kind"]:       # only for nadsorbates
+                    for i in range(len(systems[name][key]["sites"])):
+                        sites[str(systems[name][key]["sites"][i])] = float(systems[name][key]["area"][i])
+    '''A molecule will adsorb on one a site with a particular area (marea). If the molecules has more than site to 
+    adsorbed, differente systems needs to be described'''
     for name in systems.keys():
         if systems[name]["kind"] == "molecule":
-            for nadsorbates in systems[name].keys():
-                if systems[name][nadsorbates]["molsite"] in sites:
-                    systems[name][nadsorbates]["marea"] = (sites[str(systems[name][nadsorbates]["molsite"])] /
-                                                           int(systems[name][nadsorbates]["nmolsite"]))
-                temp = sp.symbol("temperature")
-                pressure = 101325       # Pa == kg⋅m^−1⋅s^−2
-                systems[name][nadsorbates]["volume"] = constants["kb"]*temp/pressure        # Assuming ideal behaviour of gases
-
-
-    for key in processes.keys():
-        freq = []
-        if name in [i for i in processes[key]["ts"]]:
-            for i in systems[name][nadsorbates]["freq3d"][:-2]:
-                if i < -100:
-                    print("   ERROR: {}{} has more than one significant imaginary frequency".format(name,nadsorbates))
-                    exit(0)
-                else:
-                    freq.append(systems[name][nadsorbates]["freq3d"][i])
-            freq.append(systems[name][nadsorbates]["freq3d"][-1])
-            systems[name][nadsorbates]["freq3d"] = freq
-        else:
-            for i in systems[name][nadsorbates]["freq3d"]:
-                if i < -100:
-                    print("   ERROR: {}{} has a significant imaginary frequency".format(name,nadsorbates))
-                    exit(0)
-                else:
-                    freq.append(systems[name][nadsorbates]["freq3d"][i])
-            systems[name][nadsorbates]["freq3d"] = freq
+            for key in systems[name].keys():
+                if key not in ["kind", "pressure0"]:       # only for nadsorbates
+                    if systems[name][key]["molsite"] in sites:
+                        systems[name][key]["marea"] = (sites[str(systems[name][key]["molsite"])] /
+                                         int(systems[name][key]["nmolsite"]))
+                    temp = sp.symbols("temperature")
+                    pressure = 101325       # Pa == kg⋅m^−1⋅s^−2
+                    systems[name][key]["volume"] = constants["kb"]*temp/pressure        # Assuming ideal behaviour of gases
+    for nproc in processes.keys():
+        for name in systems.keys():
+            freq = []
+            if name in [i for i in processes[nproc]["ts"]]:
+                for key in systems[name].keys():
+                    if key not in ["kind", "pressure0", "coverage0"]:  # only for nadsorbates
+                        for i in systems[name][key]["freq3d"][:-2]:
+                            if i < -100:
+                                print("   ERROR: {}{} has more than one significant imaginary frequency".format(
+                                    name, key))
+                                exit()
+                            else:
+                                freq.append(i)
+                        freq.append(systems[name][key]["freq3d"][-1])
+                        systems[name][key]["freq3d"] = freq
+            else:
+                for key in systems[name].keys():
+                    if key not in ["kind", "pressure0", "coverage0"] and "freq3d" in systems[name][key].keys():  # only for nadsorbates
+                        for i in systems[name][key]["freq3d"]:
+                            if i < -100:
+                                print("   ERROR: {}{} has a significant imaginary frequency".format(name, key))
+                                exit()
+                            else:
+                                freq.append(i)
+                        systems[name][key]["freq3d"] = freq
 
     return rconditions, processes, systems
 
@@ -308,4 +324,4 @@ def mkread(inputfile):
 rconditions, processes, systems = mkread(str(sys.argv[1]))
 
 print(rconditions, processes, systems)
-#systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants))
+systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants))
