@@ -7,7 +7,7 @@
 import os, sys, re
 import sympy as sp
 import json
-from Thermodynamics import PartitionFunctions
+from Thermodynamics import PartitionFunctions, FreeEnergy
 
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
@@ -102,7 +102,7 @@ def mkread(inputfile):
                 - kind (surface, molecule, adsorbed)
                 - path the input, i.e. QM data, (syspath)
                 - path to frequencies (freqpath)
-                - energy (energy)
+                - DFT energy (energy0)
                 - frequencies (freq3d & freq2d) either 3D or only along the plane x and y axis (2D)
                 - different adsorption sites (site), only for naked systems, e.g. surface
                 - different areas related to the sites (area) in m^2, only for naked systems, e.g. surface
@@ -250,7 +250,7 @@ def mkread(inputfile):
                 if key not in ["kind", "pressure0"]:       # only for nadsorbates
                     mass = 0
                     for i in range(len(systems[name][key]["imass"])):
-                        mass = systems[name][key]['imass'][i] * systems[name][key]['natoms'][i]
+                        mass += systems[name][key]['imass'][i] * systems[name][key]['natoms'][i]
                     systems[name][key]["mass"] = mass / (6.02214076e23 * 1000)    # in kg
                     if "freqpath" not in systems[name][key].keys():
                         systems[name][key]["freqpath"] = systems[name][key]["syspath"]
@@ -323,5 +323,6 @@ def mkread(inputfile):
 
 rconditions, processes, systems = mkread(str(sys.argv[1]))
 
-print(rconditions, processes, systems)
-systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants))
+systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants)).systems
+systems = FreeEnergy(dict(rconditions), dict(systems), dict(constants))
+
