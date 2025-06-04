@@ -209,49 +209,31 @@ class FreeEnergy:        # Gibbs free energy in eV
         self.systems = systems
     @staticmethod
     def zpe3d(properties, constants):
-        ''' ZPE calculated including the Quantum zero-point and tunneling effects within the harmonic approximation
-         (DOI: 10.1063/1.216119).
-            - Wigner approximation (DOI: 10.1039/tf9383400029) to the energy vanishes at high temperatures and
-            at low temperatures, it goes to the classical ZPE = SUM(h*freq/2)
-            - The effect of quantum-mechanical tunneling can also be estimated using a harmonic Wigner
-            correction (E. Wigner, Z. Phys. Chem. Abt. B19, 203 (1932).). The correction can only be used above
-            the crossover temperature for tunneling:: T_c = h(bar)*|freq|/kb ~ 0.23 * |freq| kelvin'''
+        ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
+            Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
         temp = sp.symbols("temperature")
-        zpe = 1
+        zpe = 0
         if "freq3d" in properties:
             for freq in properties["freq3d"]:
                 if freq > 0.0:
                     # Quantum-mechanical Zero-Point-Energy
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-                else:
-                    # Quantum-mechanical tunneling (same as before but with the imaginary frequency)
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-        return constants["kb"]*temp * sp.log(zpe) * constants["JtoeV"]
+                    zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
+                                                         (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+        return zpe * constants["JtoeV"]
 
     @staticmethod
     def zpe2d(properties, constants):
-        ''' ZPE calculated including the Quantum zero-point and tunneling effects within the harmonic approximation
-         (DOI: 10.1063/1.216119).
-            - Wigner approximation (DOI: 10.1039/tf9383400029) to the energy vanishes at high temperatures and
-            at low temperatures, it goes to the classical ZPE = SUM(h*freq/2)
-            - The effect of quantum-mechanical tunneling can also be estimated using a harmonic Wigner
-            correction (E. Wigner, Z. Phys. Chem. Abt. B19, 203 (1932).). The correction can only be used above
-            the crossover temperature for tunneling:: T_c = h(bar)*|freq|/kb '''
+        ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
+            Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
         temp = sp.symbols("temperature")
-        zpe = 1
+        zpe = 0
         if "freq2d" in properties:
             for freq in properties["freq2d"]:
                 if freq > 0.0:
                     # Quantum-mechanical Zero-Point-Energy
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-                else:
-                    # Quantum-mechanical tunneling (same as before but with the imaginary frequency)
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-        return constants["kb"]*temp * sp.log(zpe) * constants["JtoeV"]
+                    zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
+                                                         (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+        return zpe * constants["JtoeV"]
 
 
 class Entropy:
