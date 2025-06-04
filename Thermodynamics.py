@@ -159,7 +159,7 @@ class PartitionFunctions:
         return qvib
 
 
-class FreeEnergy:        # Gibbs free energy in eV
+class Energy:        # Gibbs free energy in eV
     def __init__(self, rconditions, systems, constants):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
@@ -192,66 +192,50 @@ class FreeEnergy:        # Gibbs free energy in eV
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
-                        systems[name][nadsorbates]["genergy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
+                        systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
-                        systems[name][nadsorbates]["genergy2d"] = (systems[name][nadsorbates]["enthalpy2d"] -
+                        systems[name][nadsorbates]["energy2d"] = (systems[name][nadsorbates]["enthalpy2d"] -
                                                                    temp * systems[name][nadsorbates]["entropy2d"])
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
-                              ["genergy3d", "genergy2d"], "GibbsFreeEnergy")
+                              ["energy3d", "energy2d"], "GibbsFreeEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
-                        systems[name][nadsorbates]["genergy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
+                        systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
-                              ["genergy3d"], "GibbsFreeEnergy")
+                              ["energy3d"], "GibbsFreeEnergy")
 
         self.systems = systems
+        print("  >> NO INTERPOLATION BUILT <<\n integrals in Enthalpy desactivated\n")
+
     @staticmethod
     def zpe3d(properties, constants):
-        ''' ZPE calculated including the Quantum zero-point and tunneling effects within the harmonic approximation
-         (DOI: 10.1063/1.216119).
-            - Wigner approximation (DOI: 10.1039/tf9383400029) to the energy vanishes at high temperatures and
-            at low temperatures, it goes to the classical ZPE = SUM(h*freq/2)
-            - The effect of quantum-mechanical tunneling can also be estimated using a harmonic Wigner
-            correction (E. Wigner, Z. Phys. Chem. Abt. B19, 203 (1932).). The correction can only be used above
-            the crossover temperature for tunneling:: T_c = h(bar)*|freq|/kb ~ 0.23 * |freq| kelvin'''
+        ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
+            Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
         temp = sp.symbols("temperature")
-        zpe = 1
+        zpe = 0
         if "freq3d" in properties:
             for freq in properties["freq3d"]:
                 if freq > 0.0:
                     # Quantum-mechanical Zero-Point-Energy
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-                else:
-                    # Quantum-mechanical tunneling (same as before but with the imaginary frequency)
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-        return constants["kb"]*temp * sp.log(zpe) * constants["JtoeV"]
+                    zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
+                                                         (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+        return zpe * constants["JtoeV"]
 
     @staticmethod
     def zpe2d(properties, constants):
-        ''' ZPE calculated including the Quantum zero-point and tunneling effects within the harmonic approximation
-         (DOI: 10.1063/1.216119).
-            - Wigner approximation (DOI: 10.1039/tf9383400029) to the energy vanishes at high temperatures and
-            at low temperatures, it goes to the classical ZPE = SUM(h*freq/2)
-            - The effect of quantum-mechanical tunneling can also be estimated using a harmonic Wigner
-            correction (E. Wigner, Z. Phys. Chem. Abt. B19, 203 (1932).). The correction can only be used above
-            the crossover temperature for tunneling:: T_c = h(bar)*|freq|/kb '''
+        ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
+            Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
         temp = sp.symbols("temperature")
-        zpe = 1
+        zpe = 0
         if "freq2d" in properties:
             for freq in properties["freq2d"]:
                 if freq > 0.0:
                     # Quantum-mechanical Zero-Point-Energy
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-                else:
-                    # Quantum-mechanical tunneling (same as before but with the imaginary frequency)
-                    zpe *= ((sp.sinh((constants["hc"]*freq)/(2*constants["kb"]*temp))) /
-                             (constants["hc"]*freq)/(2*constants["kb"]*temp))
-        return constants["kb"]*temp * sp.log(zpe) * constants["JtoeV"]
+                    zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
+                                                         (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+        return zpe * constants["JtoeV"]
 
 
 class Entropy:
@@ -381,11 +365,13 @@ class Enthalpy:
                     if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
                         systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
                         systems[name][nadsorbates]["cp2d"] = self.cp2d(systems[name][nadsorbates])
-                        enthalpy3d = (systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe3d"] +
-                                sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
+                        enthalpy3d = systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe3d"]
+                                # activate for production
+                                # + sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
                         systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
-                        enthalpy2d = (systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe2d"] +
-                                  sp.integrate(systems[name][nadsorbates]["cp2d"], temp))
+                        enthalpy2d = systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe2d"]
+                                # activate for production
+                                # + sp.integrate(systems[name][nadsorbates]["cp2d"], temp))
                         systems[name][nadsorbates]["enthalpy2d"] = enthalpy2d
                         datalabel = ["zpe3d", "cp3d", "enthalpy3d", "cp2d", "zpe2d", "enthalpy2d"]
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
