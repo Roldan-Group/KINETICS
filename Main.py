@@ -7,7 +7,7 @@
 import sys, re
 import sympy as sp
 from Thermodynamics import PartitionFunctions, Energy
-#from Kinetics import RConstants
+from Kinetics import RConstants
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
              "kb": 1.380658045430573e-23,   # J K^-1
@@ -322,8 +322,7 @@ def mkread(inputfile):
 
 rconditions, processes, systems = mkread(str(sys.argv[1]))
 
-
 systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants)).systems
 systems = Energy(dict(rconditions), dict(systems), dict(constants)).systems
 print(processes)
-#processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes
+processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes

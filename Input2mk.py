@@ -24,9 +24,9 @@ parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "SYMFACTOR", "ISITES", "MOLSITE",
 def Common_Properties(system, name):
 
 # Exports the geometry in XYZ format
-	if not os.path.exists("./XYZ"):
-		os.makedirs("./XYZ")
-	write(str("./XYZ/" + name + ".xyz"), Atoms(system))
+	#if not os.path.exists("./XYZ"):
+	#	os.makedirs("./XYZ")
+	#write(str("./XYZ/" + name + ".xyz"), Atoms(system))
 
 # Get the ground state multiplicity
 	try:
@@ -34,7 +34,7 @@ def Common_Properties(system, name):
 	except:
 		mag_moment = 0.00 + 1
 
-	return str("./XYZ/" + name + ".xyz"), mag_moment
+	return mag_moment #,str("./XYZ/" + name + ".xyz")
 
 #..............................................................................................................
 
@@ -324,7 +324,7 @@ for line in lines:
 
 			if software == "VASP":
 				system = vasp.read_vasp_out(File, index=-1)
-				xyzPath, mag = Common_Properties(system, name)
+				mag = Common_Properties(system, name)   # Removed xyzPath
 				system_type, symmetry_factor, Area = System_Properties(File, system, ssites, symmetry_factor)
 				Inertia_moments = system.get_moments_of_inertia()
 # Works out the 3D and 2D frequencies
@@ -337,7 +337,7 @@ for line in lines:
 
 # writes the information required from each system
 			ifile.write ("SYSPATH = %s\n" %(File))
-			ifile.write ("XYZPATH = %s\n" %(str("./XYZ/" + name + ".xyz")))
+			#ifile.write ("XYZPATH = %s\n" %(str("./XYZ/" + name + ".xyz")))
 			if FreqFile is not None:
 				ifile.write ("FREQPATH = %s\n" %(FreqFile))
 			ifile.write (" E0 = %f\t# eV\n" %(system.get_total_energy()))

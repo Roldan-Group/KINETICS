@@ -3,13 +3,21 @@
 
 """
 
-import pathlib
+import os, pathlib
 import sympy as sp
+import numpy as np
+import matplotlib as mpl
+mpl.use('TkAgg')
+import matplotlib.pyplot as plt
+from matplotlib import ticker
+from withMatlab.Input2mk import interpolate
 
 
 def printData(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
-    pathlib.Path('./THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates).mkdir(parents=True, exist_ok=True)
-    output = open('./THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates + "/" + str(dataname) + ".dat", "w+")
+    folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+    output = open(folder + "/" + str(dataname) + ".dat", "w+")
+    os.chmod(folder, 0o755)
     output.write("# Temperature[K]")
     for i in datalabel:
         output.write(" {val:>{wid}s}".format(wid=len(i)+3, val=i))
@@ -179,13 +187,10 @@ class Energy:        # Gibbs free energy in eV
                         systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d"], "ZeroPointEnergy")
-        self.systems = systems
+
         ''' Entropy is required to calculate the specific heat (Cp), which contributes 
         to the enthalpy at specific temperatures '''
         self.systems = Entropy(rconditions, systems, constants).systems         # in eV
-
-        print(name)
-
         self.systems = Enthalpy(rconditions, systems, constants).systems        # in eV
 
         for name in systems.keys():     # species
@@ -205,9 +210,69 @@ class Energy:        # Gibbs free energy in eV
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["energy3d"], "GibbsFreeEnergy")
+        ''' Energy interpolation between nadsorbates of the same name '''
+        for name in systems.keys():     # species
+            if systems[name]["kind"] == "molecule":
+                for i in ["energy3d", "energy2d"]:
+                    systems[name][i] = self.interpolate(rconditions, systems, name, str(i))
+            else:
+                systems[name]["energy3d"] = self.interpolate(rconditions, systems, name, "energy3d")
 
+        print("  >> integrals in Enthalpy desactivated <<\n")
         self.systems = systems
-        print("  >> NO INTERPOLATION BUILT <<\n integrals in Enthalpy desactivated\n")
+
+    @staticmethod
+    def interpolate(rconditions, systems, name, ykey):
+        ''' Reaction conditions are set as symbols using SYMPY '''
+        temp, cov = sp.symbols("temperature coverage")
+        x0 = [] # list of nadsorbates
+        x = []  # independent coordinate, e.g. coverage
+        y = []  # dependent coordinate, e.g. energy
+        for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
+            if nadsorbates not in ["kind", "pressure0", "coverage0", 'energy3d', 'energy2d']:       # only for nadsorbates
+                x0.append(nadsorbates)
+                x.append(float(nadsorbates))
+                y.append(systems[name][nadsorbates][ykey])
+        function = sp.interpolate(list(zip(x, y)), cov)    # generates the interpolation function with the x and y.
+        ''' generate a plot for the interpolated data saving it as name.key.svg '''
+        fig, ax1 = plt.subplots(figsize=(8, 6), clear=True)
+        ''' generate a loop for the temperatures and the key'''
+        if isinstance(rconditions["temperature"], float):
+            t = float(rconditions["temperature"])
+            ax1.plot(x, [sp.lambdify(temp, systems[name][str(i)][ykey])(t) for i in x],
+                     marker='o', color='k', fillstyle='none', linestyle='none', label='original')
+            xdata = np.linspace(min(x)-0.5, max(x)+0.5, 300)
+            f_np = sp.lambdify((temp, cov), function, module='numpy')
+            ydata = f_np(np.array([t for i in xdata]), np.array(xdata))
+            ax1.plot(xdata, ydata, color='b', linestyle='-',
+                     label='interpolated at T='+str(float(rconditions["temperature"]))+'K')
+        else:
+            ramp = [int(i) for i in rconditions["temperature"]]
+            ax1.plot(x, [sp.lambdify(temp, systems[name][i][ykey])(ramp[0]) for i in x0],
+                     marker='o', color='k', fillstyle='none', linestyle='none', label='original')
+            for t in range(ramp[0], ramp[1], ramp[2]):
+                xdata = np.linspace(min(x)-0.5, max(x)+0.5, 300)
+                f_np = sp.lambdify((temp, cov), function, modules='numpy')
+                ydata = [f_np(t, i) for i in xdata]
+                ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-t/ramp[1],
+                     label='interpolated at T='+str(t)+'K')
+        ax1.set_xlabel('coverage (ML)', fontsize=18)
+        ax1.tick_params(axis='both', rotation=0, labelsize=16)
+
+        def digits(tick, pos):
+            if np.abs(tick) > 1e3:
+                form = 'e'
+            else:
+                form = 'f'
+            return f'{tick:.1{form}}'
+        ax1.yaxis.set_major_formatter(ticker.FuncFormatter(digits))
+        ax1.set_ylabel(ykey+" (eV)", fontsize=18)
+        legend = ax1.legend(loc="best", fontsize=14)
+        fig.tight_layout()
+        plt.ion()
+        plt.show()
+        plt.savefig(name+"_"+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
+        return function
 
     @staticmethod
     def zpe3d(properties, constants):
