@@ -12,8 +12,6 @@ def printdata(rconditions, process, constants, datalabel, dataname):
     pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
     output = open(folder + "/" + str(dataname) + ".dat", "w+")
     os.chmod(folder, 0o755)
-    pathlib.Path('./KINETICS/DATA/').mkdir(parents=True, exist_ok=True)
-    output = open('./KINETICS/DATA/'+ str(dataname) + ".dat", "w+")
     output.write("# Temperature[K]")
     for i in datalabel:
         output.write(" {val:>{wid}s}".format(wid=len(i)+3, val=i))

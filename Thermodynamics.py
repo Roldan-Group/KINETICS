@@ -15,8 +15,7 @@ from withMatlab.Input2mk import interpolate
 
 def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
     folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
-    #pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-    os.mkdir(folder)
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
     output = open(folder + "/" + str(dataname) + ".dat", "w+")
     os.chmod(folder, 0o755)
     output.write("# Temperature[K]")
@@ -40,6 +39,7 @@ def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, 
     output.close()
 
 def interpolate(rconditions, systems, name, ykey):
+    folder = './THERMODYNAMICS/DATA/'+ name + "/"
     ''' Reaction conditions are set as symbols using SYMPY '''
     temp, cov = sp.symbols("temperature coverage")
     x0 = [] # list of nadsorbates
@@ -68,7 +68,7 @@ def interpolate(rconditions, systems, name, ykey):
         y = [function.subs({temp: ramp[0], cov: i}).evalf() for i in x]
         ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none', label='original')
         for t in range(ramp[0], ramp[1], ramp[2]):
-            print(name, "temp=", t)
+            print(name, ykey, "temp=", t)
             ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
             ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-t/ramp[1],
                  label='interpolated at T='+str(t)+'K')
@@ -91,7 +91,7 @@ def interpolate(rconditions, systems, name, ykey):
     fig.tight_layout()
     plt.ion()
     plt.show()
-    plt.savefig(name+"_"+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
+    plt.savefig(folder+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
     return function
 
 
