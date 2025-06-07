@@ -13,7 +13,7 @@ from matplotlib import ticker
 from withMatlab.Input2mk import interpolate
 
 
-def printData(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
+def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
     folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
     #pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
     os.mkdir(folder)
@@ -68,6 +68,7 @@ def interpolate(rconditions, systems, name, ykey):
         y = [function.subs({temp: ramp[0], cov: i}).evalf() for i in x]
         ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none', label='original')
         for t in range(ramp[0], ramp[1], ramp[2]):
+            print(name, "temp=", t)
             ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
             ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-t/ramp[1],
                  label='interpolated at T='+str(t)+'K')
@@ -120,7 +121,7 @@ class PartitionFunctions:
                             q2d *= systems[name][nadsorbates][str(i)]
                         systems[name][nadsorbates]["q2d"] = q2d
                         datalabel2d.append("q2d")
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               datalabel3d + datalabel2d, "PartitionFunctions")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
@@ -135,7 +136,7 @@ class PartitionFunctions:
                             q3d *= systems[name][nadsorbates][str(i)]
                         datalabel.append("q3d")
                         systems[name][nadsorbates]["q3d"] = q3d
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                                   datalabel, "PartitionFunctions")
         ''' Partition function interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
@@ -241,13 +242,13 @@ class Energy:        # Gibbs free energy in eV
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)  # in eV
                         systems[name][nadsorbates]["zpe2d"] =  self.zpe2d(systems[name][nadsorbates], constants) # in eV
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d", "zpe2d"], "ZeroPointEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d"], "ZeroPointEnergy")
 
         ''' Entropy is required to calculate the specific heat (Cp), which contributes 
@@ -263,14 +264,14 @@ class Energy:        # Gibbs free energy in eV
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
                         systems[name][nadsorbates]["energy2d"] = (systems[name][nadsorbates]["enthalpy2d"] -
                                                                    temp * systems[name][nadsorbates]["entropy2d"])
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["energy3d", "energy2d"], "GibbsFreeEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["energy3d"], "GibbsFreeEnergy")
         ''' Energy interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
@@ -341,7 +342,7 @@ class Entropy:
                             entropy =+ systems[name][nadsorbates][str(i)]
                         systems[name][nadsorbates]["entropy2d"] = entropy
                         datalabel2d.append("entropy2d")
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                                   datalabel3d + datalabel2d, "Entropy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
@@ -356,7 +357,7 @@ class Entropy:
                             entropy =+ systems[name][nadsorbates][str(i)]
                         systems[name][nadsorbates]["entropy3d"] = entropy
                         datalabel3d.append("entropy3d")
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                                   datalabel3d, "Entropy")
         self.systems = systems
 
@@ -448,7 +449,7 @@ class Enthalpy:
                                 # + sp.integrate(systems[name][nadsorbates]["cp2d"], temp))
                         systems[name][nadsorbates]["enthalpy2d"] = enthalpy2d
                         datalabel = ["zpe3d", "cp3d", "enthalpy3d", "cp2d", "zpe2d", "enthalpy2d"]
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               datalabel, "Enthalpy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
@@ -458,7 +459,7 @@ class Enthalpy:
                                   sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
                         systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
                         datalabel = ["zpe3d", "cp3d", "enthalpy3d"]
-                        printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+                        printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               datalabel, "Enthalpy")
         self.systems = systems
 

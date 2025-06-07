@@ -7,7 +7,7 @@ import os, pathlib
 import sympy as sp
 
 
-def printData(rconditions, process, constants, datalabel, dataname):
+def printdata(rconditions, process, constants, datalabel, dataname):
     folder = './KINETICS/PROCESSES'
     pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
     output = open(folder + "/" + str(dataname) + ".dat", "w+")
@@ -34,7 +34,6 @@ def printData(rconditions, process, constants, datalabel, dataname):
             output.write("\n")
     output.close()
 
-
 class RConstants:
     def __init__(self, rconditions, systems, constants, processes):
         ''' Reaction conditions are set as symbols using SYMPY '''
@@ -44,21 +43,20 @@ class RConstants:
             if processes[process]['kind'] == 'A':
                 processes[process]["sticky"] = self.sticky(processes[process], systems, constants)
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
-                processes[process]['krate0'] = processes[process]["sticky"] * processes[process]["arrhenius"]
+                processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
+                                                self.tunneling(processes[process], systems, constants))
                 # units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
                 datalabel = ["activation", "sticky", "arrhenius", "krate0"]
-                printData(rconditions, processes[process], constants, datalabel, "Process"+str(process))
+                printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
             else:
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
                 processes[process]['krate0'] = (processes[process]["arrhenius"] *
                                                 sp.exp(-processes[process]['activation']/
-                                                       (constants['kb']*temp*constants['JtoeV'])))   # units s^-1
+                                                       (constants['kb']*temp*constants['JtoeV'])) *
+                                                self.tunneling(processes[process], systems, constants))   # units s^-1
                 datalabel = ["activation", "arrhenius", "krate0"]
-                printData(rconditions, processes[process], constants, datalabel, "Process"+str(process))
-
+                printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
         self.processes = processes
-
-
 
     @staticmethod
     def activation(process, systems):
@@ -157,9 +155,13 @@ class RConstants:
             arrhenius = constants['kb']*temp/constants['h'] * qts/qr    # units of s^-1
         return arrhenius
 
+    @staticmethod
+    def tunneling(process, systems, constants):
+        ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
+        vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
+        ''' Reaction conditions are set as symbols using SYMPY '''
+        temp = sp.symbols("temperature")
 
 
 
-''' Second order harmonic Wigner approach to shallow quantum tunneling valid for vast numbers of
-reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
 # EQUATION 17 with 25 in the appendix.... or EQ4
