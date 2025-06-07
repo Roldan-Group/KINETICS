@@ -15,7 +15,8 @@ from withMatlab.Input2mk import interpolate
 
 def printData(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
     folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
-    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+    #pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+    os.mkdir(folder)
     output = open(folder + "/" + str(dataname) + ".dat", "w+")
     os.chmod(folder, 0o755)
     output.write("# Temperature[K]")
@@ -38,15 +39,69 @@ def printData(rconditions, name, nadsorbates, properties, constants, datalabel, 
             output.write("\n")
     output.close()
 
+def interpolate(rconditions, systems, name, ykey):
+    ''' Reaction conditions are set as symbols using SYMPY '''
+    temp, cov = sp.symbols("temperature coverage")
+    x0 = [] # list of nadsorbates
+    x = []  # independent coordinate, e.g. coverage
+    y = []  # dependent coordinate, e.g. energy
+    for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
+        if nadsorbates not in ["kind", "pressure0", "coverage0", 'energy3d', 'energy2d', 'q3d', 'q2d']:       # only for nadsorbates
+            x0.append(nadsorbates)
+            x.append(float(nadsorbates))
+            y.append(systems[name][nadsorbates][ykey])
+    function = sp.interpolate(list(zip(x, y)), cov)    # generates the interpolation function with the x and y.
+    ''' generate a plot for the interpolated data saving it as name.key.svg '''
+    fig, ax1 = plt.subplots(figsize=(8, 6), clear=True)
+    ''' generate a loop for the temperatures and the key'''
+    #flambdified = sp.lambdify((temp, cov), function, modules='numpy')
+    xdata = np.linspace(0, 1, 301)
+    if isinstance(rconditions["temperature"], float):
+        t = float(rconditions["temperature"])
+        y = [function.subs({temp: t, cov: i}).evalf() for i in x]
+        ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none', label='original')
+        ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
+        ax1.plot(xdata, ydata, color='b', linestyle='-',
+                 label='interpolated at T='+str(float(rconditions["temperature"]))+'K')
+    else:
+        ramp = [int(i) for i in rconditions["temperature"]]
+        y = [function.subs({temp: ramp[0], cov: i}).evalf() for i in x]
+        ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none', label='original')
+        for t in range(ramp[0], ramp[1], ramp[2]):
+            ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
+            ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-t/ramp[1],
+                 label='interpolated at T='+str(t)+'K')
+    ax1.set_xlabel('coverage (ML)', fontsize=18)
+    ax1.set_xlim([0, 1])
+    ax1.tick_params(axis='both', rotation=0, labelsize=16)
+
+    def digits(tick, pos):
+        if np.abs(tick) > 1e3:
+            form = 'e'
+        else:
+            form = 'f'
+        return f'{tick:.1{form}}'
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(digits))
+    if ykey.startswith("q"):
+        ax1.set_ylabel(ykey, fontsize=18)
+    else:
+        ax1.set_ylabel(ykey+" (eV)", fontsize=18)
+    legend = ax1.legend(loc="best", fontsize=14)
+    fig.tight_layout()
+    plt.ion()
+    plt.show()
+    plt.savefig(name+"_"+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
+    return function
+
 
 class PartitionFunctions:
-    def __init__(self, rconditions, systems, constants):
+    def __init__(self, rconditions, systems, constants, restricted_arg):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["qtrans3d"] = self.qtrans3d(systems[name][nadsorbates], constants)
                         systems[name][nadsorbates]["qtrans2d"] = self.qtrans2d(systems[name][nadsorbates], constants)
                         systems[name][nadsorbates]["qrot"] = self.qrot(systems[name][nadsorbates], constants)
@@ -69,7 +124,7 @@ class PartitionFunctions:
                               datalabel3d + datalabel2d, "PartitionFunctions")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["qtrans3d"] = 1
                         systems[name][nadsorbates]["qrot"] = 1
                         systems[name][nadsorbates]["qelec"] = self.qelec(systems[name][nadsorbates])
@@ -82,6 +137,13 @@ class PartitionFunctions:
                         systems[name][nadsorbates]["q3d"] = q3d
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                                   datalabel, "PartitionFunctions")
+        ''' Partition function interpolation between nadsorbates of the same name '''
+        for name in systems.keys():     # species
+            if systems[name]["kind"] == "molecule":
+                systems[name]["q3d"] = interpolate(rconditions, systems, name, "q3d")
+                systems[name]["q2d"] = interpolate(rconditions, systems, name, "q2d")
+            else:
+                systems[name]["q3d"] = interpolate(rconditions, systems, name, "q3d")
         self.systems = systems
 
     @staticmethod
@@ -168,7 +230,7 @@ class PartitionFunctions:
 
 
 class Energy:        # Gibbs free energy in eV
-    def __init__(self, rconditions, systems, constants):
+    def __init__(self, rconditions, systems, constants, restricted_arg):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
         ''' The ZPE is needed first as it is required to calculate the vibrational 
@@ -176,27 +238,27 @@ class Energy:        # Gibbs free energy in eV
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)  # in eV
                         systems[name][nadsorbates]["zpe2d"] =  self.zpe2d(systems[name][nadsorbates], constants) # in eV
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d", "zpe2d"], "ZeroPointEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d"], "ZeroPointEnergy")
 
         ''' Entropy is required to calculate the specific heat (Cp), which contributes 
         to the enthalpy at specific temperatures '''
-        self.systems = Entropy(rconditions, systems, constants).systems         # in eV
-        self.systems = Enthalpy(rconditions, systems, constants).systems        # in eV
+        self.systems = Entropy(rconditions, systems, constants, restricted_arg).systems         # in eV
+        self.systems = Enthalpy(rconditions, systems, constants, restricted_arg).systems        # in eV
 
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
                         systems[name][nadsorbates]["energy2d"] = (systems[name][nadsorbates]["enthalpy2d"] -
@@ -205,7 +267,7 @@ class Energy:        # Gibbs free energy in eV
                               ["energy3d", "energy2d"], "GibbsFreeEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
                                                                    temp * systems[name][nadsorbates]["entropy3d"])
                         printData(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
@@ -213,66 +275,13 @@ class Energy:        # Gibbs free energy in eV
         ''' Energy interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
-                for i in ["energy3d", "energy2d"]:
-                    systems[name][i] = self.interpolate(rconditions, systems, name, str(i))
+                systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
+                systems[name]["energy2d"] = interpolate(rconditions, systems, name, "energy2d")
             else:
-                systems[name]["energy3d"] = self.interpolate(rconditions, systems, name, "energy3d")
+                systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
 
         print("  >> integrals in Enthalpy desactivated <<\n")
         self.systems = systems
-
-    @staticmethod
-    def interpolate(rconditions, systems, name, ykey):
-        ''' Reaction conditions are set as symbols using SYMPY '''
-        temp, cov = sp.symbols("temperature coverage")
-        x0 = [] # list of nadsorbates
-        x = []  # independent coordinate, e.g. coverage
-        y = []  # dependent coordinate, e.g. energy
-        for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-            if nadsorbates not in ["kind", "pressure0", "coverage0", 'energy3d', 'energy2d']:       # only for nadsorbates
-                x0.append(nadsorbates)
-                x.append(float(nadsorbates))
-                y.append(systems[name][nadsorbates][ykey])
-        function = sp.interpolate(list(zip(x, y)), cov)    # generates the interpolation function with the x and y.
-        ''' generate a plot for the interpolated data saving it as name.key.svg '''
-        fig, ax1 = plt.subplots(figsize=(8, 6), clear=True)
-        ''' generate a loop for the temperatures and the key'''
-        if isinstance(rconditions["temperature"], float):
-            t = float(rconditions["temperature"])
-            ax1.plot(x, [sp.lambdify(temp, systems[name][str(i)][ykey])(t) for i in x],
-                     marker='o', color='k', fillstyle='none', linestyle='none', label='original')
-            xdata = np.linspace(min(x)-0.5, max(x)+0.5, 300)
-            f_np = sp.lambdify((temp, cov), function, module='numpy')
-            ydata = f_np(np.array([t for i in xdata]), np.array(xdata))
-            ax1.plot(xdata, ydata, color='b', linestyle='-',
-                     label='interpolated at T='+str(float(rconditions["temperature"]))+'K')
-        else:
-            ramp = [int(i) for i in rconditions["temperature"]]
-            ax1.plot(x, [sp.lambdify(temp, systems[name][i][ykey])(ramp[0]) for i in x0],
-                     marker='o', color='k', fillstyle='none', linestyle='none', label='original')
-            for t in range(ramp[0], ramp[1], ramp[2]):
-                xdata = np.linspace(min(x)-0.5, max(x)+0.5, 300)
-                f_np = sp.lambdify((temp, cov), function, modules='numpy')
-                ydata = [f_np(t, i) for i in xdata]
-                ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-t/ramp[1],
-                     label='interpolated at T='+str(t)+'K')
-        ax1.set_xlabel('coverage (ML)', fontsize=18)
-        ax1.tick_params(axis='both', rotation=0, labelsize=16)
-
-        def digits(tick, pos):
-            if np.abs(tick) > 1e3:
-                form = 'e'
-            else:
-                form = 'f'
-            return f'{tick:.1{form}}'
-        ax1.yaxis.set_major_formatter(ticker.FuncFormatter(digits))
-        ax1.set_ylabel(ykey+" (eV)", fontsize=18)
-        legend = ax1.legend(loc="best", fontsize=14)
-        fig.tight_layout()
-        plt.ion()
-        plt.show()
-        plt.savefig(name+"_"+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
-        return function
 
     @staticmethod
     def zpe3d(properties, constants):
@@ -308,12 +317,12 @@ class Entropy:
     Adsorption Journal Of The International Adsorption Society
     (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
     page 88 :: S = kb*ln(Q)+kb*T*diff(ln(Q), T)'''
-    def __init__(self, rconditions, systems, constants):
+    def __init__(self, rconditions, systems, constants, restricted_arg):
         ''' Reaction conditions are set as symbols using SYMPY '''
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["strans3d"] = self.strans3d(systems[name][nadsorbates], constants)
                         systems[name][nadsorbates]["strans2d"] = self.strans2d(systems[name][nadsorbates], constants)
                         systems[name][nadsorbates]["srot"] = self.srot(systems[name][nadsorbates], constants)
@@ -336,7 +345,7 @@ class Entropy:
                                   datalabel3d + datalabel2d, "Entropy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["strans3d"] = 0
                         systems[name][nadsorbates]["srot"] = 0
                         systems[name][nadsorbates]["selec"] = self.selec(systems[name][nadsorbates], constants)
@@ -421,13 +430,13 @@ class Enthalpy:
     and Raymand Chang, "PHYSICAL CHEMISTRY for Chemical and Biological Science", ISBN: 1-891389-06-8,
         page 91 :: H=[dCp/dT](T1,T2)
         H =  E + ZPE + integral(Cp, 0 --> T) """
-    def __init__(self, rconditions, systems, constants):
+    def __init__(self, rconditions, systems, constants, restricted_arg):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
                         systems[name][nadsorbates]["cp2d"] = self.cp2d(systems[name][nadsorbates])
                         enthalpy3d = systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe3d"]
@@ -443,7 +452,7 @@ class Enthalpy:
                               datalabel, "Enthalpy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-                    if nadsorbates not in ["kind", "pressure0", "coverage0"]:       # only for nadsorbates
+                    if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
                         enthalpy3d = (systems[name][nadsorbates]["energy0"] +  systems[name][nadsorbates]["zpe3d"] +
                                   sp.integrate(systems[name][nadsorbates]["cp3d"], temp))

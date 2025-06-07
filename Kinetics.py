@@ -3,30 +3,61 @@
 
 """
 
-import pathlib
+import os, pathlib
 import sympy as sp
-from sqlalchemy.sql.operators import contains
+
+
+def printData(rconditions, process, constants, datalabel, dataname):
+    folder = './KINETICS/PROCESSES'
+    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+    output = open(folder + "/" + str(dataname) + ".dat", "w+")
+    os.chmod(folder, 0o755)
+    pathlib.Path('./KINETICS/DATA/').mkdir(parents=True, exist_ok=True)
+    output = open('./KINETICS/DATA/'+ str(dataname) + ".dat", "w+")
+    output.write("# Temperature[K]")
+    for i in datalabel:
+        output.write(" {val:>{wid}s}".format(wid=len(i)+3, val=i))
+    output.write("\n")
+    temp = sp.symbols("temperature")
+    if isinstance(rconditions["temperature"], float):
+        output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=rconditions["temperature"]))
+        for i in datalabel:
+            value = sp.lambdify(temp, process[str(i)])(float(rconditions["temperature"]))
+            output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if value > 1e3 else 'f'))
+    else:
+        ramp = [int(i) for i in rconditions["temperature"]]
+        for t in range(ramp[0], ramp[1], ramp[2]):
+            output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=t))
+            for i in datalabel:
+                value = sp.lambdify(temp, process[str(i)])(t)
+                output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if value > 1e3 else 'f'))
+            output.write("\n")
+    output.close()
 
 
 class RConstants:
     def __init__(self, rconditions, systems, constants, processes):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
-
-        print("  >> CHECK UNITS <<")
-
         for process in processes:
             processes[process]["activation"] = self.activation(processes[process], systems)
-            if process['kind'] == 'A':
+            if processes[process]['kind'] == 'A':
                 processes[process]["sticky"] = self.sticky(processes[process], systems, constants)
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
                 processes[process]['krate0'] = processes[process]["sticky"] * processes[process]["arrhenius"]
                 # units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
+                datalabel = ["activation", "sticky", "arrhenius", "krate0"]
+                printData(rconditions, processes[process], constants, datalabel, "Process"+str(process))
             else:
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
                 processes[process]['krate0'] = (processes[process]["arrhenius"] *
                                                 sp.exp(-processes[process]['activation']/
-                                                       (constants['kb']*temp*contants['JtoeV'])))   # units s^-1
+                                                       (constants['kb']*temp*constants['JtoeV'])))   # units s^-1
+                datalabel = ["activation", "arrhenius", "krate0"]
+                printData(rconditions, processes[process], constants, datalabel, "Process"+str(process))
+
+        self.processes = processes
+
 
 
     @staticmethod
@@ -41,17 +72,17 @@ class RConstants:
         elif 'molecule' in [systems[i]['kind'] for i in process['reactants']]:
             ''' This elif considers molecules in reactants as in adsorption processes '''
             for i in range(len(process['reactants'])):
-                if systems[i]['energy2d']:
-                    ets += process['rstoichio'][i] * systems[i]['energy2d']
+                if 'energy2d' in systems[process['reactants'][i]]:
+                    ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
                 else:
-                    ets += process['rstoichio'][i] * systems[i]['energy3d']
+                    ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
         elif 'molecule' in [systems[i]['kind'] for i in process['products']]:
             ''' This elif considers molecules in products as in desorption processes '''
             for i in range(len(process['products'])):
-                if systems[i]['energy2d']:
-                    ets += process['pstoichio'][i] * systems[i]['energy2d']
+                if systems[process['reactants'][i]]['energy2d']:
+                    ets += process['pstoichio'][i] * systems[process['reactants'][i]]['energy2d']
                 else:
-                    ets += process['pstoichio'][i] * systems[i]['energy3d']
+                    ets += process['pstoichio'][i] * systems[process['reactants'][i]]['energy3d']
         else:
             ''' In the rare case that there is to transtion state and none of the reactants is a molecule the energy of 
             the transition states will be the energy of the final state.'''
@@ -59,10 +90,10 @@ class RConstants:
                 ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
         er = 0      # total energy for reactants
         for i in range(len(process['reactants'])):
-            if systems[i]['energy2d']:
-                er += process['rstoichio'][i] * systems[i]['energy2d']
+            if systems[process['reactants'][i]]['energy2d']:
+                er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
             else:
-                er += process['rstoichio'][i] * systems[i]['energy3d']
+                er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
         return float(ets - er)
 
     @staticmethod
@@ -101,9 +132,9 @@ class RConstants:
                     ''' In principle, the area of a molecule will be practically the same independently of 
                     the working coverages (mean-field is not applicable at high coverages), for that reason it takes
                     the area of the first nadsorbate. '''
-                    area = float([systems[i][j]['marea'] for j in systems[i].kesy() if j not in ['kind', 'pressure0']][0])
+                    area = float([systems[i][j]['marea'] for j in systems[i].keys() if j not in ['kind', 'pressure0']][0])
                     ''' Same reasoning is applied for the molecular mass'''
-                    mass = float([systems[i][j]['mass'] for j in systems[i].kesy() if j not in ['kind', 'pressure0']][0])
+                    mass = float([systems[i][j]['mass'] for j in systems[i].keys() if j not in ['kind', 'pressure0']][0])
             arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*constants['kb']*temp)
             # units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
         else:
@@ -116,12 +147,13 @@ class RConstants:
                     qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
             else:
                 for i in range(len(process['products'])):
-                    if systems[process['products'][i]]['q2d']:
+                    if 'q2d' in systems[process['products'][i]]:
                         qts *= systems[process['products'][i]]['q2d'] ** process['pstoichio'][i]
-                    else:
+                    elif 'q3d' in systems[process['products'][i]]:
                         qts *= systems[process['products'][i]]['q3d'] ** process['pstoichio'][i]
                 for i in range(len(process['reactants'])):
-                    qr *= systems[i]['q3d'] ** process['rstoichio'][i]
+                    print(i, "\n", process['reactants'][i])
+                    qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
             arrhenius = constants['kb']*temp/constants['h'] * qts/qr    # units of s^-1
         return arrhenius
 

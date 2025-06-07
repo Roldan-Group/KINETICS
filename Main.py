@@ -322,7 +322,9 @@ def mkread(inputfile):
 
 rconditions, processes, systems = mkread(str(sys.argv[1]))
 
-systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants)).systems
-systems = Energy(dict(rconditions), dict(systems), dict(constants)).systems
+''' list of restricted argunments in systems[name] containing the interpolated functions'''
+restricted_arg = ["kind", "pressure0", "coverage0", 'q3d', 'q2d', 'energy3d', 'energy2d']
+systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
+systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
 print(processes)
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes
