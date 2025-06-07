@@ -14,6 +14,9 @@ from withMatlab.Input2mk import interpolate
 
 
 def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
+
+    ''' TO ADD:     don't print if file exist!'''
+
     folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
     pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
     output = open(folder + "/" + str(dataname) + ".dat", "w+")
