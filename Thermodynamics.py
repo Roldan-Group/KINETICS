@@ -73,7 +73,7 @@ def interpolate(rconditions, systems, name, ykey):
         for t in range(ramp[0], ramp[1], ramp[2]):
             print(name, ykey, "temp=", t)
             ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
-            ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-t/ramp[1],
+            ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-(t-ramp[0])/(ramp[1]-ramp[0]),
                  label='interpolated at T='+str(t)+'K')
     ax1.set_xlabel('coverage (ML)', fontsize=18)
     ax1.set_xlim([0, 1])
