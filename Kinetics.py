@@ -43,18 +43,20 @@ class RConstants:
             if processes[process]['kind'] == 'A':
                 processes[process]["sticky"] = self.sticky(processes[process], systems, constants)
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
+                processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)
                 processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
-                                                self.tunneling(processes[process], systems, constants))
+                                                processes[process]["ktunneling"])
                 # units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
-                datalabel = ["activation", "sticky", "arrhenius", "krate0"]
+                datalabel = ["activation", "sticky", "arrhenius", 'ktunneling', "krate0"]
                 printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
             else:
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
+                processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)
                 processes[process]['krate0'] = (processes[process]["arrhenius"] *
                                                 sp.exp(-processes[process]['activation']/
                                                        (constants['kb']*temp*constants['JtoeV'])) *
-                                                self.tunneling(processes[process], systems, constants))   # units s^-1
-                datalabel = ["activation", "arrhenius", "krate0"]
+                                                processes[process]["ktunneling"])   # units s^-1
+                datalabel = ["activation", "arrhenius", 'ktunneling', "krate0"]
                 printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
         self.processes = processes
 
