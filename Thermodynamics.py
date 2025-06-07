@@ -455,8 +455,9 @@ class Enthalpy:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
-                        enthalpy3d = (systems[name][nadsorbates]["energy0"] +  systems[name][nadsorbates]["zpe3d"] +
-                                  sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
+                        enthalpy3d = systems[name][nadsorbates]["energy0"] +  systems[name][nadsorbates]["zpe3d"]
+                                    # activate for production
+                                    # + sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
                         systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
                         datalabel = ["zpe3d", "cp3d", "enthalpy3d"]
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,

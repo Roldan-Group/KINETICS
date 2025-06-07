@@ -77,7 +77,7 @@ class RConstants:
         elif 'molecule' in [systems[i]['kind'] for i in process['products']]:
             ''' This elif considers molecules in products as in desorption processes '''
             for i in range(len(process['products'])):
-                if systems[process['reactants'][i]]['energy2d']:
+                if 'energy2d' in systems[process['reactants'][i]]:
                     ets += process['pstoichio'][i] * systems[process['reactants'][i]]['energy2d']
                 else:
                     ets += process['pstoichio'][i] * systems[process['reactants'][i]]['energy3d']
@@ -88,7 +88,7 @@ class RConstants:
                 ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
         er = 0      # total energy for reactants
         for i in range(len(process['reactants'])):
-            if systems[process['reactants'][i]]['energy2d']:
+            if 'energy2d' in systems[process['reactants'][i]]:
                 er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
             else:
                 er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
