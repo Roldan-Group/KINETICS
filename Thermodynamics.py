@@ -14,34 +14,40 @@ from withMatlab.Input2mk import interpolate
 
 
 def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
-
-    ''' TO ADD:     don't print if file exist!'''
-
     folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
-    pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-    output = open(folder + "/" + str(dataname) + ".dat", "w+")
-    os.chmod(folder, 0o755)
-    output.write("# Temperature[K]")
-    for i in datalabel:
-        output.write(" {val:>{wid}s}".format(wid=len(i)+3, val=i))
-    output.write("\n")
-    temp = sp.symbols("temperature")
-    if isinstance(rconditions["temperature"], float):
-        output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=rconditions["temperature"]))
+    outputfile = folder + "/" + str(dataname) + ".dat"
+    if not pathlib.Path(folder).exists():
+        pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+        os.chmod(folder, 0o755)
+    if not pathlib.Path(outputfile).exists():
+        output = open(outputfile, "w")
+        output.write("# Temperature[K]")
+        units = ''
         for i in datalabel:
-            value = sp.lambdify(temp, properties[str(i)])(float(rconditions["temperature"]))
-            output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if value > 1e3 else 'f'))
-    else:
-        ramp = [int(i) for i in rconditions["temperature"]]
-        for t in range(ramp[0], ramp[1], ramp[2]):
-            output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=t))
+            if i.startswith('e') or i.startswith('z'):
+                units = '[eV]'     # energy and ZPE
+            elif i.startswith('s') or i.startswith('c'):
+                units = '[eV K^-1]' # entropy or specific heat as "defined here"
+            output.write(" {val:>{wid}s{u}}".format(wid=len(i)+3, val=i, u=units))
+        output.write("\n")
+        temp = sp.symbols("temperature")
+        if isinstance(rconditions["temperature"], float):
+            output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=rconditions["temperature"]))
             for i in datalabel:
-                value = sp.lambdify(temp, properties[str(i)])(t)
+                value = sp.lambdify(temp, properties[str(i)])(float(rconditions["temperature"]))
                 output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if value > 1e3 else 'f'))
-            output.write("\n")
-    output.close()
+        else:
+            ramp = [int(i) for i in rconditions["temperature"]]
+            for t in range(ramp[0], ramp[1], ramp[2]):
+                output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=t))
+                for i in datalabel:
+                    value = sp.lambdify(temp, properties[str(i)])(t)
+                    output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if value > 1e3 else 'f'))
+                output.write("\n")
+        output.close()
 
 def interpolate(rconditions, systems, name, ykey):
+    print("\t... Interpolating", name, ykey,"...")
     folder = './THERMODYNAMICS/DATA/'+ name + "/"
     ''' Reaction conditions are set as symbols using SYMPY '''
     temp, cov = sp.symbols("temperature coverage")
@@ -62,30 +68,24 @@ def interpolate(rconditions, systems, name, ykey):
     if isinstance(rconditions["temperature"], float):
         t = float(rconditions["temperature"])
         y = [function.subs({temp: t, cov: i}).evalf() for i in x]
-        ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none', label='original')
+        ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none',
+                 label='original at T='+str(float(rconditions["temperature"]))+' K')
         ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
         ax1.plot(xdata, ydata, color='b', linestyle='-',
-                 label='interpolated at T='+str(float(rconditions["temperature"]))+'K')
+                 label='interpolated at T='+str(float(rconditions["temperature"]))+' K')
     else:
         ramp = [int(i) for i in rconditions["temperature"]]
         y = [function.subs({temp: ramp[0], cov: i}).evalf() for i in x]
-        ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none', label='original')
-        for t in range(ramp[0], ramp[1], ramp[2]):
-            print(name, ykey, "temp=", t)
+        ax1.plot(x, y, marker='o', color='k', fillstyle='none', linestyle='none',
+                 label='original at T='+str(ramp[0])+' K')
+        for t in range(ramp[0], ramp[1]+ramp[2], ramp[2]):
             ydata = [function.subs({temp: t, cov: i}).evalf() for i in xdata]
             ax1.plot(xdata, ydata, color='b', linestyle='-', alpha=1-(t-ramp[0])/(ramp[1]-ramp[0]),
-                 label='interpolated at T='+str(t)+'K')
+                 label='interpolated at T='+str(t)+' K')
     ax1.set_xlabel('coverage (ML)', fontsize=18)
     ax1.set_xlim([0, 1])
     ax1.tick_params(axis='both', rotation=0, labelsize=16)
-
-    def digits(tick, pos):
-        if np.abs(tick) > 1e3:
-            form = 'e'
-        else:
-            form = 'f'
-        return f'{tick:.1{form}}'
-    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(digits))
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter('[{:.2f}]'.format))
     if ykey.startswith("q"):
         ax1.set_ylabel(ykey, fontsize=18)
     else:
@@ -264,16 +264,16 @@ class Energy:        # Gibbs free energy in eV
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
-                                                                   temp * systems[name][nadsorbates]["entropy3d"])
+                                                                   temp * systems[name][nadsorbates]["sentropy3d"])
                         systems[name][nadsorbates]["energy2d"] = (systems[name][nadsorbates]["enthalpy2d"] -
-                                                                   temp * systems[name][nadsorbates]["entropy2d"])
+                                                                   temp * systems[name][nadsorbates]["sentropy2d"])
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["energy3d", "energy2d"], "GibbsFreeEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
                         systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
-                                                                   temp * systems[name][nadsorbates]["entropy3d"])
+                                                                   temp * systems[name][nadsorbates]["sentropy3d"])
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["energy3d"], "GibbsFreeEnergy")
         ''' Energy interpolation between nadsorbates of the same name '''
@@ -282,9 +282,12 @@ class Energy:        # Gibbs free energy in eV
                 systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
                 systems[name]["energy2d"] = interpolate(rconditions, systems, name, "energy2d")
             else:
-                systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
+                systems[name]["energy3d"] = 1
+                # Activate for production
+                #systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
 
-        print("  >> integrals in Enthalpy desactivated <<\n")
+        print("  >> integrals in Enthalpy deactivated <<\n",
+              "   >> interpolate 3d deactivated\n")
         self.systems = systems
 
     @staticmethod
@@ -337,14 +340,14 @@ class Entropy:
                         entropy = 0.0
                         for i in datalabel3d:
                             entropy =+ systems[name][nadsorbates][str(i)]
-                        systems[name][nadsorbates]["entropy3d"] = entropy
-                        datalabel3d.append("entropy3d")
+                        systems[name][nadsorbates]["sentropy3d"] = entropy
+                        datalabel3d.append("sentropy3d")
                         datalabel2d = ["strans2d", "srot", "selec", "svib2d"]
                         entropy = 0.0
                         for i in datalabel2d:
                             entropy =+ systems[name][nadsorbates][str(i)]
-                        systems[name][nadsorbates]["entropy2d"] = entropy
-                        datalabel2d.append("entropy2d")
+                        systems[name][nadsorbates]["sentropy2d"] = entropy
+                        datalabel2d.append("sentropy2d")
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                                   datalabel3d + datalabel2d, "Entropy")
             else:
@@ -358,8 +361,8 @@ class Entropy:
                         entropy = 0.0
                         for i in datalabel3d:
                             entropy =+ systems[name][nadsorbates][str(i)]
-                        systems[name][nadsorbates]["entropy3d"] = entropy
-                        datalabel3d.append("entropy3d")
+                        systems[name][nadsorbates]["sentropy3d"] = entropy
+                        datalabel3d.append("sentropy3d")
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                                   datalabel3d, "Entropy")
         self.systems = systems
@@ -472,14 +475,14 @@ class Enthalpy:
         '''Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
         ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P)'''
         temp = sp.symbols("temperature")
-        return temp*sp.diff(properties["entropy3d"], temp)
+        return temp*sp.diff(properties["sentropy3d"], temp)
 
     @staticmethod
     def cp2d(properties):
         ''' Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
         ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P) '''
         temp = sp.symbols("temperature")
-        return temp*sp.diff(properties["entropy2d"], temp)
+        return temp*sp.diff(properties["sentropy2d"], temp)
 
 
 

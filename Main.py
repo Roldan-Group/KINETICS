@@ -3,11 +3,11 @@
 
         by Alberto Roldan
 """
-
 import sys, re
 import sympy as sp
-from Thermodynamics import PartitionFunctions, Energy
+from Thermodynamics import PartitionFunctions , Energy
 from Kinetics import RConstants
+
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
              "kb": 1.380658045430573e-23,   # J K^-1
@@ -26,7 +26,8 @@ def mkread(inputfile):
     processes = {}      # reaction processes
     process = 0         # process number, key of processes starting from 1
     systems = {}        # species
-    for line in open(inputfile).readlines():
+    print(inputfile)
+    for line in open(inputfile, 'r'):
         if not re.match(r'^\s*$', line) and line.startswith("#") is False:
             line = line.split("=")
             head = line[0].strip()
@@ -316,15 +317,15 @@ def mkread(inputfile):
                             else:
                                 freq.append(i)
                         systems[name][key]["freq3d"] = freq
-
     return rconditions, processes, systems
 
-
+print("... Reading ...")
 rconditions, processes, systems = mkread(str(sys.argv[1]))
-
 ''' list of restricted argunments in systems[name] containing the interpolated functions'''
 restricted_arg = ["kind", "pressure0", "coverage0", 'q3d', 'q2d', 'energy3d', 'energy2d']
+print("... Generating Partition Functions ...")
 systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
+print("... Generating Thermodynamics ...")
 systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print(processes)
+print("... Generating Reaction Constants ...")
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes
