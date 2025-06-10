@@ -52,7 +52,7 @@ class RConstants:
                 printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
             else:
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
-                processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)
+                processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)   # NO units
                 processes[process]['krate0'] = (processes[process]["arrhenius"] *
                                                 sp.exp(-processes[process]['activation']/
                                                        (constants['kb']*temp*constants['JtoeV'])) *
@@ -164,7 +164,10 @@ class RConstants:
         vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
+        k = 1
+        for i in range(len(process['ts'])):
+            for f in systems[process['ts'][i]]['ifreq']:
+                k = 1 + 1/24 * (constants['hc']* f /(2*sp.pi * constants['kb']*temp))**2
+        return k
 
 
-
-# EQUATION 17 with 25 in the appendix.... or EQ4

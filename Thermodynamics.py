@@ -4,6 +4,7 @@
 """
 
 import os, pathlib
+import time
 import sympy as sp
 import numpy as np
 import matplotlib as mpl
@@ -28,7 +29,7 @@ def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, 
                 units = '[eV]'     # energy and ZPE
             elif i.startswith('s') or i.startswith('c'):
                 units = '[eV K^-1]' # entropy or specific heat as "defined here"
-            output.write(" {val:>{wid}s{u}}".format(wid=len(i)+3, val=i, u=units))
+            output.write(" {val:>{wid}s}".format(wid=len(i+units)+3, val=i+units))
         output.write("\n")
         temp = sp.symbols("temperature")
         if isinstance(rconditions["temperature"], float):
@@ -46,8 +47,8 @@ def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, 
                 output.write("\n")
         output.close()
 
-def interpolate(rconditions, systems, name, ykey):
-    print("\t... Interpolating", name, ykey,"...")
+def interpolate(rconditions, systems, name, restricted_arg, ykey):
+    startint = time.time()
     folder = './THERMODYNAMICS/DATA/'+ name + "/"
     ''' Reaction conditions are set as symbols using SYMPY '''
     temp, cov = sp.symbols("temperature coverage")
@@ -55,7 +56,7 @@ def interpolate(rconditions, systems, name, ykey):
     x = []  # independent coordinate, e.g. coverage
     y = []  # dependent coordinate, e.g. energy
     for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
-        if nadsorbates not in ["kind", "pressure0", "coverage0", 'energy3d', 'energy2d', 'q3d', 'q2d']:       # only for nadsorbates
+        if nadsorbates not in restricted_arg:       # only for nadsorbates
             x0.append(nadsorbates)
             x.append(float(nadsorbates))
             y.append(systems[name][nadsorbates][ykey])
@@ -86,15 +87,18 @@ def interpolate(rconditions, systems, name, ykey):
     ax1.set_xlim([0, 1])
     ax1.tick_params(axis='both', rotation=0, labelsize=16)
     ax1.yaxis.set_major_formatter(ticker.FuncFormatter('[{:.2f}]'.format))
-    if ykey.startswith("q"):
-        ax1.set_ylabel(ykey, fontsize=18)
+    if ykey.startswith("i"):
+        ax1.set_ylabel(ykey+" $(cm^{-1})$", fontsize=18)
+    elif ykey.startswith("e"):
+        ax1.set_ylabel(ykey+" $(eV)$", fontsize=18)
     else:
-        ax1.set_ylabel(ykey+" (eV)", fontsize=18)
+        ax1.set_ylabel(ykey, fontsize=18)
     legend = ax1.legend(loc="best", fontsize=14)
     fig.tight_layout()
     plt.ion()
     plt.show()
     plt.savefig(folder+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
+    print("\t... Interpolating", name, ykey,"...", time.time()-startint, " seconds")
     return function
 
 
@@ -144,10 +148,10 @@ class PartitionFunctions:
         ''' Partition function interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
-                systems[name]["q3d"] = interpolate(rconditions, systems, name, "q3d")
-                systems[name]["q2d"] = interpolate(rconditions, systems, name, "q2d")
+                systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
+                systems[name]["q2d"] = interpolate(rconditions, systems, name, restricted_arg, "q2d")
             else:
-                systems[name]["q3d"] = interpolate(rconditions, systems, name, "q3d")
+                systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
         self.systems = systems
 
     @staticmethod
@@ -243,14 +247,18 @@ class Energy:        # Gibbs free energy in eV
             if systems[name]["kind"] == "molecule":
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
-                        systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)  # in eV
-                        systems[name][nadsorbates]["zpe2d"] =  self.zpe2d(systems[name][nadsorbates], constants) # in eV
+                        zpe3d, ifreq = self.zpe3d(systems[name][nadsorbates], constants)
+                        systems[name][nadsorbates]["zpe3d"] = zpe3d     # in eV
+                        systems[name][nadsorbates]["ifreq"] = ifreq     # in cm^-1
+                        systems[name][nadsorbates]["zpe2d"] = self.zpe2d(systems[name][nadsorbates], constants) # in eV
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d", "zpe2d"], "ZeroPointEnergy")
             else:
                 for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
                     if nadsorbates not in restricted_arg:       # only for nadsorbates
-                        systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants)
+                        zpe3d, ifreq = self.zpe3d(systems[name][nadsorbates], constants)
+                        systems[name][nadsorbates]["zpe3d"] = zpe3d     # in eV
+                        systems[name][nadsorbates]["ifreq"] = ifreq     # in cm-1
                         printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
                               ["zpe3d"], "ZeroPointEnergy")
 
@@ -279,12 +287,14 @@ class Energy:        # Gibbs free energy in eV
         ''' Energy interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
             if systems[name]["kind"] == "molecule":
-                systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
-                systems[name]["energy2d"] = interpolate(rconditions, systems, name, "energy2d")
+                systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
+                systems[name]["energy2d"] = interpolate(rconditions, systems, name, restricted_arg, "energy2d")
+
             else:
+                systems[name]["ifreq"] = interpolate(rconditions, systems, name, restricted_arg, "ifreq")
                 systems[name]["energy3d"] = 1
                 # Activate for production
-                #systems[name]["energy3d"] = interpolate(rconditions, systems, name, "energy3d")
+                #systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
 
         print("  >> integrals in Enthalpy deactivated <<\n",
               "   >> interpolate 3d deactivated\n")
@@ -303,20 +313,22 @@ class Energy:        # Gibbs free energy in eV
                     zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
                                                          (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
         return zpe * constants["JtoeV"]
-
     @staticmethod
     def zpe2d(properties, constants):
         ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
             Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
         temp = sp.symbols("temperature")
         zpe = 0
+        ifreq = 0
         if "freq2d" in properties:
             for freq in properties["freq2d"]:
                 if freq > 0.0:
                     # Quantum-mechanical Zero-Point-Energy
                     zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
                                                          (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
-        return zpe * constants["JtoeV"]
+                else:
+                    ifreq = freq
+        return zpe * constants["JtoeV"], ifreq
 
 
 class Entropy:

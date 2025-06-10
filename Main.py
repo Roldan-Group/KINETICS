@@ -4,6 +4,7 @@
         by Alberto Roldan
 """
 import sys, re
+import time
 import sympy as sp
 from Thermodynamics import PartitionFunctions , Energy
 from Kinetics import RConstants
@@ -319,13 +320,19 @@ def mkread(inputfile):
                         systems[name][key]["freq3d"] = freq
     return rconditions, processes, systems
 
-print("... Reading ...")
+start0 = time.time()
 rconditions, processes, systems = mkread(str(sys.argv[1]))
+print("... Reading ...", time.time()-start0, " seconds")
 ''' list of restricted argunments in systems[name] containing the interpolated functions'''
 restricted_arg = ["kind", "pressure0", "coverage0", 'q3d', 'q2d', 'energy3d', 'energy2d']
-print("... Generating Partition Functions ...")
+start = time.time()
 systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print("... Generating Thermodynamics ...")
+print("... Generating Partition Functions ...", time.time()-start, " seconds")
+start = time.time()
 systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print("... Generating Reaction Constants ...")
+print("... Generating Thermodynamics ...", time.time()-start, " seconds")
+start = time.time()
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes
+print("... Generating Reaction Constants ...", time.time()-start, " seconds")
+
+print("... Microkinetics Completed ...", (time.time()-start0)/60, " minutes")
