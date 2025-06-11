@@ -70,14 +70,14 @@ class RConstants:
         if len(process['ts']) > 0:
             for i in range(len(process['ts'])):
                 ets += process['tsstoichio'][i] * systems[process['ts'][i]]['energy3d']
-        elif 'molecule' in [systems[i]['kind'] for i in process['reactants']]:
+        elif 'molecule' in [systems[i]['kind'] for i in process['reactants']]:  # for adsorption processes
             ''' This elif considers molecules in reactants as in adsorption processes '''
             for i in range(len(process['reactants'])):
                 if 'energy2d' in systems[process['reactants'][i]]:
                     ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
                 else:
                     ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
-        elif 'molecule' in [systems[i]['kind'] for i in process['products']]:
+        elif 'molecule' in [systems[i]['kind'] for i in process['products']]:   # for desorption processes
             ''' This elif considers molecules in products as in desorption processes '''
             for i in range(len(process['products'])):
                 if 'energy2d' in systems[process['products'][i]]:
@@ -91,10 +91,7 @@ class RConstants:
                 ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
         er = 0      # total energy for reactants
         for i in range(len(process['reactants'])):
-            if 'energy2d' in systems[process['reactants'][i]]:
-                er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
-            else:
-                er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
+            er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
         return ets - er
 
     @staticmethod

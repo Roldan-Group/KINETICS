@@ -86,7 +86,7 @@ def interpolate(rconditions, systems, name, restricted_arg, ykey):
     ax1.set_xlabel('coverage (ML)', fontsize=18)
     ax1.set_xlim([0, 1])
     ax1.tick_params(axis='both', rotation=0, labelsize=16)
-    ax1.yaxis.set_major_formatter(ticker.FuncFormatter('[{:.2f}]'.format))
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter('{:.2f}'.format))
     if ykey.startswith("i"):
         ax1.set_ylabel(ykey+" $(cm^{-1})$", fontsize=18)
     elif ykey.startswith("e"):
