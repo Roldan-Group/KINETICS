@@ -170,4 +170,26 @@ class RConstants:
                 k = 1 + 1/24 * (constants['hc']* f /(2*sp.pi * constants['kb']*temp))**2
         return k
 
+    @staticmethod
+    def electric(process, systems, constants):
+        ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
+        vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
+        ''' Reaction conditions are set as symbols using SYMPY '''
+        temp = sp.symbols("temperature")
+        k = 1
+        for i in range(len(process['ts'])):
+            for f in systems[process['ts'][i]]['ifreq']:
+                k = 1 + 1/24 * (constants['hc']* f /(2*sp.pi * constants['kb']*temp))**2
+        return k
 
+    @staticmethod
+    def ph(process, systems, constants):
+        ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
+        vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
+        ''' Reaction conditions are set as symbols using SYMPY '''
+        temp = sp.symbols("temperature")
+        k = 1
+        for i in range(len(process['ts'])):
+            for f in systems[process['ts'][i]]['ifreq']:
+                k = 1 + 1/24 * (constants['hc']* f /(2*sp.pi * constants['kb']*temp))**2
+        return k

@@ -322,17 +322,17 @@ def mkread(inputfile):
 
 start0 = time.time()
 rconditions, processes, systems = mkread(str(sys.argv[1]))
-print("... Reading ...", time.time()-start0, " seconds")
+print("... Reading ...", round(time.time()-start0, 3), " seconds")
 ''' list of restricted argunments in systems[name] containing the interpolated functions'''
-restricted_arg = ["kind", "pressure0", "coverage0", 'q3d', 'q2d', 'energy3d', 'energy2d']
+restricted_arg = ["kind", "pressure0", "coverage0", 'q3d', 'q2d', 'energy3d', 'energy2d', 'ifreq']
 start = time.time()
 systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print("... Generating Partition Functions ...", time.time()-start, " seconds")
+print("... Generating Partition Functions ...", round(time.time()-start, 3), " seconds")
 start = time.time()
 systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print("... Generating Thermodynamics ...", time.time()-start, " seconds")
+print("... Generating Thermodynamics ...", round(time.time()-start, 3), " seconds")
 start = time.time()
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes
-print("... Generating Reaction Constants ...", time.time()-start, " seconds")
+print("... Generating Reaction Constants ...", round(time.time()-start, 3), " seconds")
 
-print("... Microkinetics Completed ...", (time.time()-start0)/60, " minutes")
+print("... Microkinetics Completed ...", round((time.time()-start0)/60, 3), " minutes")

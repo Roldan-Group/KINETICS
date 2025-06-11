@@ -98,7 +98,7 @@ def interpolate(rconditions, systems, name, restricted_arg, ykey):
     plt.ion()
     plt.show()
     plt.savefig(folder+ykey+"_coverage.svg", dpi=300, orientation='landscape', transparent=True)
-    print("\t... Interpolating", name, ykey,"...", time.time()-startint, " seconds")
+    print("\t... Interpolating", name, ykey,"...", round(time.time()-startint, 3), " seconds")
     return function
 
 
@@ -306,22 +306,9 @@ class Energy:        # Gibbs free energy in eV
             Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
         temp = sp.symbols("temperature")
         zpe = 0
+        ifreq = 0
         if "freq3d" in properties:
             for freq in properties["freq3d"]:
-                if freq > 0.0:
-                    # Quantum-mechanical Zero-Point-Energy
-                    zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
-                                                         (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
-        return zpe * constants["JtoeV"]
-    @staticmethod
-    def zpe2d(properties, constants):
-        ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
-            Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
-        temp = sp.symbols("temperature")
-        zpe = 0
-        ifreq = 0
-        if "freq2d" in properties:
-            for freq in properties["freq2d"]:
                 if freq > 0.0:
                     # Quantum-mechanical Zero-Point-Energy
                     zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
@@ -329,6 +316,20 @@ class Energy:        # Gibbs free energy in eV
                 else:
                     ifreq = freq
         return zpe * constants["JtoeV"], ifreq
+
+    @staticmethod
+    def zpe2d(properties, constants):
+        ''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
+            Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
+        temp = sp.symbols("temperature")
+        zpe = 0
+        if "freq2d" in properties:
+            for freq in properties["freq2d"]:
+                if freq > 0.0:
+                    # Quantum-mechanical Zero-Point-Energy
+                    zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
+                                                         (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+        return zpe * constants["JtoeV"]
 
 
 class Entropy:
