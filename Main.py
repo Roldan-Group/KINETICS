@@ -332,7 +332,7 @@ start = time.time()
 systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
 print("... Generating Thermodynamics ...", round(time.time()-start, 3), " seconds")
 start = time.time()
-processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes)).processes
+processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
 print("... Generating Reaction Constants ...", round(time.time()-start, 3), " seconds")
 
 print("... Microkinetics Completed ...", round((time.time()-start0)/60, 3), " minutes")

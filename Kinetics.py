@@ -36,7 +36,7 @@ def printdata(rconditions, process, constants, datalabel, dataname):
         output.close()
 
 class RConstants:
-    def __init__(self, rconditions, systems, constants, processes):
+    def __init__(self, rconditions, systems, constants, processes, restricted_arg):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
         for process in processes:
@@ -121,21 +121,20 @@ class RConstants:
         return (qts/qr)*sp.exp(-process['activation']/(constants['kb']*temp*constants['JtoeV']))
 
     @staticmethod
-    def arrhenius(process, systems, constants):
+    def arrhenius(process, systems, constants, restricted_arg):
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
-        arrhenius = 0
         if process['kind'] == 'A':
-            area = 0
-            mass = 0
+            area = 0    # molecular area (marea)
+            mass = 0    # Molecular mass
             for i in process['reactants']:
                 if systems[i]['kind'] == 'molecule':
                     ''' In principle, the area of a molecule will be practically the same independently of 
                     the working coverages (mean-field is not applicable at high coverages), for that reason it takes
                     the area of the first nadsorbate. '''
-                    area = float([systems[i][j]['marea'] for j in systems[i].keys() if j not in ['kind', 'pressure0']][0])
+                    area = float([systems[i][j]['marea'] for j in systems[i].keys() if j not in restricted_arg][0])
                     ''' Same reasoning is applied for the molecular mass'''
-                    mass = float([systems[i][j]['mass'] for j in systems[i].keys() if j not in ['kind', 'pressure0']][0])
+                    mass = float([systems[i][j]['mass'] for j in systems[i].keys() if j not in restricted_arg][0])
             arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*constants['kb']*temp)
             # units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
         else:
@@ -153,7 +152,6 @@ class RConstants:
                     elif 'q3d' in systems[process['products'][i]]:
                         qts *= systems[process['products'][i]]['q3d'] ** process['pstoichio'][i]
                 for i in range(len(process['reactants'])):
-                    print(i, "\n", process['reactants'][i])
                     qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
             arrhenius = constants['kb']*temp/constants['h'] * qts/qr    # units of s^-1
         return arrhenius

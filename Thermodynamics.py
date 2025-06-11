@@ -296,8 +296,8 @@ class Energy:        # Gibbs free energy in eV
                 # Activate for production
                 #systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
 
-        print("  >> integrals in Enthalpy deactivated <<\n",
-              "   >> interpolate 3d deactivated\n")
+        print("\n  >> integrals in Enthalpy deactivated <<\n",
+              "   >> interpolate 3d deactivated <<\n")
         self.systems = systems
 
     @staticmethod
