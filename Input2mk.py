@@ -38,30 +38,28 @@ def Common_Properties(system, name):
 
 #..............................................................................................................
 
-def System_Properties(File, system, ssites, symmetry_factor):
+def System_Properties(File, system, n_sites, symmetry_factor):
 	del system.constraints
 #	symmetry_factor = None			# Alberto 26/10/2022 commented
 	Area = None
 
 	system_type = "Molecule"
-# Decide if the system is a naked SURFACE through SSites
+	# Decide if the system is a naked SURFACE through n_sites
 	for i in range(3):
-		if min(Atoms(system).get_scaled_positions()[:, i]) < 0.1 and \
-				max(Atoms(system).get_scaled_positions()[:, i]) > 0.9:
-			if ssites is not None:
-				system_type = "Surface"
-# Decide if the system combines adsorbate + adsorbent (CATALYSTS)
+		if min(Atoms(system).get_scaled_positions()[:, i]) < 0.15 and \
+				max(Atoms(system).get_scaled_positions()[:, i]) > 0.85:
+			if n_sites is not None:
+				system_type = "Catalyst"	# Decide if the system combines adsorbate + adsorbent (CATALYSTS)
 			else:
-				system_type = "Catalyst"
+				system_type = "Surface"
 
 	if system_type == "Molecule":
 		pos = [1 for i in system.get_scaled_positions() if i[0] == 0. and i[1] == 0. and i[2] == 0.]
 		if len(pos) > 1:
-			if ssites is not None:
-				system_type = "Surface"
-# Decide if the system combines adsorbate + adsorbent (CATALYSTS)
+			if n_sites is not None:
+				system_type = "Catalyst"	# Decide if the system combines adsorbate + adsorbent (CATALYSTS)
 			else:
-				system_type = "Catalyst"
+				system_type = "Surface"
 #		answer = input("Is " + name +" an isolated molecule? ")
 #		if answer.startswith('y') is True or answer.startswith('Y') is True:
 #			system_type = "Molecule"
@@ -249,6 +247,7 @@ frequencies_2D = None
 symmetry_factor = None
 Inertia_moments = None
 ssites = None
+n_sites = None
 sites = None
 ipressure = None
 rpressure = None
@@ -282,12 +281,15 @@ for line in lines:
 			sites = str(words[2])
 			continue
 	elif words[0] == "ISITES":
-		ssites = []
-		for i in words[2:]:
+		if len(words[2:]) == 1:
+			sites = str(words[2])
+		else:
 			try:
-				i_float = float(i)
+				n_sites = float(words[2])
+				sites = str(words[3])
 			except:
-				ssites.append(str(i))
+				n_sites = 1.
+				sites = str(words[2])
 				continue
 	elif words[0] == "IPRESSURE":
 		ipressure = words[2]
@@ -325,7 +327,7 @@ for line in lines:
 			if software == "VASP":
 				system = vasp.read_vasp_out(File, index=-1)
 				mag = Common_Properties(system, name)   # Removed xyzPath
-				system_type, symmetry_factor, Area = System_Properties(File, system, ssites, symmetry_factor)
+				system_type, symmetry_factor, Area = System_Properties(File, system, n_sites, symmetry_factor)
 				Inertia_moments = system.get_moments_of_inertia()
 # Works out the 3D and 2D frequencies
 			if FreqFile is None and software == "VASP":
@@ -392,10 +394,7 @@ for line in lines:
 				else:
 					ifile.write(" IPRESSURE = 0.0\t# Pa\n")
 			if system_type == "Surface":
-				ifile.write(" ISITES =")
-				for s in ssites:
-					ifile.write(" %s" %(s))
-				ifile.write("\n")
+				ifile.write(" ISITES = %s\n" %(sites))
 				ifile.write(" IACAT = %.5g\t# m^2\n" %(float(Area)))
 			if system_type == "Catalyst":
 				ifile.write(" ISITES = {} {}\n" .format(n_sites, sites))
