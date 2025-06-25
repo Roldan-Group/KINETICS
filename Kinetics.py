@@ -167,24 +167,59 @@ class RConstants:
 
     @staticmethod
     def electric(process, systems, constants):
-        ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
-        vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
+        ''' Phys. Rev. Lett. 2007, 99, 126101                             DOI:https://doi.org/10.1103/PhysRevLett.99.126101
+            J. Phys. Chem. C, 2010, 114 (42), pp 18182–18197              DOI: 10.1021/jp1048887
+            The hydrogen coverage will be dependent on the potential via the reaction:
+                  		        H+ + e- + *  --> H*
+            At standard conditions (298 K, pH 0, 1 bar H2) and U = 0 V vs NHE,
+            the left-hand side is in equilibrium with hydrogen gas.
+            At finite bias, U, the chemical potential of the electron will be linearly dependent on the bias.
+            The reaction free energy can be written as:
+                  		        ΔGH* = AG + AG(U)= AG + −eU
+            defines the chemical potential of H*.'''
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
         k = 1
-        for i in range(len(process['ts'])):
-            for f in systems[process['ts'][i]]['ifreq']:
-                k = 1 + 1/24 * (constants['hc']* f /(2*sp.pi * constants['kb']*temp))**2
         return k
 
     @staticmethod
     def ph(process, systems, constants):
-        ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
-        vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
+        ''' J. Phys. Chem. B, 2004, 108 (46), pp 17886–17892    DOI: 10.1021/jp047349j
+            At a pH different from 0, we can correct the free energy of H+ ions by the concentration dependence of the entropy:
+        		        G = H -TS + kT ln(Products/Reactants)   ;    pH = -log[H3O+]
+                       G(pH) = −kT ln[H+]= kT ln (10) × pH.
+        '''
         ''' Reaction conditions are set as symbols using SYMPY '''
         temp = sp.symbols("temperature")
         k = 1
-        for i in range(len(process['ts'])):
-            for f in systems[process['ts'][i]]['ifreq']:
-                k = 1 + 1/24 * (constants['hc']* f /(2*sp.pi * constants['kb']*temp))**2
         return k
+
+
+class ODE:
+    def __init__(self, processes, systems, restricted_arg):
+        ''' Coverage (cov_i) and Pressures (pro_i) at time t are set as symbols using SYMPY '''
+        for name in systems.keys():     # species
+            if kind == 'molecule':
+                pretemp = sp.symbols("temperature")
+        ode = {}
+        for name in systems.keys():     # species
+            ode[name] = 0
+            for process in processes:
+                species = 0
+                for r in range(len(processes[process]['reactants'])):
+                    species =
+
+
+
+                for i, species in enumerate(processes[process]['products']):
+                    if name == species:
+                        ode[name] +=  XX processes[process]['krate0']*
+
+
+
+
+
+        self.ode = ode
+
+
+
