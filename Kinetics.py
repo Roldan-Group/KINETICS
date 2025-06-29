@@ -197,27 +197,34 @@ class RConstants:
 
 class ODE:
     def __init__(self, processes, systems, restricted_arg):
-        ''' Coverage (cov_i) and Pressures (pro_i) at time t are set as symbols using SYMPY '''
+        ''' Coverage and Pressures of systems (name) set as symbolic equations using SYMPY.
+         y indicate the equation number'''
+        temp = sp.symbols("temperature")
+        t = sp.symbols("time")
+        dydt = {}   # dictionary of dydt
+        equation = {}   # dictionary of equations, e.g. dydt = K1[A][B] + k2[C]
         for name in systems.keys():     # species
-            if kind == 'molecule':
-                pretemp = sp.symbols("temperature")
-        ode = {}
-        for name in systems.keys():     # species
-            ode[name] = 0
-            for process in processes:
-                species = 0
-                for r in range(len(processes[process]['reactants'])):
-                    species =
+            dydt[name]= sp.Function(f'{name}')(t)
+            if systems[name]['kind'] != "surfaces":
+                equation[name] = 0
+                for process in processes:
+                    if name in processes[process]['products']:
+                        equation[name] +=  XX processes[process]['krate0']
+                        for r in range(len(processes[process]['reactants'])):
+                            equation[name] *= processes[process]['reactants'][r] ** processes[process]['rstoichio'][r]
+                    elif name in processes[process]['reactants']:
+                        equation[name] -= XX processes[process]['krate0']
+                        for r in range(len(processes[process]['reactants'])):
+                            equation[name] *=  processes[process]['reactants'][r]**processes[process]['rstoichio'][r]
+
+            elif systems[name]['kind'] == 'surfaces':
+                equation[name] = 1
+                for adsorbate in systems.keys():
+                    if systems[adsorbate]['site'] == systems[name]['site']
+                        equation[name] -= systems[adsorbate]["nsites2"] * adsorbate
 
 
-
-                for i, species in enumerate(processes[process]['products']):
-                    if name == species:
-                        ode[name] +=  XX processes[process]['krate0']*
-
-
-
-
+        ode = [sp.Eq(dydt[name].diff(t), equation[name]) for name in systems.keys()]
 
         self.ode = ode
 
