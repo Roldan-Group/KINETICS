@@ -11,7 +11,6 @@ import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib import ticker
-from withMatlab.Input2mk import interpolate
 
 
 def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
@@ -147,11 +146,19 @@ class PartitionFunctions:
                                   datalabel, "PartitionFunctions")
         ''' Partition function interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
-            if systems[name]["kind"] == "molecule":
-                systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
-                systems[name]["q2d"] = interpolate(rconditions, systems, name, restricted_arg, "q2d")
+            if len([adsorbate for adsorbate in systems[name] if adsorbate not in restricted_arg]) > 1:
+                if systems[name]["kind"] == "molecule":
+                    systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
+                    systems[name]["q2d"] = interpolate(rconditions, systems, name, restricted_arg, "q2d")
+                else:
+                    systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
             else:
-                systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
+                adsorbate =  [i for i in systems[name] if i not in restricted_arg][0]
+                if systems[name]["kind"] == "molecule":
+                    systems[name]["q3d"] = systems[name][adsorbate]["q3d"]
+                    systems[name]["q2d"] = systems[name][adsorbate]["q2d"]
+                else:
+                    systems[name]["q3d"] = systems[name][adsorbate]["q3d"]
         self.systems = systems
 
     @staticmethod
@@ -286,18 +293,21 @@ class Energy:        # Gibbs free energy in eV
                               ["energy3d"], "GibbsFreeEnergy")
         ''' Energy interpolation between nadsorbates of the same name '''
         for name in systems.keys():     # species
-            if systems[name]["kind"] == "molecule":
-                systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
-                systems[name]["energy2d"] = interpolate(rconditions, systems, name, restricted_arg, "energy2d")
-
+            if len([adsorbate for adsorbate in systems[name] if adsorbate not in restricted_arg]) > 1:
+                if systems[name]["kind"] == "molecule":
+                    systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
+                    systems[name]["energy2d"] = interpolate(rconditions, systems, name, restricted_arg, "energy2d")
+                else:
+                    systems[name]["ifreq"] = interpolate(rconditions, systems, name, restricted_arg, "ifreq")
+                    systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
             else:
-                systems[name]["ifreq"] = interpolate(rconditions, systems, name, restricted_arg, "ifreq")
-                systems[name]["energy3d"] = 1
-                # Activate for production
-                #systems[name]["energy3d"] = interpolate(rconditions, systems, name, restricted_arg, "energy3d")
-
-        print("\n  >> integrals in Enthalpy deactivated <<\n",
-              "   >> interpolate 3d deactivated <<\n")
+                adsorbate =  [i for i in systems[name] if i not in restricted_arg][0]
+                if systems[name]["kind"] == "molecule":
+                    systems[name]["energy3d"] = systems[name][adsorbate]["energy3d"]
+                    systems[name]["energy2d"] = systems[name][adsorbate]["energy2d"]
+                else:
+                    systems[name]["ifreq"] = systems[name][adsorbate]["ifreq"]
+                    systems[name]["energy3d"] = systems[name][adsorbate]["energy3d"]
         self.systems = systems
 
     @staticmethod

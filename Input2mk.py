@@ -15,6 +15,7 @@ import numpy as np
 from ase import Atoms
 from ase.io import read, write, vasp
 
+
 parameters = ["SYSTEM", "SYSPATH", "FREQPATH", "SYMFACTOR", "ISITES", "MOLSITE", "IPRESSURE", "RPRESSURE", "ICOVERAGE",
 			  "RCOVERAGE", "INTERPOLATE", "END"]
 
@@ -434,3 +435,5 @@ for line in lines:
 # write lines not related with the data from the systems
 	   ifile.write (line)
 ifile.close()
+
+

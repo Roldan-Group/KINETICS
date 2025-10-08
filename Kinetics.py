@@ -7,6 +7,7 @@ import os, pathlib
 import sympy as sp
 
 
+
 def printdata(rconditions, process, constants, datalabel, dataname):
     folder = './KINETICS/PROCESSES'
     outputfile = folder + "/" + str(dataname) + ".dat"
@@ -51,7 +52,7 @@ class RConstants:
                 datalabel = ["activation", "sticky", "arrhenius", 'ktunneling', "krate0"]
                 printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
             else:
-                processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
+                processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants, restricted_arg)
                 processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)   # NO units
                 processes[process]['krate0'] = (processes[process]["arrhenius"] *
                                                 sp.exp(-processes[process]['activation']/
@@ -194,39 +195,53 @@ class RConstants:
         k = 1
         return k
 
-
-class ODE:
-    def __init__(self, processes, systems, restricted_arg):
-        ''' Coverage and Pressures of systems (name) set as symbolic equations using SYMPY.
-         y indicate the equation number'''
-        temp = sp.symbols("temperature")
+class REquations:
+    def __init__(self, processes, systems):
         t = sp.symbols("time")
-        dydt = {}   # dictionary of dydt
-        equation = {}   # dictionary of equations, e.g. dydt = K1[A][B] + k2[C]
-        for name in systems.keys():     # species
-            dydt[name]= sp.Function(f'{name}')(t)
-            if systems[name]['kind'] != "surfaces":
-                equation[name] = 0
+        constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
+        tpd = {}  # dictionary of equations WITHOUT adsorptions
+        surfequation = {}
+        all_sites = []
+        for name in systems.keys():
+            if systems[name]['kind'] == 'surface':
+                all_sites += systems[name]['sites']
+        sites_name = list(set(all_sites))
+        for s in sites_name:
+            surfequation[s] = 1
+        for name in systems.keys():  # species
+            if systems[name]['kind'] != "surface":
+                constemperature[name] = 0
+                tpd[name] = 0
                 for process in processes:
-                    if name in processes[process]['products']:
-                        equation[name] +=  XX processes[process]['krate0']
-                        for r in range(len(processes[process]['reactants'])):
-                            equation[name] *= processes[process]['reactants'][r] ** processes[process]['rstoichio'][r]
-                    elif name in processes[process]['reactants']:
-                        equation[name] -= XX processes[process]['krate0']
-                        for r in range(len(processes[process]['reactants'])):
-                            equation[name] *=  processes[process]['reactants'][r]**processes[process]['rstoichio'][r]
+                    constemperature[name] += self.equation(processes[process], name, process)
+                    if processes[process]["kind"] != "A":
+                        tpd[name] += self.equation(processes[process], name, process)
+                if systems[name]['kind'] == 'adsorbate':
+                    for s in systems[name]['sites']:        # although usually one adsorbate takes only one kind of site
+                        ''' the coverage is not multiplied for the number of sites the adsorbate occupies because the 
+                        site is defined within the "area" the molecule occupies. Again, it is assumed that the adsorbates
+                        for this site are similar in volume.'''
+                        surfequation[s] -= sp.Function(f"{systems[name]}")(t)
 
-            elif systems[name]['kind'] == 'surfaces':
-                equation[name] = 1
-                for adsorbate in systems.keys():
-                    if systems[adsorbate]['site'] == systems[name]['site']
-                        equation[name] -= systems[adsorbate]["nsites2"] * adsorbate
+        self.constemperature = constemperature | surfequation
+        self.tpd = tpd | surfequation
 
-
-        ode = [sp.Eq(dydt[name].diff(t), equation[name]) for name in systems.keys()]
-
-        self.ode = ode
-
-
-
+    @staticmethod
+    def equation(process, name, i):  # process is processes[process]; i indicates the process number
+        t = sp.symbols("time")
+        equation = 0
+        if name in process['products']:
+            for r in range(len(process['products'])):
+                if name == process['products'][r]:
+                    rfactor = process['pstoichio'][r]
+            equation += rfactor * process['krate0']
+            for r in range(len(process['reactants'])):
+                equation *= sp.Function(f"{process['reactants'][r]}")(t) ** process['rstoichio'][r]
+        elif name in process['reactants']:
+            for r in range(len(process['reactants'])):
+                if name == process['reactants'][r]:
+                    rfactor = process['rstoichio'][r]
+            equation -= rfactor * process['krate0']
+            for r in range(len(process['reactants'])):
+                equation *= sp.Function(f"{process['reactants'][r]}")(t) ** process['rstoichio'][r]
+        return equation

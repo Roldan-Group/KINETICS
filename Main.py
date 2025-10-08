@@ -1,4 +1,8 @@
 """
+
+make first Input2mk.py
+
+
     This script reads and executes the packages for KINETICS
 
         by Alberto Roldan
@@ -7,7 +11,8 @@ import sys, re
 import time
 import sympy as sp
 from Thermodynamics import PartitionFunctions , Energy
-from Kinetics import RConstants
+from Kinetics import RConstants, REquations
+
 
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
@@ -22,7 +27,7 @@ constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
              }
 
 ''' Read input file with the systems and kinetic simulation conditions'''
-def mkread(inputfile):
+def mkread(inputfile, restricted_arg):
     rconditions = {}    # reaction conditions
     processes = {}      # reaction processes
     process = 0         # process number, key of processes starting from 1
@@ -145,6 +150,7 @@ def mkread(inputfile):
                 if len(nsites) < len(sites):
                     systems[name][nadsorbates]["nsite"] = [1 for i in range(len(sites))]
                 systems[name][nadsorbates]["sites"] = sites   # catalyst adsorption sites
+                systems[name]["sites"] = sites
             if head == "IACAT":
                 areas = []                   # adsorption areas
                 for i in tail:
@@ -234,12 +240,11 @@ def mkread(inputfile):
         elif "imass" in systems[name][list(systems[name].keys())[0]].keys():
             systems[name]["kind"] = "molecule"
         else:
-            systems[name]["kind"] = "adsorbed"
-
+            systems[name]["kind"] = "adsorbate"
         if systems[name]["kind"] == "surface":
             for key in systems[name].keys():
-                if key not in ["kind"]:       # only for nadsorbates
-                    if len(systems[name][key]["area"]) != len(systems[name][key]["sites"]):
+                if key not in restricted_arg:       # only for nadsorbates
+                    if len(systems[name][str(key)]['area']) != len(systems[name][str(key)]["sites"]):
                         print("   ERROR: the number of sites and areas in {}{} is not the same.".format(name,key))
                         exit()
                     if ("freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0):
@@ -263,12 +268,12 @@ def mkread(inputfile):
                     if "freq2d" not in systems[name][key].keys() or len(systems[name][key]["freq2d"]) == 0:
                         print("   ERROR: 2D frequencies for {}{} are not provided".format(name, key))
                         exit()
-        if systems[name]["kind"] == "adsorbed":
+        if systems[name]["kind"] == "adsorbate":
             if "coverage0" not in systems[name].keys():
                 systems[name]["coverage0"] = 0.
             for key in systems[name].keys():
-                if key not in ["kind", "coverage0"]:       # only for nadsorbates
-                    if ("freq3d" not in systems[name][key].kesy() or len(systems[name][key]["freq3d"]) == 0):
+                if key not in restricted_arg and isinstance(systems[name][key], dict):       # only for nadsorbates
+                    if ("freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0):
                         print("   NOTE: frequencies for {}{} are not provided".format(name, key))
                         exit()
 
@@ -278,7 +283,7 @@ def mkread(inputfile):
     for name in systems.keys():
         if systems[name]["kind"] == "surface":
             for key in systems[name].keys():
-                if key not in ["kind"]:       # only for nadsorbates
+                if key not in restricted_arg:       # only for nadsorbates
                     for i in range(len(systems[name][key]["sites"])):
                         sites[str(systems[name][key]["sites"][i])] = float(systems[name][key]["area"][i])
     '''A molecule will adsorb on one a site with a particular area (marea). If the molecules has more than site to 
@@ -301,30 +306,29 @@ def mkread(inputfile):
                     if key not in ["kind", "pressure0", "coverage0"]:  # only for nadsorbates
                         for i in systems[name][key]["freq3d"][:-2]:
                             if i < -100:
-                                print("   ERROR: {}{} has more than one significant imaginary frequency".format(
+                                print("   ALERT: {}{} has more than one significant imaginary frequency".format(
                                     name, key))
-                                exit()
                             else:
                                 freq.append(i)
                         freq.append(systems[name][key]["freq3d"][-1])
                         systems[name][key]["freq3d"] = freq
             else:
                 for key in systems[name].keys():
-                    if key not in ["kind", "pressure0", "coverage0"] and "freq3d" in systems[name][key].keys():  # only for nadsorbates
+                    if key not in restricted_arg and "freq3d" in systems[name][key].keys():  # only for nadsorbates
                         for i in systems[name][key]["freq3d"]:
                             if i < -100:
-                                print("   ERROR: {}{} has a significant imaginary frequency".format(name, key))
-                                exit()
+                                print("   ALERT: {}{} has a significant imaginary frequency".format(name, key))
                             else:
                                 freq.append(i)
                         systems[name][key]["freq3d"] = freq
     return rconditions, processes, systems
 
-start0 = time.time()
-rconditions, processes, systems = mkread(str(sys.argv[1]))
-print("... Reading ...", round(time.time()-start0, 3), " seconds")
 ''' list of restricted argunments in systems[name] containing the interpolated functions'''
-restricted_arg = ["kind", "pressure0", "coverage0", 'q3d', 'q2d', 'energy3d', 'energy2d', 'ifreq']
+restricted_arg = ["kind", "pressure0", "coverage0", "sites", 'q3d', 'q2d', 'energy3d', 'energy2d', 'ifreq']
+
+start0 = time.time()
+rconditions, processes, systems = mkread(str(sys.argv[1]), list(restricted_arg))
+print("... Reading ...", round(time.time()-start0, 3), " seconds")
 start = time.time()
 systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
 print("... Generating Partition Functions ...", round(time.time()-start, 3), " seconds")
@@ -334,5 +338,9 @@ print("... Generating Thermodynamics ...", round(time.time()-start, 3), " second
 start = time.time()
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
 print("... Generating Reaction Constants ...", round(time.time()-start, 3), " seconds")
-
+start = time.time()
+constemperature_equations = REquations(dict(processes), dict(systems)).constemperature
+tpd_equations = REquations(dict(processes), dict(systems)).tpd
+print("... Generating Rate Equations ...", round(time.time()-start, 3), " seconds")
+start = time.time()
 print("... Microkinetics Completed ...", round((time.time()-start0)/60, 3), " minutes")
