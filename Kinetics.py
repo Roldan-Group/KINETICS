@@ -7,7 +7,7 @@ import os, pathlib
 import sympy as sp
 
 
-
+'''
 def printdata(rconditions, process, constants, datalabel, dataname):
     folder = './KINETICS/PROCESSES'
     outputfile = folder + "/" + str(dataname) + ".dat"
@@ -35,6 +35,7 @@ def printdata(rconditions, process, constants, datalabel, dataname):
                     output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if value > 1e3 else 'f'))
                 output.write("\n")
         output.close()
+'''
 
 class RConstants:
     def __init__(self, rconditions, systems, constants, processes, restricted_arg):
@@ -44,13 +45,13 @@ class RConstants:
             processes[process]["activation"] = self.activation(processes[process], systems)
             if processes[process]['kind'] == 'A':
                 processes[process]["sticky"] = self.sticky(processes[process], systems, constants)
-                processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants)
+                processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants, restricted_arg)
                 processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)
                 processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
                                                 processes[process]["ktunneling"])
                 # units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
                 datalabel = ["activation", "sticky", "arrhenius", 'ktunneling', "krate0"]
-                printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
+                self.printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
             else:
                 processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants, restricted_arg)
                 processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)   # NO units
@@ -59,7 +60,7 @@ class RConstants:
                                                        (constants['kb']*temp*constants['JtoeV'])) *
                                                 processes[process]["ktunneling"])   # units s^-1
                 datalabel = ["activation", "arrhenius", 'ktunneling', "krate0"]
-                printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
+                self.printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
         self.processes = processes
 
     @staticmethod
@@ -110,7 +111,7 @@ class RConstants:
                 qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
         else:
             for i in range(len(process['reactants'])):
-                if systems[process['reactants'][i]]['q2d']:
+                if 'q2d' in systems[process['reactants'][i]].keys():
                     qts *=  systems[process['reactants'][i]]['q2d']**process['rstoichio'][i]
                 else:
                     qts *=  systems[process['reactants'][i]]['q3d']**process['rstoichio'][i]
@@ -195,12 +196,55 @@ class RConstants:
         k = 1
         return k
 
+    @staticmethod
+    def printdata(rconditions, process, constants, datalabel, dataname):
+        folder = './KINETICS/PROCESSES'
+        outputfile = folder + "/" + str(dataname) + ".dat"
+        if not pathlib.Path(folder).exists():
+            pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+            os.chmod(folder, 0o755)
+
+        output = open(outputfile, "w")
+        output.write("#")
+        for i in rconditions.keys():
+            output.write("\t {val:>{wid}s}:".format(wid=len(i), val=i))
+            for value in rconditions[i]:
+                output.write(" {val:>5.3f}".format(val=value))
+        output.write("\n# {:}\t".format(process['kind']))
+        species = process['reactants'] + ['>'] + process['ts'] + ['>'] + process['products']
+        stoi = process['rstoichio'] + [' '] + process['tsstoichio'] + [' '] + process['pstoichio']
+        for i in range(len(species)):
+            output.write(" {stoi:}{val:>{wid}s}".format(stoi=stoi[i] , wid=len(species[i])+1, val=species[i]))
+        output.write("\n# Temperature[K]")
+        for i in datalabel:
+            output.write(" {val:>{wid}s}".format(wid=len(i) + 3, val=i))
+        output.write("\n")
+        temp = sp.symbols("temperature")
+        if isinstance(rconditions["temperature"], float):
+            output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=rconditions["temperature"]))
+            for i in datalabel:
+                value = sp.lambdify(temp, process[str(i)])(float(rconditions["temperature"]))
+                output.write(" {val:>{wid}.3{c}}".format(wid=len(i) + 3, val=value, c='e' if value > 1e3 else 'f'))
+        else:
+            ramp = [int(i) for i in rconditions["temperature"]]
+            for t in range(ramp[0], ramp[1], ramp[2]):
+                output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=t))
+                for i in datalabel:
+                    value = sp.lambdify(temp, process[str(i)])(t)
+                    output.write(" {val:>{wid}.3{c}}".format(wid=len(i) + 3, val=value, c='e' if value > 1e3 else 'f'))
+                output.write("\n")
+        output.close()
+
+
 class REquations:
     def __init__(self, processes, systems):
         t = sp.symbols("time")
         constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
+        print_constemperature = {}
         tpd = {}  # dictionary of equations WITHOUT adsorptions
+        print_tpd = {}
         surfequation = {}
+        print_surfequation = {}
         all_sites = []
         for name in systems.keys():
             if systems[name]['kind'] == 'surface':
@@ -208,23 +252,31 @@ class REquations:
         sites_name = list(set(all_sites))
         for s in sites_name:
             surfequation[s] = 1
+            print_surfequation[s] = ['  1']
         for name in systems.keys():  # species
             if systems[name]['kind'] != "surface":
                 constemperature[name] = 0
+                print_constemperature[name] = []
                 tpd[name] = 0
+                print_tpd[name] = []
                 for process in processes:
                     constemperature[name] += self.equation(processes[process], name, process)
+                    print_constemperature[name] += self.print_equation(processes[process], name, str(process))
                     if processes[process]["kind"] != "A":
                         tpd[name] += self.equation(processes[process], name, process)
+                        print_tpd[name] += self.print_equation(processes[process], name, str(process))
                 if systems[name]['kind'] == 'adsorbate':
                     for s in systems[name]['sites']:        # although usually one adsorbate takes only one kind of site
                         ''' the coverage is not multiplied for the number of sites the adsorbate occupies because the 
                         site is defined within the "area" the molecule occupies. Again, it is assumed that the adsorbates
                         for this site are similar in volume.'''
                         surfequation[s] -= sp.Function(f"{systems[name]}")(t)
+                        print_surfequation[s].append("-[" + name + "]")
 
         self.constemperature = constemperature | surfequation
         self.tpd = tpd | surfequation
+        self.printdata(print_constemperature | print_surfequation, 'Cons_Temperature')
+        self.printdata(print_tpd | print_surfequation, 'TPD')
 
     @staticmethod
     def equation(process, name, i):  # process is processes[process]; i indicates the process number
@@ -245,3 +297,40 @@ class REquations:
             for r in range(len(process['reactants'])):
                 equation *= sp.Function(f"{process['reactants'][r]}")(t) ** process['rstoichio'][r]
         return equation
+
+    @staticmethod
+    def print_equation(process, name, i):  # process is processes[process]; i indicates the process number
+        equation = []
+        if name in process['products']:
+            for r in range(len(process['products'])):
+                if name == process['products'][r]:
+                    rfactor = process['pstoichio'][r]
+            equation.append("   +" + str(rfactor) + " * K_" + str(i))
+            for r in range(len(process['reactants'])):
+                equation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
+        elif name in process['reactants']:
+            for r in range(len(process['reactants'])):
+                if name == process['reactants'][r]:
+                    rfactor = process['rstoichio'][r]
+            equation.append("   -" + str(rfactor) + " * K_" + str(i))
+            for r in range(len(process['reactants'])):
+                equation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
+        return equation
+
+    @staticmethod
+    def printdata(equations, experiment):
+        folder = './KINETICS/EQUATIONS'
+        outputfile = folder + "/" + experiment + ".dat"
+        if not pathlib.Path(folder).exists():
+            pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+            os.chmod(folder, 0o755)
+        output = open(outputfile, "w")
+        output.write("# species/dt\t reactions\n")
+        for name in equations.keys():
+            output.write(" [{val:>{wid}s}]\dt = ".format(wid=len(name), val=name))
+            output.write("{val:>s}".format(val=str.join(" ", equations[name])))
+            output.write("\n")
+        output.close()
+
+
+

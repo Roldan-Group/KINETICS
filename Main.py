@@ -78,8 +78,9 @@ def mkread(inputfile, restricted_arg):
                 *** conditions to be added
             '''
             if head == "PROCESS":
-                processes[str(process + 1)] = {}    # dictionary of items for process
-                processes[str(process + 1)]["kind"] = str(tail[0][0])  # kind of process
+                process += 1
+                processes[str(process)] = {}    # dictionary of items for process
+                processes[str(process)]["kind"] = str(tail[0][0])  # kind of process
                 reaction = ''.join(tail[1:]).split(">")
                 for i in range(3):      # [reactants, TSs, products]
                     species = []
@@ -94,14 +95,14 @@ def mkread(inputfile, restricted_arg):
                                 stoichio.append(1.0)
                                 species.append(str(j))
                     if i == 0:
-                        processes[str(process + 1)]["reactants"] = species  # reactants
-                        processes[str(process + 1)]["rstoichio"] = stoichio
+                        processes[str(process)]["reactants"] = species  # reactants
+                        processes[str(process)]["rstoichio"] = stoichio
                     elif i == 1:
-                        processes[str(process + 1)]["ts"] = species
-                        processes[str(process + 1)]["tsstoichio"] = stoichio
+                        processes[str(process)]["ts"] = species
+                        processes[str(process)]["tsstoichio"] = stoichio
                     else:
-                        processes[str(process + 1)]["products"] = species  # products
-                        processes[str(process + 1)]["pstoichio"] = stoichio
+                        processes[str(process)]["products"] = species  # products
+                        processes[str(process)]["pstoichio"] = stoichio
             ''' Systems, i.e. the species involved, in a nested dictionary (systems) with key = name,
             including:
                 - number of adsorbates (nadsorbates), accounting for the systems' coverage.
@@ -334,6 +335,9 @@ systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), 
 print("... Generating Partition Functions ...", round(time.time()-start, 3), " seconds")
 start = time.time()
 systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
+
+''' INTEGRATION for the calculation of ENTHALPY has been shitched OFF '''
+
 print("... Generating Thermodynamics ...", round(time.time()-start, 3), " seconds")
 start = time.time()
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
