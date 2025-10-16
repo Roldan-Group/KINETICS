@@ -3,59 +3,89 @@
 
 """
 
-import os, pathlib
 import sympy as sp
-
-from Main import rconditions
-
-{'temperature': [300.0, 320.0, 10.0], 'time': [0, 100.0, 10.0]}
+import numpy as np
+from scipy.integrate import solve_ivp
 
 
-class Experiments:
-    def __init__(self, rconditions, systems, equations):
+class ConsTemperature:
+    def __init__(self, rconditions, systems, equations, surf_equations):
         t , temp = sp.symbols('time temperature')
-        ics = self.initial_species(systems)
-        species = [sp.Function(name)(t) for name in systems.keys()]
+        ics, species, ics_surf, surf = self.initial_species(systems)
         ode = []
         rhs = []
-        for name in species:
+        sp_species = []
+        for name in species:        # lists of names with the order of ics
+            sp_species.append(sp.Function(name)(t))
             ode.append(sp.Eq(sp.diff(name, t), equations[name]))
             rhs.append(ode[-1].rhs)     # rhs for SciPy
+        ''' ODEs do not contain algrebraic equations such as those for coverage.
+        To solve Differention-Algebraic Equations (DAE) use CasADi or Assimulo
+        for name in surf:
+            sp_species.append(sp.Function(name)(t))
+            ode.append(sp.Eq(name, surf_equations[name]))
+            rhs.append(ode[-1].rhs)     # rhs for SciPy
+        '''
+        print(species)
+        print(surf_equations)
 
         conditions = [t, temp]
-
         # Convert symbolic RHS into numerical function
         f_ode = sp.lambdify((*conditions, *species), rhs,"numpy")
-        y = [name for name in systems.keys()]
+        y = [name for name in systems.keys()]   #__ especies
+
         # Time grid
         t_span = (rconditions["time"][0], rconditions["time"][1])
         t_eval = np.linspace(*t_span, rconditions["time"][2])
-        for temp in range(rconditions["temperature"]):
-            sol = solve_ivp(   lambda t, temp, y: f_ode(t, temp, *y), t_span, ics, t_eval=t_eval, rtol=1e-8, atol=1e-10)
+        # Temperature grid
+        temp_span = (rconditions["temperature"][0], rconditions["temperature"][1])
+        temp_eval = np.linspace(*temp_span, rconditions["temperature"][2])
+
+        # define ode function compatible with solve_ivp
+        def ode_system(t, species, temperature):
+            return f_ode(t, temperature, *species)  # ics in concentrations at t=0
+
+        # integrate at different temperatures
+        for temp in temp_eval:
+            sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval, args=(temp, ), rtol=1e-8, atol=1e-10)
             print(sol)
+            exit()
             #self.printdata("Constant_Temperature", temp, sol)
 
+    # tpd
     # Reaction control
     # Rate
     # Selectivity control
 
     @staticmethod
-    def initial_species(self, systems):  # process is processes[process]
-        ics = {}
+    def initial_species(systems):  # process is processes[process]
+        t = sp.symbols('time')
+        ics = []    # list of initial concentrations in the order of systems[names]
+        species = []    # list of species in the order on systems
+        ics_surf = []   # list of initial free sites
+        surf = []   # list of surfaces in the order of ics
         surf0 = {}
-        sites_name = list(set([systems[name]['site'] for name in systems.keys()]))
-        for s in sites_name:
+        sites_name = []
+        for name in systems.keys():
+            if systems[name]['kind'] == 'surface':
+                sites_name.extend(systems[name]['sites'])
+        for s in list(set(sites_name)):
             surf0[s] = 1
         for name in systems.keys():
             if systems[name]['kind'] == "molecule":
-                ics[systems[name].subs(t, 0)] = systems[name]["pressure0"]
+                ics.append(systems[name]["pressure0"])
+                species.append(name)
             elif systems[name]['kind'] == "adsorbate":
-                ics[systems[name].subs(t, 0)] = systems[name]["coverage0"]
-                surf0[systems[name]['site']] -= systems[name]["coverage0"] * systems[name]["nsites2"]
+                ics.append(systems[name]["coverage0"])
+                ''' adsorbates have only one kind of adsorption site per system '''
+                surf0[systems[name]['sites'][0]] -= systems[name]["coverage0"] * systems[name]["nsites"]
+                species.append(name)
         for s in surf0.keys():
-            ics[s.subs(t, 0)] = surf0[s]
-        return ics
+            ics_surf.append(surf0[s])
+            surf.append(s)
+        return ics, species, ics_surf, surf
 
+    '''
     @staticmethod
     def printdata(self, experiment, temp, sol):
         folder = './KINETICS/DATA'
@@ -74,4 +104,4 @@ class Experiments:
         # data
         for value in sol:
             output.write(" {val:>5.5{c}}".format(val=value, c='e' if 1e-3 < value > 1e3 else 'f'))
-
+        '''

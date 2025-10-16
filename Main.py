@@ -9,10 +9,12 @@ make first Input2mk.py
 """
 import sys, re
 import time
+import numpy as np
 import sympy as sp
+
 from Thermodynamics import PartitionFunctions , Energy
 from Kinetics import RConstants, REquations
-
+from Experiments import ConsTemperature
 
 
 constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
@@ -54,19 +56,19 @@ def mkread(inputfile, restricted_arg):
                 if len(tail) == 1:
                     rconditions["vext"] = float(tail[0])    # constant
                 else:
-                    rconditions["vext"] = [float(i) for i in tail]  # ramp
+                    rconditions["vext"] = [float(i) for i in tail[:-1]] + [int(tail[-1])] # ramp
             if head == "PH" or head == "pH":
                 if len(tail) == 1:
                     rconditions["ph"] = float(tail[0])    # constant
                 else:
-                    rconditions["ph"] = [float(i) for i in tail]  # ramp
+                    rconditions["ph"] = [float(i) for i in tail[:-1]] + [int(tail[-1])] # ramp
             if head == "TEMP" or head == "TEMPERATURE":
                 if len(tail) == 1:
                     rconditions["temperature"] = float(tail[0])     # constant
                 else:
-                    rconditions["temperature"] = [float(i) for i in tail]   # ramp
+                    rconditions["temperature"] = [float(i) for i in tail[:-1]] + [int(tail[-1])]   # ramp
             if head == "TIME" or head == "Time":
-                rconditions["time"] = [0] + [float(i) for i in tail]  # initial time is 0
+                rconditions["time"] = [0, float(tail[0]), int(tail[-1])]  # initial time is 0
             ''' Processes (Adsorption, Reaction, Desorption) in a dictionary (processes)
             with key = number of the process, including:
                 - kind of process (kind = a, r, d)
@@ -143,13 +145,15 @@ def mkread(inputfile, restricted_arg):
             if head == "ISITES":
                 nsites = []
                 sites = []                  # catalyst adsorption sites
-                for i in tail:
+                for i in range(int(np.ceil(len(tail)/2))):
                     try:
-                        nsites.append(float(i))
+                        nsites.append(float(tail[i]))
                     except ValueError:
-                        sites.append(str(i))
-                if len(nsites) < len(sites):
-                    systems[name][nadsorbates]["nsite"] = [1 for i in range(len(sites))]
+                        nsites.append(1.0)
+                        sites.append(str(tail[i]))
+                    else:
+                        sites.append(str(tail[i+1]))
+                systems[name][nadsorbates]["nsites"] = nsites   # number of sites occupied by adsorbate
                 systems[name][nadsorbates]["sites"] = sites   # catalyst adsorption sites
                 systems[name]["sites"] = sites
             if head == "IACAT":
@@ -186,7 +190,7 @@ def mkread(inputfile, restricted_arg):
                 inertia = []          # molecular inertia moment(s)
                 for i in tail:
                     try:
-                        inertia.append(float(i))
+                        inertia.append(np.abs(float(i)))
                     except ValueError:
                         pass
                 if len(inertia) == 1:
@@ -235,13 +239,22 @@ def mkread(inputfile, restricted_arg):
         - the initial pressures/coverages,
         - the 3N-6(5) frequencies,
         - The number of adsorbates in an adsorbed system. '''
+    surf = []
     for name in systems.keys():
         if "area" in systems[name][list(systems[name].keys())[0]].keys():
             systems[name]["kind"] = "surface"
+            surf.append(name)       # temporal list to later remove the surfaces name from systems
         elif "imass" in systems[name][list(systems[name].keys())[0]].keys():
             systems[name]["kind"] = "molecule"
         else:
             systems[name]["kind"] = "adsorbate"
+    ''' Swaping the surfaces from dict(systems) for the site '''
+    for name in surf:
+        for site in systems[name][list(systems[name].keys())[0]]['sites']:
+            systems[site] = systems[name]
+        del systems[name]
+
+    for name in systems.keys():
         if systems[name]["kind"] == "surface":
             for key in systems[name].keys():
                 if key not in restricted_arg:       # only for nadsorbates
@@ -254,7 +267,7 @@ def mkread(inputfile, restricted_arg):
             if "pressure0" not in systems[name].keys():
                 systems[name]["pressure0"] = 0.
             for key in systems[name].keys():
-                if key not in ["kind", "pressure0"]:       # only for nadsorbates
+                if key not in restricted_arg:       # only for nadsorbates
                     mass = 0
                     for i in range(len(systems[name][key]["imass"])):
                         mass += systems[name][key]['imass'][i] * systems[name][key]['natoms'][i]
@@ -287,64 +300,114 @@ def mkread(inputfile, restricted_arg):
                 if key not in restricted_arg:       # only for nadsorbates
                     for i in range(len(systems[name][key]["sites"])):
                         sites[str(systems[name][key]["sites"][i])] = float(systems[name][key]["area"][i])
-    '''A molecule will adsorb on one a site with a particular area (marea). If the molecules has more than site to 
+    '''A molecule will adsorb on one site with a particular area (marea). If the molecules has more than site to 
     adsorbed, differente systems needs to be described'''
     for name in systems.keys():
         if systems[name]["kind"] == "molecule":
             for key in systems[name].keys():
-                if key not in ["kind", "pressure0"]:       # only for nadsorbates
+                if key not in restricted_arg:       # only for nadsorbates
                     if systems[name][key]["molsite"] in sites:
+                        molsite = systems[name][key]["molsite"]
                         systems[name][key]["marea"] = (sites[str(systems[name][key]["molsite"])] /
-                                         int(systems[name][key]["nmolsite"]))
+                                         systems[name][key]["nmolsite"])    # should be the same as the stoichiometry in processes
+                        nmolsite = systems[name][key]["nmolsite"]
                     temp = sp.symbols("temperature")
                     pressure = 101325       # Pa == kg⋅m^−1⋅s^−2
                     systems[name][key]["volume"] = constants["kb"]*temp/pressure        # Assuming ideal behaviour of gases
-    for nproc in processes.keys():
-        for name in systems.keys():
-            freq = []
-            if name in [i for i in processes[nproc]["ts"]]:
-                for key in systems[name].keys():
-                    if key not in ["kind", "pressure0", "coverage0"]:  # only for nadsorbates
-                        for i in systems[name][key]["freq3d"][:-2]:
-                            if i < -100:
-                                print("   ALERT: {}{} has more than one significant imaginary frequency".format(
-                                    name, key))
-                            else:
-                                freq.append(i)
-                        freq.append(systems[name][key]["freq3d"][-1])
-                        systems[name][key]["freq3d"] = freq
-            else:
-                for key in systems[name].keys():
-                    if key not in restricted_arg and "freq3d" in systems[name][key].keys():  # only for nadsorbates
-                        for i in systems[name][key]["freq3d"]:
-                            if i < -100:
-                                print("   ALERT: {}{} has a significant imaginary frequency".format(name, key))
-                            else:
-                                freq.append(i)
-                        systems[name][key]["freq3d"] = freq
+            systems[name]['molsite'] = molsite
+            systems[name]['nmolsite'] = nmolsite
+        elif systems[name]["kind"] == "adsorbate":
+            adsorbate_site = []     # there is ONLY one kind of site per adsorbate-name
+            for key in systems[name].keys():
+                if key not in restricted_arg:       # only for nadsorbates
+                    if systems[name][key]["sites"][0] in sites: # there in ONLY one kind of site per adsorbade-name
+                        adsorbate_site.append(systems[name][key]['nsites'][0] / float(key))
+            systems[name]["nsites"] = sum(adsorbate_site) / len(adsorbate_site)     # nsites per single adsorbate
+
+    for name in systems.keys():
+        freq = []
+        ts = [i for n in processes.keys() for i in processes[n]["ts"]]
+        for key in systems[name].keys():
+            if key not in restricted_arg and "freq3d" in systems[name][key].keys(): # only for adsorbates
+                if name in ts:
+                    for f in range(len(systems[name][key]["freq3d"])-1):
+                        i = systems[name][key]['freq3d'][f]
+                        if i < -100:
+                            print("   ALERT: {}_{} has more than one significant imaginary frequency (abs({}))".
+                                  format(name, key, i))
+                            freq.append(np.abs(i))
+                        else:
+                            freq.append(i)
+                    systems[name][key]["ifreq"] = systems[name][key]["freq3d"][-1]
+                elif name not in ts:  # only for nadsorbates
+                    for i in systems[name][key]["freq3d"]:
+                        if i < -100:
+                            print("   ALERT: {}_{} has a significant imaginary frequency (abs({}))".format(name, key, i))
+                            freq.append(np.abs(i))
+                        else:
+                            freq.append(i)
+                systems[name][key]["freq3d"] = freq
+
+    ''' Check the species in processes and convert the "surfaces" in kind of 
+    sites with the corresponding stoichiometry'''
+    def take_molecule(names, systems):
+        for i in range(len(names)):
+            try:
+                molsite = systems[names[i]]['molsite']
+                site_stoi = systems[names[i]]['nmolsite']
+                molecule = i
+            finally:
+                continue
+        return molsite, site_stoi, [i for i in range(len(names)) if i != molecule][0]
+
+    species = []
+    for pr in processes.keys():
+        if processes[str(pr)]['kind'] == "A":
+            molsite, site_stoi, i = take_molecule(processes[str(pr)]['reactants'], systems)
+            processes[str(pr)]['reactants'][i] = molsite   # in case the Surf name is changed by the site
+            processes[str(pr)]['rstoichio'][i] = site_stoi
+        elif processes[str(pr)]['kind'] == "D":
+            molsite, site_stoi, i = take_molecule(processes[str(pr)]['products'], systems)
+            processes[str(pr)]['products'][i] = molsite   # in case the Surf name is changed by the site
+            processes[str(pr)]['pstoichio'][i] = site_stoi
+
+        species.extend(processes[str(pr)]['reactants'])
+        species.extend(processes[str(pr)]['ts'])
+        species.extend(processes[str(pr)]['products'])
+    species = list(set(species))
+    for i in species:
+        if i not in systems.keys():
+                print("   ERROR: {} is not defined in dict(systems).".format(str(i)))
+                exit()
+
     return rconditions, processes, systems
 
 ''' list of restricted argunments in systems[name] containing the interpolated functions'''
-restricted_arg = ["kind", "pressure0", "coverage0", "sites", 'q3d', 'q2d', 'energy3d', 'energy2d', 'ifreq']
+restricted_arg = ["kind", "pressure0", "coverage0", "sites", "nsites", 'molsite', 'nmolsite',
+                  'q3d', 'q2d', 'energy3d', 'energy2d', 'ifreq']
 
 start0 = time.time()
 rconditions, processes, systems = mkread(str(sys.argv[1]), list(restricted_arg))
 print("... Reading ...", round(time.time()-start0, 3), " seconds")
 start = time.time()
 systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print("... Generating Partition Functions ...", round(time.time()-start, 3), " seconds")
+print("... Generating Partition Functions ...", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
-systems = Energy(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
+systems = Energy(dict(rconditions), dict(processes), dict(systems), dict(constants), list(restricted_arg)).systems
 
 ''' INTEGRATION for the calculation of ENTHALPY has been shitched OFF '''
 
-print("... Generating Thermodynamics ...", round(time.time()-start, 3), " seconds")
+print("... Generating Thermodynamics ...", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
 print("... Generating Reaction Constants ...", round(time.time()-start, 3), " seconds")
 start = time.time()
-constemperature_equations = REquations(dict(processes), dict(systems)).constemperature
-tpd_equations = REquations(dict(processes), dict(systems)).tpd
+constemperature = REquations(dict(processes), dict(systems)).constemperature
+surf_equations = REquations(dict(processes), dict(systems)).surfequations
+tpd = REquations(dict(processes), dict(systems)).tpd
 print("... Generating Rate Equations ...", round(time.time()-start, 3), " seconds")
 start = time.time()
+
+ConsTemperature(dict(rconditions), dict(systems), dict(constemperature), dict(surf_equations))
+
 print("... Microkinetics Completed ...", round((time.time()-start0)/60, 3), " minutes")
