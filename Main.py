@@ -46,6 +46,7 @@ def mkread(inputfile, restricted_arg):
                 else:
                     break
             ''' Reaction conditions are stored in a dictionary (rconditions), including:
+            to include the last point dx should be include, e.g. 100, 200, 10 -> 100, 210, 10
                 - External potential (vext): constant or ramp (initial, final, step)
                 - pH (ph): constant or ramp (initial, final, step) 
                 - Temperature (temperature): constant or ramp (initial, final, step)
@@ -56,19 +57,25 @@ def mkread(inputfile, restricted_arg):
                 if len(tail) == 1:
                     rconditions["vext"] = float(tail[0])    # constant
                 else:
-                    rconditions["vext"] = [float(i) for i in tail[:-1]] + [int(tail[-1])] # ramp
+                    rconditions["vext"] = [float(i) for i in tail] # ramp
+                    rconditions["vext"][1] = rconditions['vext'][1] + rconditions['vext'][2]
             if head == "PH" or head == "pH":
                 if len(tail) == 1:
                     rconditions["ph"] = float(tail[0])    # constant
                 else:
                     rconditions["ph"] = [float(i) for i in tail[:-1]] + [int(tail[-1])] # ramp
+                    rconditions["ph"][1] = rconditions['phvext'][1] + rconditions['ph'][2]
             if head == "TEMP" or head == "TEMPERATURE":
                 if len(tail) == 1:
                     rconditions["temperature"] = float(tail[0])     # constant
                 else:
                     rconditions["temperature"] = [float(i) for i in tail[:-1]] + [int(tail[-1])]   # ramp
+                    rconditions["temperature"][1] = rconditions['temperature'][1] + rconditions['temperature'][2]
+
             if head == "TIME" or head == "Time":
                 rconditions["time"] = [0, float(tail[0]), int(tail[-1])]  # initial time is 0
+                rconditions["time"][1] = rconditions['time'][1] + rconditions['time'][2]
+
             ''' Processes (Adsorption, Reaction, Desorption) in a dictionary (processes)
             with key = number of the process, including:
                 - kind of process (kind = a, r, d)
@@ -370,7 +377,6 @@ def mkread(inputfile, restricted_arg):
             molsite, site_stoi, i = take_molecule(processes[str(pr)]['products'], systems)
             processes[str(pr)]['products'][i] = molsite   # in case the Surf name is changed by the site
             processes[str(pr)]['pstoichio'][i] = site_stoi
-
         species.extend(processes[str(pr)]['reactants'])
         species.extend(processes[str(pr)]['ts'])
         species.extend(processes[str(pr)]['products'])
@@ -403,11 +409,12 @@ processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(p
 print("... Generating Reaction Constants ...", round(time.time()-start, 3), " seconds")
 start = time.time()
 constemperature = REquations(dict(processes), dict(systems)).constemperature
-surf_equations = REquations(dict(processes), dict(systems)).surfequations
+#surf_equations = REquations(dict(processes), dict(systems)).surfequations
 tpd = REquations(dict(processes), dict(systems)).tpd
 print("... Generating Rate Equations ...", round(time.time()-start, 3), " seconds")
 start = time.time()
+print("... Computing Microkinetics ...")
+ConsTemperature(dict(rconditions), dict(systems), dict(constemperature))
 
-ConsTemperature(dict(rconditions), dict(systems), dict(constemperature), dict(surf_equations))
-
-print("... Microkinetics Completed ...", round((time.time()-start0)/60, 3), " minutes")
+print("\t\t\t", round(time.time()-start, 3)/60, " minutes")
+print("... Microkinetics Completed ... Total time:", round((time.time()-start0)/60, 3), " minutes")
