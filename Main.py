@@ -406,15 +406,15 @@ systems = Energy(dict(rconditions), dict(processes), dict(systems), dict(constan
 print("... Generating Thermodynamics ...", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
-print("... Generating Reaction Constants ...", round(time.time()-start, 3), " seconds")
+print("... Generating Reaction Constants ...", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 constemperature = REquations(dict(processes), dict(systems)).constemperature
 #surf_equations = REquations(dict(processes), dict(systems)).surfequations
 tpd = REquations(dict(processes), dict(systems)).tpd
-print("... Generating Rate Equations ...", round(time.time()-start, 3), " seconds")
+print("... Generating Rate Equations ...", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 print("... Computing Microkinetics ...")
 ConsTemperature(dict(rconditions), dict(systems), dict(constemperature))
 
-print("\t\t\t", round(time.time()-start, 3)/60, " minutes")
+print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 print("... Microkinetics Completed ... Total time:", round((time.time()-start0)/60, 3), " minutes")
