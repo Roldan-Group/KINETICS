@@ -270,6 +270,9 @@ class Energy:        # Gibbs free energy in eV
 		''' The ZPE is needed first as it is required to calculate the vibrational 
 		contribution to the entropy '''
 		for name in systems.keys():     # species
+
+			print(name)
+
 			if systems[name]["kind"] == "molecule":
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
@@ -401,7 +404,7 @@ class Entropy:
 						entropy = 0.0
 						for i in datalabel3d:
 							entropy =+ systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy3d"] = sp.simplify(entropy)
+						systems[name][nadsorbates]["sentropy3d"] = entropy
 						datalabel3d.append("sentropy3d")
 						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 								  datalabel3d, "Entropy")
@@ -459,8 +462,6 @@ class Entropy:
 					qvib += (freq / (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1))
 							 - (sp.log(1 - sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)) )))
 			qvib = sp.powsimp(qvib, force=True)
-		else:
-			qvib = 1
 		return constants["kb"] * sp.log(qvib) * constants["JtoeV"]
 
 	@staticmethod
@@ -475,8 +476,6 @@ class Entropy:
 					qvib += (freq / (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1))
 							 - (sp.log(1 - sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))))
 			qvib = sp.powsimp(qvib, force=True)
-		else:
-			qvib = 1
 		return constants["kb"] * sp.log(qvib) *constants["JtoeV"]
 
 
@@ -522,14 +521,14 @@ class Enthalpy:
 		Later on to calculate H[T], Cp has to be integrated, which is very demanding in resources.
 		 For that reason, Cp analytical expression is simplidied with a chain of simplidiers'''
 		temp = sp.symbols("temperature")
-		return sp.simplify(temp * sp.diff(properties["sentropy3d"], temp))  # already in eV
+		return temp * sp.diff(properties["sentropy3d"], temp)  # already in eV
 
 	@staticmethod
 	def cp2d(properties):
 		''' Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
 		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P) '''
 		temp = sp.symbols("temperature")
-		return sp.simplify(temp * sp.diff(properties["sentropy2d"], temp))  # already in eV
+		return temp * sp.diff(properties["sentropy2d"], temp)  # already in eV
 
 
 
