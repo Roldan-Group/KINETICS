@@ -13,39 +13,54 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 
 
-def printdata(rconditions, name, nadsorbates, properties, constants, datalabel, dataname):
+def printdata(rconditions, name, nadsorbates, properties, datalabel, dataname):
+	data = getdata(rconditions, properties, datalabel)
+	maxlen = [max([len(f"{data[r][c]}")+2 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
+
 	folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
 	outputfile = folder + "/" + str(dataname) + ".dat"
 	if not pathlib.Path(folder).exists():
 		pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
 		os.chmod(folder, 0o755)
-	if not pathlib.Path(outputfile).exists():
-		output = open(outputfile, "w")
-		output.write("# Temperature[K]")
-		units = ''
-		for i in datalabel:
-			if i.startswith('e') or i.startswith('z'):
-				units = '[eV]'     # energy and ZPE
-			elif i.startswith('s') or i.startswith('c'):
-				units = '[eV K^-1]' # entropy or specific heat as "defined here"
-			output.write(" {val:>{wid}s}".format(wid=len(i+units)+3, val=i+units))
+
+	output = open(outputfile, "w")
+	for i in range(len(data[0])):
+		output.write(" {val:>{wid}s}".format(wid=maxlen[i], val=data[0][i]))  # headings
+	output.write("\n")
+	for row in data[1:]:
+		for i in range(len(row)):
+			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val=row[i],
+													 c='e' if row[i] > 1e3 or np.abs(row[i]) < 1e-2 else 'f'))
 		output.write("\n")
-		temp = sp.symbols("temperature")
-		if isinstance(rconditions["temperature"], float):
-			output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=rconditions["temperature"]))
+	output.close()
+
+
+def getdata(rconditions, properties, datalabel):
+	data = []
+	headings = ["# Temperature[K]"]
+	for i in datalabel:
+		units = ''
+		if i.startswith('enthalpy') or i.startswith('zpe') or i.startswith('energ'):
+			units = '[eV]'  # energy and ZPE
+		elif i.startswith('sentropy'):
+			units = '[eV K^-1]'  # entropy or specific heat as "defined here"
+		headings.append(i + units)
+	data.append(headings)
+	temp = sp.symbols("temperature")
+	if isinstance(rconditions["temperature"], float):
+		row = [rconditions["temperature"]]
+		for i in datalabel:
+			row.append(round(float(sp.lambdify(temp, properties[str(i)])(float(rconditions["temperature"]))), 6))
+		data.append(row)
+	else:
+		ramp = [float(i) for i in rconditions["temperature"]]
+		for t in np.arange(ramp[0], ramp[1], ramp[2]):
+			row = [t]
 			for i in datalabel:
-				value = sp.lambdify(temp, properties[str(i)])(float(rconditions["temperature"]))
-				output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value, c='e' if 1e-3 > value > 1e3 else 'f'))
-		else:
-			ramp = [int(i) for i in rconditions["temperature"]]
-			for t in range(ramp[0], ramp[1], ramp[2]):
-				output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=t))
-				for i in datalabel:
-					value = sp.lambdify(temp, properties[str(i)])(t)
-					output.write(" {val:>{wid}.3{c}}".format(wid=len(i)+3, val=value,
-															 c='e' if 1e-3 > value > 1e3 else 'f'))
-				output.write("\n")
-		output.close()
+				row.append(round(float(sp.lambdify(temp, properties[str(i)])(t)), 6))
+			data.append(row)
+	return data
+
 
 def interpolate(rconditions, systems, name, restricted_arg, ykey):
 	startint = time.time()
@@ -120,16 +135,16 @@ class PartitionFunctions:
 						q3d = 1.0
 						for i in datalabel3d:
 							q3d *= systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["q3d"] = q3d
+						systems[name][nadsorbates]["q3d"] = sp.simplify(q3d)
 						datalabel3d.append("q3d")
 						datalabel2d = ["qrot", "qelec", "qtrans2d", "qvib2d"]
 						q2d = 1.0
 						for i in datalabel2d:
 							q2d *= systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["q2d"] = q2d
+						systems[name][nadsorbates]["q2d"] = sp.simplify(q2d)
 						datalabel2d.append("q2d")
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
-							  datalabel3d + datalabel2d, "PartitionFunctions")
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
+							  datalabel3d + ["qtrans2d", "qvib2d", "q2d"], "PartitionFunctions")
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
@@ -137,15 +152,15 @@ class PartitionFunctions:
 						systems[name][nadsorbates]["qrot"] = 1
 						systems[name][nadsorbates]["qelec"] = self.qelec(systems[name][nadsorbates])
 						systems[name][nadsorbates]["qvib3d"] = self.qvib3d(systems[name][nadsorbates], constants)
-						datalabel = ["qtrans3d", "qrot", "qelec", "qvib3d"]
+						datalabel = ["qrot", "qelec", "qtrans3d", "qvib3d"]
 						q3d = 1.0
 						for i in datalabel:
 							q3d *= systems[name][nadsorbates][str(i)]
 						datalabel.append("q3d")
-						systems[name][nadsorbates]["q3d"] = q3d
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+						systems[name][nadsorbates]["q3d"] = sp.simplify(q3d)
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 								  datalabel, "PartitionFunctions")
-		''' Partition function interpolation between nadsorbates of the same name '''
+		''' Partition function interpolation between nadsorbates systems of the same name '''
 		for name in systems.keys():     # species
 			if len([adsorbate for adsorbate in systems[name] if adsorbate not in restricted_arg]) > 1:
 				if systems[name]["kind"] == "molecule":
@@ -160,6 +175,7 @@ class PartitionFunctions:
 					systems[name]["q2d"] = systems[name][adsorbate]["q2d"]
 				else:
 					systems[name]["q3d"] = systems[name][adsorbate]["q3d"]
+
 		self.systems = systems
 
 	@staticmethod
@@ -167,7 +183,8 @@ class PartitionFunctions:
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 88 '''
+		 page 88
+		 huge numbers are expected, e.g. for CO: 6.8*1010 m-1 at 500 K in one dimension'''
 		temp = sp.symbols("temperature")
 		return properties["volume"]*((2*sp.pi*properties["mass"]*constants["kb"]*temp)**(3/2))/(constants["h"]**3)
 
@@ -185,7 +202,8 @@ class PartitionFunctions:
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 90 '''
+		 page 90
+		 large values are expected, e.g. for CO: 180 at 500 K'''
 		temp = sp.symbols("temperature")
 		prod_inertia = 1.0
 		for i in properties["inertia"]:
@@ -219,11 +237,11 @@ class PartitionFunctions:
 		specific head (Cp), and pre-exponential factor of Arrhenius (A). '''
 		temp = sp.symbols("temperature")
 		qvib = 1
-		if "freq3d" in properties:
+		if "freq3d" in properties.keys():
 			for freq in properties["freq3d"]:
 				if freq > 0.0:
-					qvib *= ((sp.exp((-1/2*constants["hc"]*freq)/(constants["kb"]*temp))) /
-							 (1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp))))
+					qvib *= 1/(1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))
+			qvib = sp.powsimp(qvib, force=True)
 		return qvib
 
 	@staticmethod
@@ -240,8 +258,8 @@ class PartitionFunctions:
 		qvib = 1
 		for freq in properties["freq2d"]:
 			if freq > 0.0:
-					qvib *= ((sp.exp((-1/2*constants["hc"]*freq)/(constants["kb"]*temp))) /
-							 (1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp))))
+					qvib *= 1/(1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))
+			qvib = sp.powsimp(qvib, force=True)
 		return qvib
 
 
@@ -258,21 +276,16 @@ class Energy:        # Gibbs free energy in eV
 						zpe3d = self.zpe3d(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["zpe3d"] = zpe3d     # in eV
 						systems[name][nadsorbates]["zpe2d"] = self.zpe2d(systems[name][nadsorbates], constants) # in eV
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
-							  ["zpe3d", "zpe2d"], "ZeroPointEnergy")
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
 						zpe3d = self.zpe3d(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["zpe3d"] = zpe3d     # in eV
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
-							  ["zpe3d"], "ZeroPointEnergy")
 
 		''' Entropy is required to calculate the specific heat (Cp), which contributes 
 		to the enthalpy at specific temperatures '''
 		self.systems = Entropy(rconditions, systems, constants, restricted_arg).systems         # in eV
 		self.systems = Enthalpy(rconditions, systems, constants, restricted_arg).systems        # in eV
-
 		for name in systems.keys():     # species
 			if systems[name]["kind"] == "molecule":
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
@@ -281,14 +294,14 @@ class Energy:        # Gibbs free energy in eV
 																   temp * systems[name][nadsorbates]["sentropy3d"])
 						systems[name][nadsorbates]["energy2d"] = (systems[name][nadsorbates]["enthalpy2d"] -
 																   temp * systems[name][nadsorbates]["sentropy2d"])
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 							  ["energy3d", "energy2d"], "GibbsFreeEnergy")
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
 						systems[name][nadsorbates]["energy3d"] = (systems[name][nadsorbates]["enthalpy3d"] -
 																   temp * systems[name][nadsorbates]["sentropy3d"])
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 							  ["energy3d"], "GibbsFreeEnergy")
 		''' Energy interpolation between nadsorbates of the same name '''
 		tss = [processes[pr]['ts'][i] for pr in processes.keys() for i in range(len(processes[pr]['ts']))]
@@ -315,31 +328,35 @@ class Energy:        # Gibbs free energy in eV
 
 	@staticmethod
 	def zpe3d(properties, constants):
-		''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
-			Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
+		''' Temperature dependent quantum vibrational energy (exact for harmonic oscillator),
+		 useful if you want the thermal contribution on top of ZPE '''
 		temp = sp.symbols("temperature")
-		zpe = 0
+		zpe = 1/2*constants["hc"]
+		freq_sum = 0
+		uvib = 0
 		if "freq3d" in properties:
 			for freq in properties["freq3d"]:
 				if freq > 0.0:
-					# Quantum-mechanical Zero-Point-Energy
-					zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
-														 (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
-		return zpe * constants["JtoeV"]
+					freq_sum += freq
+					uvib += constants["hc"]*freq * (1/2 + 1/(sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+			uvib = sp.powsimp(uvib, force=True)
+		return (zpe*freq_sum + uvib) * constants["JtoeV"]
 
 	@staticmethod
 	def zpe2d(properties, constants):
-		''' Quantum ZPE corrected with the Wigner's harmonic oscillator approach  (DOI: 10.1063/1.216119).
-			Harmonic approach is also applied to include quantum tunneling in the calculation of reaction constants.'''
+		''' Temperature dependent quantum vibrational energy (exact for harmonic oscillator),
+		 useful if you want the thermal contribution on top of ZPE '''
 		temp = sp.symbols("temperature")
-		zpe = 0
+		zpe = 1/2*constants["hc"]
+		freq_sum = 0
+		uvib = 0
 		if "freq2d" in properties:
 			for freq in properties["freq2d"]:
 				if freq > 0.0:
-					# Quantum-mechanical Zero-Point-Energy
-					zpe += (1/2*constants["hc"]*freq) + (constants["hc"]*freq /
-														 (sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
-		return zpe * constants["JtoeV"]
+					freq_sum += freq
+					uvib += constants["hc"]*freq * (1/2 + 1/(sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+			uvib = sp.powsimp(uvib, force=True)
+		return (zpe*freq_sum + uvib) * constants["JtoeV"]
 
 
 class Entropy:
@@ -359,20 +376,20 @@ class Entropy:
 						systems[name][nadsorbates]["selec"] = self.selec(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["svib3d"] = self.svib3d(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["svib2d"] = self.svib2d(systems[name][nadsorbates], constants)
-						datalabel3d = ["strans3d", "srot", "selec", "svib3d"]
+						datalabel3d = ["srot", "selec", "strans3d", "svib3d"]
 						entropy = 0.0
 						for i in datalabel3d:
 							entropy =+ systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy3d"] = entropy
+						systems[name][nadsorbates]["sentropy3d"] = sp.simplify(entropy)
 						datalabel3d.append("sentropy3d")
-						datalabel2d = ["strans2d", "srot", "selec", "svib2d"]
+						datalabel2d = ["srot", "selec", "strans2d", "svib2d"]
 						entropy = 0.0
 						for i in datalabel2d:
 							entropy =+ systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy2d"] = entropy
+						systems[name][nadsorbates]["sentropy2d"] = sp.simplify(entropy)
 						datalabel2d.append("sentropy2d")
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
-								  datalabel3d + datalabel2d, "Entropy")
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
+								  datalabel3d + ["strans2d", "svib2d", "sentropy2d"], "Entropy")
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
@@ -384,27 +401,29 @@ class Entropy:
 						entropy = 0.0
 						for i in datalabel3d:
 							entropy =+ systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy3d"] = entropy
+						systems[name][nadsorbates]["sentropy3d"] = sp.simplify(entropy)
 						datalabel3d.append("sentropy3d")
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 								  datalabel3d, "Entropy")
 		self.systems = systems
 
 	@staticmethod
 	def strans3d(properties, constants):
 		'''re-Formulation from explicit derivatives::
-		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
+		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
+		 (Note that the translational component also includes components from the Stirling approximation)'''
 		temp = sp.symbols("temperature")
-		return constants["kb"]*(sp.log(((2*sp.pi*properties["mass"]*constants["kb"]*temp)/constants["h"]**2)**(3/2) *
-									   properties["volume"]) + 3/2)*constants["JtoeV"]
+		return (constants["kb"]*(sp.log(((2*sp.pi*properties["mass"]*constants["kb"]*temp)/constants["h"]**2)**(3/2) *
+										(constants["kb"]*temp)/1 ) + 5/2) * constants["JtoeV"])
 
 	@staticmethod
 	def strans2d(properties, constants):
 		'''re-Formulation from explicit derivatives::
-		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
+		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
+		 (Note that the translational component also includes components from the Stirling approximation)'''
 		temp = sp.symbols("temperature")
-		return constants["kb"]*(sp.log(((2*sp.pi*properties["mass"]*constants["kb"]*temp)/constants["h"]**2) *
-									   properties["marea"]) + 2/2)*constants["JtoeV"]
+		return (constants["kb"]*(sp.log(((2*sp.pi*properties["mass"]*constants["kb"]*temp)/constants["h"]**2)**(2/2) *
+										(constants["kb"]*temp)/1 ) + 3/2)*constants["JtoeV"])
 
 	@staticmethod
 	def srot(properties, constants):
@@ -416,10 +435,10 @@ class Entropy:
 			prod_inertia *= i
 		if properties["linear"] == "yes":
 			srot = constants["kb"]*(sp.log((1/properties["symfactor"])*(8*sp.pi**2*constants["kb"]*temp*
-													prod_inertia/(constants["h"]**2)))+1)*constants["JtoeV"]
+													prod_inertia/(constants["h"]**2))) + 1)*constants["JtoeV"]
 		else:
-			srot = constants["kb"]*(sp.log((sp.sqrt(sp.pi*prod_inertia)/properties["symfactor"])*
-								  (8*sp.pi**2*constants["kb"]*temp/(constants["h"]**2))**(3/2))+5/2)*constants["JtoeV"]
+			srot = constants["kb"]*(sp.log((sp.sqrt(sp.pi*prod_inertia)/properties["symfactor"]) *
+								  (8*sp.pi**2*constants["kb"]*temp/(constants["h"]**2))**(3/2)) +3/2)*constants["JtoeV"]
 		return srot
 
 	@staticmethod
@@ -434,15 +453,15 @@ class Entropy:
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
 		temp = sp.symbols("temperature")
 		qvib = 0
-		if "freq3d" in properties:
+		if "freq3d" in properties.keys():
 			for freq in properties["freq3d"]:
 				if freq > 0.0:
-					qvib += (((constants["hc"]*freq) /
-							  (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1))) -
-							 (sp.log(1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))))
+					qvib += (freq / (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1))
+							 - (sp.log(1 - sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)) )))
+			qvib = sp.powsimp(qvib, force=True)
 		else:
 			qvib = 1
-		return (constants["kb"]*sp.log(qvib))*constants["JtoeV"] + properties["zpe3d"]/temp
+		return constants["kb"] * sp.log(qvib) * constants["JtoeV"]
 
 	@staticmethod
 	def svib2d(properties, constants):
@@ -450,13 +469,15 @@ class Entropy:
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
 		temp = sp.symbols("temperature")
 		qvib = 0
-		if "freq2d" in properties:
+		if "freq2d" in properties.keys():
 			for freq in properties["freq2d"]:
 				if freq > 0.0:
-					qvib += (((constants["hc"]*freq) /
-							  (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1))) -
-							 (sp.log(1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))))
-		return (constants["kb"]*sp.log(qvib))*constants["JtoeV"] + properties["zpe2d"]/temp
+					qvib += (freq / (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1))
+							 - (sp.log(1 - sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))))
+			qvib = sp.powsimp(qvib, force=True)
+		else:
+			qvib = 1
+		return constants["kb"] * sp.log(qvib) *constants["JtoeV"]
 
 
 class Enthalpy:
@@ -473,16 +494,13 @@ class Enthalpy:
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
 						systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
 						systems[name][nadsorbates]["cp2d"] = self.cp2d(systems[name][nadsorbates])
-						enthalpy3d = systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe3d"]
-								# activate for production
-								# + sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
+						enthalpy3d = (systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe3d"] +
+									  sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
 						systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
-						enthalpy2d = systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe2d"]
-								# activate for production
-								# + sp.integrate(systems[name][nadsorbates]["cp2d"], temp))
+						enthalpy2d = (systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe2d"]  )# + sp.integrate(systems[name][nadsorbates]["cp2d"], temp))
 						systems[name][nadsorbates]["enthalpy2d"] = enthalpy2d
 						datalabel = ["zpe3d", "cp3d", "enthalpy3d", "cp2d", "zpe2d", "enthalpy2d"]
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 							  datalabel, "Enthalpy")
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
@@ -493,23 +511,25 @@ class Enthalpy:
 									# + sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
 						systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
 						datalabel = ["zpe3d", "cp3d", "enthalpy3d"]
-						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], constants,
+						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
 							  datalabel, "Enthalpy")
 		self.systems = systems
 
 	@staticmethod
 	def cp3d(properties):
 		'''Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
-		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P)'''
+		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P)
+		Later on to calculate H[T], Cp has to be integrated, which is very demanding in resources.
+		 For that reason, Cp analytical expression is simplidied with a chain of simplidiers'''
 		temp = sp.symbols("temperature")
-		return temp*sp.diff(properties["sentropy3d"], temp)
+		return sp.simplify(temp * sp.diff(properties["sentropy3d"], temp))  # already in eV
 
 	@staticmethod
 	def cp2d(properties):
 		''' Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
 		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P) '''
 		temp = sp.symbols("temperature")
-		return temp*sp.diff(properties["sentropy2d"], temp)
+		return sp.simplify(temp * sp.diff(properties["sentropy2d"], temp))  # already in eV
 
 
 
