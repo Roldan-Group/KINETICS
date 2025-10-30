@@ -6,6 +6,7 @@
 import os, pathlib
 import sympy as sp
 import numpy as np
+from markdown_it.rules_block import heading
 from scipy.integrate import solve_ivp
 
 
@@ -76,37 +77,24 @@ class ConsTemperature:
 		return ics, species
 
 	@staticmethod
-	def printdata(rconditions, species, experiment, conditions, data):
+	def printdata(rconditions, species, experiment, conditions, values):
+		data = [[*rconditions.keys(), *species]]
+		for row in values:
+			data.append([*conditions, *row])
+		maxlen = [max([len(f"{data[r][c]}") + 2 for r in range(len(data))]) for c in range(len(data[0]))]  # max length per column
+
 		folder = './KINETICS/DATA'
 		outputfile = folder + "/" + str(experiment) + ".dat"
-		headings = []
 		if not pathlib.Path(folder).exists():
 			pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
 		output = open(outputfile, "a")
-		# heading
 		output.write("#")
-		maxlen = max(len(f"{v:.3f}") for row in data for v in row)+2
-		for key in rconditions.keys():      # includes Vext, pH, Temp, time, ...
-			wid = len(key)+1    # for the space
-			if wid < maxlen:
-				wid = maxlen
-			output.write(" {val:>{wid}}".format(wid=wid, val=key))
-			headings.append(wid)
-		for i, name in enumerate(species):
-			output.write(" {val:>{wid}}".format(wid=maxlen, val=name))
-			if isinstance(i/3, int):
-				output.write("\t")
+		for i in range(len(data[0])):
+			output.write(" {val:>{wid}s}".format(wid=maxlen[i], val=data[0][i]))  # headings
 		output.write("\n")
-
-		for i, row in enumerate(data):
-			# conditions
-			for j, con in enumerate(conditions):    # includes Vext, pH, Temp, ... BUT not time!
-				output.write(" {val:>{wid}.1f}".format(wid=headings[j]+1, val=con))
-			# data
-			for n, value in enumerate(row):
-				output.write(" {val:>{wid}.3{c}}".format(wid=maxlen, val=value, c='e' if 1e-3 < value > 1e3 else 'f'))
-				if isinstance(n/3, int):
-					output.write("\t")
-			output.write("\n")
+		for row in data[1:]:
+			for i in range(len(row)):
+				output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val=row[i],
+													 c='e' if row[i] > 1e3 or np.abs(row[i]) < 1e-2 else 'f'))
 		output.write("\n")
 		output.close()

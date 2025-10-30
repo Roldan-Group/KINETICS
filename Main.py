@@ -11,8 +11,7 @@ import sys, re
 import time
 import numpy as np
 import sympy as sp
-
-from Thermodynamics import PartitionFunctions , Energy
+from Thermodynamics import PartitionFunctions, Energy
 from Kinetics import RConstants, REquations
 from Experiments import ConsTemperature
 
@@ -363,7 +362,7 @@ def mkread(inputfile, restricted_arg):
                 molsite = systems[names[i]]['molsite']
                 site_stoi = systems[names[i]]['nmolsite']
                 molecule = i
-            finally:
+            except:
                 continue
         return molsite, site_stoi, [i for i in range(len(names)) if i != molecule][0]
 
@@ -394,26 +393,24 @@ restricted_arg = ["kind", "pressure0", "coverage0", "sites", "nsites", 'molsite'
 
 start0 = time.time()
 rconditions, processes, systems = mkread(str(sys.argv[1]), list(restricted_arg))
-print("... Reading ...", round(time.time()-start0, 3), " seconds")
+print("... Reading ...\t\t", round(time.time()-start0, 3), " seconds")
 start = time.time()
-systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg)).systems
-print("... Generating Partition Functions ...", round((time.time()-start)/60, 3), " minutes")
-start = time.time()
+print("... Generating Partition Functions ...")
+systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg), start).systems
+print("... Generating Thermodynamics ...")
 systems = Energy(dict(rconditions), dict(processes), dict(systems), dict(constants), list(restricted_arg)).systems
-
-''' INTEGRATION for the calculation of ENTHALPY has been shitched OFF '''
-
-print("... Generating Thermodynamics ...", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
+print("... Generating Reaction Constants ...")
 processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
-print("... Generating Reaction Constants ...", round((time.time()-start)/60, 3), " minutes")
+print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
+print("... Generating Rate Equations ...")
 constemperature = REquations(dict(processes), dict(systems)).constemperature
 #surf_equations = REquations(dict(processes), dict(systems)).surfequations
 tpd = REquations(dict(processes), dict(systems)).tpd
-print("... Generating Rate Equations ...", round((time.time()-start)/60, 3), " minutes")
+print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
-print("... Computing Microkinetics ...")
+print("... Computing Microkinetics - ONLY consTemp...")
 ConsTemperature(dict(rconditions), dict(systems), dict(constemperature))
 
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
