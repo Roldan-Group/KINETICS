@@ -3,7 +3,7 @@
 
 """
 
-import os, pathlib
+import pathlib
 import time
 import sympy as sp
 import numpy as np
@@ -15,7 +15,8 @@ from matplotlib import ticker
 
 def printdata(rconditions, name, nadsorbates, properties, datalabel, dataname):
 	data = getdata(rconditions, properties, datalabel)
-	maxlen = [max([len(f"{data[r][c]}")+2 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
+	maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per
+	# column
 	folder = './THERMODYNAMICS/DATA/'+ name + "/" + nadsorbates
 	outputfile = folder + "/" + str(dataname) + ".dat"
 	if not pathlib.Path(folder).exists():
@@ -43,7 +44,7 @@ def getdata(rconditions, properties, datalabel):
 			units = '[eV K^-1]'  # entropy or specific heat as "defined here"
 		headings.append(i + units)
 	data.append(headings)
-	temp = sp.symbols("temperature")
+	temp = sp.symbols("temperature", positive=True, real=True)
 	if isinstance(rconditions["temperature"], float):
 		row = [rconditions["temperature"]]
 		for i in datalabel:
@@ -63,7 +64,7 @@ def interpolate(rconditions, systems, name, restricted_arg, ykey):
 	startint = time.time()
 	folder = './THERMODYNAMICS/DATA/'+ name + "/"
 	''' Reaction conditions are set as symbols using SYMPY '''
-	temp, cov = sp.symbols("temperature coverage")
+	temp, cov = sp.symbols("temperature coverage", positive=True, real=True)
 	x0 = [] # list of nadsorbates
 	x = []  # independent coordinate, e.g. coverage
 	y = []  # dependent coordinate, e.g. energy
@@ -117,7 +118,7 @@ def interpolate(rconditions, systems, name, restricted_arg, ykey):
 class PartitionFunctions:
 	def __init__(self, rconditions, systems, constants, restricted_arg, tstart):
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		for name in systems.keys():     # species
 			if systems[name]["kind"] == "molecule":
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
@@ -126,8 +127,8 @@ class PartitionFunctions:
 						systems[name][nadsorbates]["qtrans2d"] = self.qtrans2d(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["qrot"] = self.qrot(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["qelec"] = self.qelec(systems[name][nadsorbates])
-						systems[name][nadsorbates]["qvib3d"] = self.qvib3d(systems[name][nadsorbates], constants)
-						systems[name][nadsorbates]["qvib2d"] = self.qvib2d(systems[name][nadsorbates], constants)
+						systems[name][nadsorbates]["qvib3d"] = self.qvib(systems[name][nadsorbates]['freq3d'], constants)
+						systems[name][nadsorbates]["qvib2d"] = self.qvib(systems[name][nadsorbates]['freq2d'], constants)
 						datalabel3d = ["qrot", "qelec", "qtrans3d", "qvib3d"]
 						q3d = 1.0
 						for i in datalabel3d:
@@ -148,7 +149,10 @@ class PartitionFunctions:
 						systems[name][nadsorbates]["qtrans3d"] = 1
 						systems[name][nadsorbates]["qrot"] = 1
 						systems[name][nadsorbates]["qelec"] = self.qelec(systems[name][nadsorbates])
-						systems[name][nadsorbates]["qvib3d"] = self.qvib3d(systems[name][nadsorbates], constants)
+						if 'freq3d' in systems[name][nadsorbates].keys():
+							systems[name][nadsorbates]["qvib3d"] = self.qvib(systems[name][nadsorbates]['freq3d'], constants)
+						else:
+							systems[name][nadsorbates]["qvib3d"] = 1.0
 						datalabel = ["qrot", "qelec", "qtrans3d", "qvib3d"]
 						q3d = 1.0
 						for i in datalabel:
@@ -184,7 +188,7 @@ class PartitionFunctions:
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		 page 88
 		 huge numbers are expected, e.g. for CO: 6.8*1010 m-1 at 500 K in one dimension'''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		return properties["volume"]*((2*sp.pi*properties["mass"]*constants["kb"]*temp)**(3/2))/(constants["h"]**3)
 
 	@staticmethod
@@ -193,7 +197,7 @@ class PartitionFunctions:
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		 page 88 '''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		return properties["marea"]*(2*sp.pi*properties["mass"]*constants["kb"]*temp)/(constants["h"]**2)
 
 	@staticmethod
@@ -203,7 +207,7 @@ class PartitionFunctions:
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		 page 90
 		 large values are expected, e.g. for CO: 180 at 500 K'''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		prod_inertia = 1.0
 		for i in properties["inertia"]:
 			prod_inertia *= i
@@ -225,7 +229,7 @@ class PartitionFunctions:
 		return properties["degeneration"]
 
 	@staticmethod
-	def qvib3d(properties, constants):
+	def qvib(freqs, constants):
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
@@ -234,28 +238,9 @@ class PartitionFunctions:
 		It also consider small frequencies, when h*v ~ kb*T (v=frequencies). 
 		The Zero Point Energy should be added to the energy as this qvib is to calculate the entropy (S),
 		specific head (Cp), and pre-exponential factor of Arrhenius (A). '''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		qvib = 1
-		if "freq3d" in properties.keys():
-			for freq in properties["freq3d"]:
-				if freq > 0.0:
-					qvib *= 1/(1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))
-				qvib = sp.powsimp(qvib, force=True)
-		return qvib
-
-	@staticmethod
-	def qvib2d(properties, constants):
-		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
-		 Adsorption Journal Of The International Adsorption Society
-		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 89 '''
-		''' The equation used is respect the lowest occupied state, not the bottom of the potential energy curve.
-		It also consider small frequencies, when h*v ~ kb*T (v=frequencies). 
-		The Zero Point Energy should be added to the energy as this qvib is to calculate the entropy (S),
-		specific head (Cp), and pre-exponential factor of Arrhenius (A). '''
-		temp = sp.symbols("temperature")
-		qvib = 1
-		for freq in properties["freq2d"]:
+		for freq in freqs:
 			if freq > 0.0:
 				qvib *= 1/(1-sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))
 				qvib = sp.powsimp(qvib, force=True)
@@ -265,7 +250,7 @@ class PartitionFunctions:
 class Energy:        # Gibbs free energy in eV
 	def __init__(self, rconditions, processes, systems, constants, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		''' Entropy is required to calculate the specific heat (Cp), which contributes 
 		to the enthalpy at specific temperatures '''
 		start = time.time()
@@ -335,19 +320,18 @@ class Entropy:
 						systems[name][nadsorbates]["strans2d"] = self.strans2d(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["srot"] = self.srot(systems[name][nadsorbates], constants)
 						systems[name][nadsorbates]["selec"] = self.selec(systems[name][nadsorbates], constants)
-						systems[name][nadsorbates]["svib3d"] = self.svib3d(systems[name][nadsorbates], constants)
-						print(name, systems[name][nadsorbates]["svib3d"])
-						systems[name][nadsorbates]["svib2d"] = self.svib2d(systems[name][nadsorbates], constants)
+						systems[name][nadsorbates]["svib3d"] = self.svib(systems[name][nadsorbates]['freq3d'], constants)
+						systems[name][nadsorbates]["svib2d"] = self.svib(systems[name][nadsorbates]['freq2d'], constants)
 						datalabel3d = ["srot", "selec", "strans3d", "svib3d"]
 
 						entropy = 0.0
 						for i in datalabel3d:
 							entropy += systems[name][nadsorbates][str(i)]
 
-						print(name, entropy)
+						#print(name, entropy)
 
 						systems[name][nadsorbates]["sentropy3d"] = sp.factor(sp.logcombine(sp.powsimp(entropy,
-                                                                                            force=True)), modulus=None)
+																							force=True)), modulus=None)
 
 						datalabel3d.append("sentropy3d")
 						datalabel2d = ["srot", "selec", "strans2d", "svib2d"]
@@ -364,7 +348,10 @@ class Entropy:
 						systems[name][nadsorbates]["strans3d"] = 1e-15      # epsilon to avoid nan or inf
 						systems[name][nadsorbates]["srot"] = 1e-15          # epsilon to avoid nan or inf
 						systems[name][nadsorbates]["selec"] = self.selec(systems[name][nadsorbates], constants)
-						systems[name][nadsorbates]["svib3d"] = self.svib3d(systems[name][nadsorbates], constants)
+						if 'freq3d' in systems[name][nadsorbates].keys():
+							systems[name][nadsorbates]["svib3d"] = self.svib(systems[name][nadsorbates]['freq3d'], constants)
+						else:
+							systems[name][nadsorbates]["svib3d"] = 1e-15    # epsilon to avoid nan or inf
 						datalabel3d = ["strans3d", "srot", "selec", "svib3d"]
 						entropy = 0.0
 						for i in datalabel3d:
@@ -380,7 +367,7 @@ class Entropy:
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
 		 (Note that the translational component also includes components from the Stirling approximation)'''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		return (constants["kb"]*(sp.log(((2*sp.pi*properties["mass"]*constants["kb"]*temp)/constants["h"]**2)**(3/2) *
 										(constants["kb"]*temp)/1 ) + 5/2) * constants["JtoeV"])
 
@@ -389,7 +376,7 @@ class Entropy:
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
 		 (Note that the translational component also includes components from the Stirling approximation)'''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		return (constants["kb"]*(sp.log(((2*sp.pi*properties["mass"]*constants["kb"]*temp)/constants["h"]**2)**(2/2) *
 										(constants["kb"]*temp)/1 ) + 3/2)*constants["JtoeV"])
 
@@ -397,7 +384,7 @@ class Entropy:
 	def srot(properties, constants):
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		prod_inertia = 1.0
 		for i in properties["inertia"]:
 			prod_inertia *= i
@@ -416,85 +403,17 @@ class Entropy:
 		return constants["kb"]*(sp.log(2*properties["degeneration"] + 1)) * constants["JtoeV"]
 
 	@staticmethod
-	def svib3d(properties, constants):
+	def svib(freqs, constants):
 		'''re-Formulation from explicit derivatives::
-		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
-		temp = sp.symbols("temperature")
+		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
+		 harmonic oscillator '''
+		temp = sp.symbols("temperature", positive=True, real=True)
 		qvib = 1e-15    # to avoid nan or inf
-		if "freq3d" in properties.keys():
-			for freq in properties["freq3d"]:
-				if freq > 0.0:
-					qvib += (constants["hc"]*freq / (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1)) - (sp.log(1 - sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)) )))
-					# --- 1) Expand and normalize logs/exponentials ---
-					qvib = sp.expand_log(qvib)  # expand log(a*b) -> log(a)+log(b) etc.
-					qvib = sp.powsimp(qvib, force=True)  # combine powers/exp patterns
-					# --- 2) Combine log terms where possible (fold separate logs into one) ---
-					# logcombine sometimes needs the argument 'force=True' for aggressive combining
-					try:
-						qvib = sp.logcombine(qvib, force=True)
-					except Exception:
-						# logcombine can fail in corner cases; ignore if it does
-						pass
-					# --- 3) Replace patterns to a canonical Bose form: 1/(exp(a/T)-1) ---
-					# find and replace exp(-a/T)/(1-exp(-a/T)) -> 1/(exp(a/T)-1)
-					a = sp.Wild('a')
-					pattern = sp.exp(-a / temperature) / (1 - sp.exp(-a / temperature))
-					qvib = qvib.xreplace({pattern: 1 / (sp.exp(a / temperature) - 1)})  # quick attempt
-					# If xreplace doesn't hit, try a more general replace:
-					qvib = qvib.replace(lambda e: e.is_Mul and any(arg.has(sp.exp) for arg in e.args),
-										lambda e: sp.simplify(e))
-					# --- 4) Combine rational parts and cancel common factors ---
-					qvib = sp.together(qvib)  # combine rational expressions to a single fraction
-					qvib = sp.cancel(qvib)  # cancel common numerator/denominator factors
-					# --- 5) Rational / exponent simplifications and factoring ---
-					qvib = sp.radsimp(qvib)  # rational simplifications
-					qvib = sp.factor_terms(qvib)  # factor common multiplicative terms
-					qvib = sp.powsimp(qvib, force=True)  # one more power simplification pass
-					# --- 6) Light simplification (safe) ---
-					qvib = sp.simplify(qvib, rational=False)  # avoid heavy rational rewriting
-					# --- 7) If still big, try factoring the top-level expression ---
-					qvib = sp.factor(qvib, modulus=None)
-		return constants["kb"] * qvib * constants["JtoeV"]
-
-	@staticmethod
-	def svib2d(properties, constants):
-		'''re-Formulation from explicit derivatives::
-		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
-		temp = sp.symbols("temperature")
-		qvib = 1e-15        # to avoid nan or inf
-		if "freq2d" in properties.keys():
-			for freq in properties["freq2d"]:
-				if freq > 0.0:
-					qvib += (constants["hc"]*freq / (constants["kb"]*temp * (sp.exp((constants["hc"]*freq)/(constants["kb"]*temp)) - 1)) - (sp.log(1 - sp.exp((-constants["hc"]*freq)/(constants["kb"]*temp)))))
-					# --- 1) Expand and normalize logs/exponentials ---
-					qvib = sp.expand_log(qvib)  # expand log(a*b) -> log(a)+log(b) etc.
-					qvib = sp.powsimp(qvib, force=True)  # combine powers/exp patterns
-					# --- 2) Combine log terms where possible (fold separate logs into one) ---
-					# logcombine sometimes needs the argument 'force=True' for aggressive combining
-					try:
-						qvib = sp.logcombine(qvib, force=True)
-					except Exception:
-						# logcombine can fail in corner cases; ignore if it does
-						pass
-					# --- 3) Replace patterns to a canonical Bose form: 1/(exp(a/T)-1) ---
-					# find and replace exp(-a/T)/(1-exp(-a/T)) -> 1/(exp(a/T)-1)
-					a = sp.Wild('a')
-					pattern = sp.exp(-a / temperature) / (1 - sp.exp(-a / temperature))
-					qvib = qvib.xreplace({pattern: 1 / (sp.exp(a / temperature) - 1)})  # quick attempt
-					# If xreplace doesn't hit, try a more general replace:
-					qvib = qvib.replace(lambda e: e.is_Mul and any(arg.has(sp.exp) for arg in e.args),
-										lambda e: sp.simplify(e))
-					# --- 4) Combine rational parts and cancel common factors ---
-					qvib = sp.together(qvib)  # combine rational expressions to a single fraction
-					qvib = sp.cancel(qvib)  # cancel common numerator/denominator factors
-					# --- 5) Rational / exponent simplifications and factoring ---
-					qvib = sp.radsimp(qvib)  # rational simplifications
-					qvib = sp.factor_terms(qvib)  # factor common multiplicative terms
-					qvib = sp.powsimp(qvib, force=True)  # one more power simplification pass
-					# --- 6) Light simplification (safe) ---
-					qvib = sp.simplify(qvib, rational=False)  # avoid heavy rational rewriting
-					# --- 7) If still big, try factoring the top-level expression ---
-					qvib = sp.factor(qvib, modulus=None)
+		for freq in freqs:
+			if freq > 0.0:
+				x = (constants['hc'] * freq) / (constants['kb'] * temp)
+				qvib += (x / (sp.exp(x) - 1)) - (sp.log(1 - sp.exp(-x)))
+				qvib = sp.powsimp(qvib, force=True)  # combine powers/exp patterns
 		return constants["kb"] * qvib * constants["JtoeV"]
 
 
@@ -505,26 +424,25 @@ class Enthalpy:
 		H =  E + ZPE + integral(Cp, 0 --> T) """
 	def __init__(self, rconditions, systems, constants, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		(temp0, temp1, tempstep) = rconditions['temperature']
 		for name in systems.keys():     # species
 			if systems[name]["kind"] == "molecule":
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
-						zpe3d = self.zpe3d(systems[name][nadsorbates], constants)
-						systems[name][nadsorbates]["zpe3d"] = zpe3d  # in eV
-						systems[name][nadsorbates]["zpe2d"] = self.zpe2d(systems[name][nadsorbates], constants)  # in eV
-						systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
-						systems[name][nadsorbates]["cp2d"] = self.cp2d(systems[name][nadsorbates])
+						systems[name][nadsorbates]["zpe3d"] = self.zpe(systems[name][nadsorbates]['freq3d'], constants) # in eV
+						systems[name][nadsorbates]["zpe2d"] = self.zpe(systems[name][nadsorbates]['freq2d'], constants)  # in eV
+						systems[name][nadsorbates]["cp3d"], cp3d_integral = self.cp3d(systems[name][nadsorbates][
+																					   'freq3d'], constants)
+						systems[name][nadsorbates]["cp2d"] = self.cp2d(systems[name][nadsorbates]['freq2d'], constants)
 
-						print(name, systems[name][nadsorbates]["zpe3d"])
 						print(name, systems[name][nadsorbates]["cp3d"])
 
 						enthalpy3d = (systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe3d"] +
-									  sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
+									  cp3d_integral)
 						systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
 						enthalpy2d = (systems[name][nadsorbates]["energy0"] + systems[name][nadsorbates]["zpe2d"] +
-									  sp.integrate(systems[name][nadsorbates]["cp2d"], temp))
+									  sp.integrate(systems[name][nadsorbates]["cp2d"], temp, meijerg=True))
 						systems[name][nadsorbates]["enthalpy2d"] = enthalpy2d
 						datalabel = ["zpe3d", "cp3d", "enthalpy3d", "cp2d", "zpe2d", "enthalpy2d"]
 						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates],
@@ -532,10 +450,13 @@ class Enthalpy:
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
-						systems[name][nadsorbates]["zpe3d"] = self.zpe3d(systems[name][nadsorbates], constants) # in eV
-						systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates])
+						if 'freq3d' in systems[name][nadsorbates].kesy():
+							systems[name][nadsorbates]["zpe3d"] = self.zpe(systems[name][nadsorbates]['freq3d'], constants) # in eV
+						else:
+							systems[name][nadsorbates]["zpe3d"] = 1e-15 # epsilon to avoid nan or inf
+						systems[name][nadsorbates]["cp3d"] = self.cp3d(systems[name][nadsorbates]['freq3d'], constants)
 						enthalpy3d = (systems[name][nadsorbates]["energy0"] +  systems[name][nadsorbates]["zpe3d"] +
-									  sp.integrate(systems[name][nadsorbates]["cp3d"], temp))
+									  sp.integrate(systems[name][nadsorbates]["cp3d"], temp, meijerg=True))
 						systems[name][nadsorbates]["enthalpy3d"] = enthalpy3d
 						datalabel = ["zpe3d", "cp3d", "enthalpy3d"]
 						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], datalabel, "Enthalpy")
@@ -543,69 +464,65 @@ class Enthalpy:
 
 
 	@staticmethod
-	def zpe3d(properties, constants):
+	def zpe(freqs, constants):
 		''' Temperature dependent quantum vibrational energy (exact for harmonic oscillator),
 		 useful if you want the thermal contribution on top of ZPE '''
-		temp = sp.symbols("temperature")
+		temp = sp.symbols("temperature", positive=True, real=True)
 		zpe = 1/2*constants["hc"]
 		freq_sum = 0
 		uvib = 0
-		if "freq3d" in properties:
-			for freq in properties["freq3d"]:
-				if freq > 0.0:
-					freq_sum += freq
-					uvib += constants["hc"]*freq * (1/2 + 1/(sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
-					uvib = sp.powsimp(uvib, force=True)
+		for freq in freqs:
+			if freq > 0.0:
+				freq_sum += freq
+				uvib += constants["hc"]*freq * (1/2 + 1/(sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
+				uvib = sp.powsimp(uvib, force=True)
 		return (zpe*freq_sum + uvib) * constants["JtoeV"]
 
 	@staticmethod
-	def zpe2d(properties, constants):
-		''' Temperature dependent quantum vibrational energy (exact for harmonic oscillator),
-		 useful if you want the thermal contribution on top of ZPE '''
-		temp = sp.symbols("temperature")
-		zpe = 1/2*constants["hc"]
-		freq_sum = 0
-		uvib = 0
-		if "freq2d" in properties:
-			for freq in properties["freq2d"]:
-				if freq > 0.0:
-					freq_sum += freq
-					uvib += constants["hc"]*freq * (1/2 + 1/(sp.exp(constants["hc"]*freq/(constants["kb"]*temp)) - 1))
-					uvib = sp.powsimp(uvib, force=True)
-		return (zpe*freq_sum + uvib) * constants["JtoeV"]
-
-	@staticmethod
-	def cp3d(properties):
+	def cp3d(freqs, constants):
 		'''Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
 		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P)
+		Also, Cp = Cp_trans + Cp_rot + Cp_vib
 		Later on to calculate H[T], Cp has to be integrated, which is very demanding in resources.
 		 For that reason, Cp analytical expression is simplidied with a chain of simplidiers'''
-		temp = sp.symbols("temperature")
-		cp = temp * sp.diff(properties["sentropy3d"], temp)  # already in eV
-		''' Best targeted simplifiers: combines fractions, expands exponents and products, normalize exponentials 
-			Because 1/(exp(a/T)-1) = (exp(-a/T)) / (1 - exp(-a/T)) '''
-		cp = (sp.together(cp).expand().replace(lambda a: isinstance(a, sp.exp), lambda a: sp.exp(a.args[0])))
-		cp = sp.powsimp(cp)  # simplify powers and exponents
-		cp = sp.cancel(cp)  # cancel common factors
-		cp = sp.radsimp(cp)  # rational simplification
-		cp = sp.factor_terms(cp)  # factor by common subexpressions
-		return cp
+		temp = sp.symbols("temperature", positive=True, real=True)
+		#cp = temp * sp.diff(entropy, temp)  # already in eV
+		cp_trans = 5/2 * constants['kb']
+		cp_rot = constants['kb']
+		cp_vib = 0.
+		cp_integral = sp.integrate(sp.together(sp.cancel(sp.factor(cp_trans + cp_rot))), temp)
+		for freq in freqs:
+			x = (constants['hc']*freq) / (constants['kb']*temp)
+			cp_vib += constants['kb'] * (x / (2*sp.sinh(x/2)))**2
+			''' Best targeted simplifiers '''
+			cp_vib = sp.powsimp(cp_vib)  # simplify powers and exponents
+			cp_vib = sp.cancel(cp_vib)  # cancel common factors
+			cp_vib = sp.radsimp(cp_vib)  # rational simplification
+			cp_vib = sp.factor_terms(cp_vib)  # factor by common subexpressions
+			cp_integral += sp.integrate(sp.together(sp.cancel(sp.factor(cp_vib))), temp)
+		cp = sp.together(sp.cancel(sp.factor(cp_trans + cp_rot + cp_vib)))
+		return constants['JtoeV'] * cp,  constants['JtoeV'] * cp_integral
 
 	@staticmethod
-	def cp2d(properties):
-		''' Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
-		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P) '''
-		temp = sp.symbols("temperature")
-		cp = temp * sp.diff(properties["sentropy2d"], temp)  # already in eV
-		''' Best targeted simplifiers: combines fractions, expands exponents and products, normalize exponentials 
-			Because 1/(exp(a/T)-1) = (exp(-a/T)) / (1 - exp(-a/T)) '''
-		cp = (sp.together(cp).expand().replace(lambda a: isinstance(a, sp.exp), lambda a: sp.exp(a.args[0])))
-		cp = sp.powsimp(cp)  # simplify powers and exponents
-		cp = sp.cancel(cp)  # cancel common factors
-		cp = sp.radsimp(cp)  # rational simplification
-		cp = sp.factor_terms(cp)  # factor by common subexpressions
-		return cp
-
-
-
+	def cp2d(freqs, constants):
+		'''Hans Kuhn, Horst-Dieter Försterling, David Hennessey Waldeck, "Principles of Physical Chemistry"
+		ISBN: 9780470089644, page 551 :: Cp=T*[dS/dT](N,P)
+		Also, Cp = Cp_trans + Cp_rot + Cp_vib
+		Later on to calculate H[T], Cp has to be integrated, which is very demanding in resources.
+		 For that reason, Cp analytical expression is simplidied with a chain of simplidiers'''
+		temp = sp.symbols("temperature", positive=True, real=True)
+		#cp = temp * sp.diff(entropy, temp)  # already in eV
+		cp_trans = 2 * constants['kb']  # in 2 dimensions
+		cp_rot = constants['kb']
+		cp_vib = 0.
+		for freq in freqs:
+			x = (constants['hc'] * freq) / (constants['kb'] * temp)
+			cp_vib += (x / (2 * sp.sinh(x / 2))) ** 2
+			''' Best targeted simplifiers '''
+			cp_vib = sp.powsimp(cp_vib)  # simplify powers and exponents
+			cp_vib = sp.cancel(cp_vib)  # cancel common factors
+			cp_vib = sp.radsimp(cp_vib)  # rational simplification
+			cp_vib = sp.factor_terms(cp_vib)  # factor by common subexpressions
+		cp = sp.together(sp.cancel(sp.factor(cp_trans + cp_rot + constants['kb']*cp_vib)))
+		return constants['JtoeV'] * cp
 
