@@ -5,32 +5,33 @@
 
 import os, pathlib
 import sympy as sp
+import numpy as np
+from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
 
 
 class RConstants:
-	def __init__(self, rconditions, systems, constants, processes, restricted_arg):
+	def __init__(self, rconditions, systems, processes, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature")
 		for process in processes:
 			processes[process]["activation"] = self.activation(processes[process], systems)
 			if processes[process]['kind'] == 'A':
-				processes[process]["sticky"] = self.sticky(processes[process], systems, constants)
-				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants, restricted_arg)
-				processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)
+				processes[process]["sticky"] = self.sticky(processes[process], systems, )
+				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, restricted_arg)
+				processes[process]["ktunneling"] = self.tunneling(processes[process], systems, )
 				processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
 												processes[process]["ktunneling"])
 				# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
-				datalabel = ["activation", "sticky", "arrhenius", 'ktunneling', "krate0"]
-				self.printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
+				datalabel = ["activation"]#, "sticky", "arrhenius", 'ktunneling', "krate0"]
+				#self.printdata(rconditions, processes[process], datalabel, "Process"+str(process))
 			else:
-				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, constants, restricted_arg)
-				processes[process]["ktunneling"] = self.tunneling(processes[process], systems, constants)   # NO units
+				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, restricted_arg)
+				processes[process]["ktunneling"] = self.tunneling(processes[process], systems, )   # NO units
 				processes[process]['krate0'] = (processes[process]["arrhenius"] *
-												sp.exp(-processes[process]['activation']/
-													   (constants['kb']*temp*constants['JtoeV'])) *
+												sp.exp(-processes[process]['activation']/ (kb*temp*JtoeV)) *
 												processes[process]["ktunneling"])   # units s^-1
 				datalabel = ["activation", "arrhenius", 'ktunneling', "krate0"]
-				self.printdata(rconditions, processes[process], constants, datalabel, "Process"+str(process))
+			data = self.getdata(rconditions, processes[process], datalabel)
+			self.printdata(rconditions, processes[process], "Process"+str(process), data)
 		self.processes = processes
 
 	@staticmethod
@@ -67,11 +68,10 @@ class RConstants:
 		return ets - er
 
 	@staticmethod
-	def sticky(process, systems, constants):
+	def sticky(process, systems, ):
 		''' the sticky coefficient is evaluate as the reduction of degrees of freedom, i.e. from a 3D free molecule
 		to a 2D trapped molecule moving parallel to the surface (being the third degree the reaction coordinate) '''
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature", positive=True, real=True)
 		qts = 1     # total partition function for transition states
 		qr = 1     # total partition function for reactants
 		if len(process['ts']) > 0:
@@ -87,12 +87,11 @@ class RConstants:
 					qts *=  systems[process['reactants'][i]]['q3d']**process['rstoichio'][i]
 			for i in range(len(process['reactants'])):
 				qr *=  systems[process['reactants'][i]]['q3d']**process['rstoichio'][i]
-		return (qts/qr)*sp.exp(-process['activation']/(constants['kb']*temp*constants['JtoeV']))
+		return (qts/qr)*sp.exp(-process['activation']/(kb*temp*JtoeV))
 
 	@staticmethod
-	def arrhenius(process, systems, constants, restricted_arg):
+	def arrhenius(process, systems, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature", positive=True, real=True)
 		if process['kind'] == 'A':
 			area = 0    # molecular area (marea)
 			mass = 0    # Molecular mass
@@ -104,7 +103,7 @@ class RConstants:
 					area = float([systems[i][j]['marea'] for j in systems[i].keys() if j not in restricted_arg][0])
 					''' Same reasoning is applied for the molecular mass'''
 					mass = float([systems[i][j]['mass'] for j in systems[i].keys() if j not in restricted_arg][0])
-			arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*constants['kb']*temp)
+			arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*kb*temp)
 			# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
 		else:
 			qts = 1  # total partition function for transition states
@@ -122,22 +121,21 @@ class RConstants:
 						qts *= systems[process['products'][i]]['q3d'] ** process['pstoichio'][i]
 				for i in range(len(process['reactants'])):
 					qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
-			arrhenius = constants['kb']*temp/constants['h'] * qts/qr    # units of s^-1
+			arrhenius = kb*temp/h * qts/qr    # units of s^-1
 		return arrhenius
 
 	@staticmethod
-	def tunneling(process, systems, constants):
+	def tunneling(process, systems, ):
 		''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
 		vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature", positive=True, real=True)
 		k = 1
 		for i in range(len(process['ts'])):     # systems[process['ts'][i] is the system's name
-			k = 1 + 1/24 * (constants['hc'] * systems[process['ts'][i]]['ifreq'] /(2*sp.pi * constants['kb']*temp))**2
+			k = 1 + 1/24 * (hc * systems[process['ts'][i]]['ifreq'] /(2*sp.pi * kb*temp))**2
 		return k
 
 	@staticmethod
-	def electric(process, systems, constants):
+	def electric(process, systems, ):
 		''' Phys. Rev. Lett. 2007, 99, 126101                             DOI:https://doi.org/10.1103/PhysRevLett.99.126101
 			J. Phys. Chem. C, 2010, 114 (42), pp 18182–18197              DOI: 10.1021/jp1048887
 			The hydrogen coverage will be dependent on the potential via the reaction:
@@ -149,30 +147,28 @@ class RConstants:
 								ΔGH* = AG + AG(U)= AG + −eU
 			defines the chemical potential of H*.'''
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature", positive=True, real=True)
 		k = 1
 		return k
 
 	@staticmethod
-	def ph(process, systems, constants):
+	def ph(process, systems, ):
 		''' J. Phys. Chem. B, 2004, 108 (46), pp 17886–17892    DOI: 10.1021/jp047349j
 			At a pH different from 0, we can correct the free energy of H+ ions by the concentration dependence of the entropy:
 						G = H -TS + kT ln(Products/Reactants)   ;    pH = -log[H3O+]
 					   G(pH) = −kT ln[H+]= kT ln (10) × pH.
 		'''
 		''' Reaction conditions are set as symbols using SYMPY '''
-		temp = sp.symbols("temperature", positive=True, real=True)
 		k = 1
 		return k
 
 	@staticmethod
-	def printdata(rconditions, process, constants, datalabel, dataname):
+	def printdata(rconditions, process, dataname, data):
+		maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
 		folder = './KINETICS/PROCESSES'
 		outputfile = folder + "/" + str(dataname) + ".dat"
 		if not pathlib.Path(folder).exists():
 			pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-			os.chmod(folder, 0o755)
-
+		''' details on conditrions and raction for such process '''
 		output = open(outputfile, "w")
 		output.write("#")
 		for i in rconditions.keys():
@@ -183,31 +179,53 @@ class RConstants:
 		species = process['reactants'] + ['>'] + process['ts'] + ['>'] + process['products']
 		stoi = process['rstoichio'] + [' '] + process['tsstoichio'] + [' '] + process['pstoichio']
 		for i in range(len(species)):
-			output.write(" {stoi:}{val:>{wid}s}".format(stoi=stoi[i] , wid=len(species[i])+1, val=species[i]))
+			output.write(" {stoi:}{val:>{wid}s}".format(stoi=stoi[i], wid=len(species[i]) + 1, val=species[i]))
+
 		output.write("\n# Temperature[K]")
-		for i in datalabel:
-			output.write(" {val:>{wid}s}".format(wid=len(i) + 3, val=i))
-		output.write("\n")
-		temp = sp.symbols("temperature", positive=True, real=True)
-		if isinstance(rconditions["temperature"], float):
-			output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=rconditions["temperature"]))
-			for i in datalabel:
-				value = sp.lambdify(temp, process[str(i)])(float(rconditions["temperature"]))
-				output.write(" {val:>{wid}.3{c}}".format(wid=len(i) + 3, val=value, c='e' if value > 1e3 else 'f'))
-		else:
-			ramp = [int(i) for i in rconditions["temperature"]]
-			for t in range(ramp[0], ramp[1], ramp[2]):
-				output.write(" {val:>{wid}.1f}".format(wid=len("Temperature[K]"), val=t))
-				for i in datalabel:
-					value = sp.lambdify(temp, process[str(i)])(t)
-					output.write(" {val:>{wid}.3{c}}".format(wid=len(i) + 3, val=value, c='e' if value > 1e3 else 'f'))
-				output.write("\n")
+		for row in data:
+			for i in range(len(row)):
+				output.write(" {val:>{wid}}".format(wid=maxlen[i], val=row[i]))
+			output.write("\n")
 		output.close()
+
+	@staticmethod
+	def getdata(rconditions, process,  datalabel):
+		''' substitute the symbolic constants, e.g. h, kb, hc, ... by numeric values'''
+		equations = []
+		for i in datalabel:
+			if not isinstance(process[str(i)], (int, float)):
+				params = {}
+				for symbol in process[str(i)].free_symbols:
+					if symbol in constants:
+						params[symbol] = constants[str(symbol)]
+				eq = process[str(i)].rewrite(sp.Heaviside)
+				equations.append(eq.subs(params))
+			else:
+				equations.append(float(process[str(i)]))
+		''' lambdify the equation and substitute rconditions'''
+		data = [["# Temperature", *datalabel]]
+		if isinstance(rconditions["temperature"], float):
+			row = [rconditions["temperature"]]
+			for eq in equations:
+				value = float(sp.lambdify(temp, eq, 'numpy')(rconditions["temperature"]))
+				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
+				row.append(f"{value:.3{c}}")
+			data.append(row)
+		else:
+			ramp = [float(i) for i in rconditions["temperature"]]
+			for t in np.arange(ramp[0], ramp[1], ramp[2]):
+				row = [t]
+				for eq in equations:
+					value = float(sp.lambdify(temp, eq, 'numpy')(t))
+					c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
+					row.append(f"{value:.3{c}}")
+				data.append(row)
+		return data
+
 
 
 class REquations:
 	def __init__(self, processes, systems):
-		t = sp.symbols("time", positive=True, real=True)
 		constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
 		print_constemperature = {}
 		tpd = {}  # dictionary of equations WITHOUT adsorptions
@@ -260,7 +278,6 @@ class REquations:
 
 	@staticmethod
 	def equation(process, name, i):  # process is processes[process]; i indicates the process number
-		t = sp.symbols("time", positive=True, real=True)
 		equation = 0
 		pequation = []      # list of equations to print
 		if name in process['products']:

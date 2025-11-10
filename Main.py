@@ -13,19 +13,11 @@ import numpy as np
 import sympy as sp
 from Thermodynamics import PartitionFunctions, Energy
 from Kinetics import RConstants, REquations
-from Experiments import ConsTemperature
+#from Experiments import ConsTemperature, TPR
+from Symbols_def import temp, kb
 
 
-constants = {"h": 6.62607588705515e-34,     # kg m^2 s^-1 == J s
-			 "kb": 1.380658045430573e-23,   # J K^-1
-			 "c": 299792458,      # m s^-1
-			 "hc": 1.98644586e-23,      #  J cm (to balance the frequencies units of cm^-1)
-			 "R": 8.31446261815324,     # J⋅K−1⋅mol−1 ----------needed?
-			 "Av": 6.022139922973909e23,    # mols^-1
-			 "Fa": 96485.3321233100184,     # C⋅mol^−1
-			 "qelectron": -1.60217648740e-19,   # C
-			 "JtoeV": 6.24150974e18     # 1 J = 6.24..e18 eV
-			 }
+
 
 ''' Read input file with the systems and kinetic simulation conditions'''
 def mkread(inputfile, restricted_arg):
@@ -317,9 +309,8 @@ def mkread(inputfile, restricted_arg):
 						systems[name][key]["marea"] = (sites[str(systems[name][key]["molsite"])] /
 										 systems[name][key]["nmolsite"])    # should be the same as the stoichiometry in processes
 						nmolsite = systems[name][key]["nmolsite"]
-					temp = sp.symbols("temperature", positive=True, real=True)
 					pressure = 101325       # Pa == kg⋅m^−1⋅s^−2
-					systems[name][key]["volume"] = constants["kb"]*temp/pressure        # Assuming ideal behaviour of gases
+					systems[name][key]["volume"] = kb*temp/pressure        # Assuming ideal behaviour of gases
 			systems[name]['molsite'] = molsite
 			systems[name]['nmolsite'] = nmolsite
 		elif systems[name]["kind"] == "adsorbate":
@@ -393,15 +384,15 @@ restricted_arg = ["kind", "pressure0", "coverage0", "sites", "nsites", 'molsite'
 
 start0 = time.time()
 rconditions, processes, systems = mkread(str(sys.argv[1]), list(restricted_arg))
-print("... Reading ...\t\t", round(time.time()-start0, 3), " seconds")
+print("... Reading ...\t\t\t", round(time.time()-start0, 3), " seconds")
 start = time.time()
 print("... Generating Partition Functions ...")
-systems = PartitionFunctions(dict(rconditions), dict(systems), dict(constants), list(restricted_arg), start).systems
+systems = PartitionFunctions(dict(rconditions), dict(systems), list(restricted_arg), start).systems
 print("... Generating Thermodynamics ...")
-systems = Energy(dict(rconditions), dict(processes), dict(systems), dict(constants), list(restricted_arg)).systems
+systems = Energy(dict(rconditions), dict(processes), dict(systems), list(restricted_arg)).systems
 start = time.time()
 print("... Generating Reaction Constants ...")
-processes = RConstants(dict(rconditions), dict(systems), dict(constants), dict(processes), list(restricted_arg)).processes
+processes = RConstants(dict(rconditions), dict(systems), dict(processes), list(restricted_arg)).processes
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 print("... Generating Rate Equations ...")
@@ -410,8 +401,8 @@ constemperature = REquations(dict(processes), dict(systems)).constemperature
 tpd = REquations(dict(processes), dict(systems)).tpd
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
-print("... Computing Microkinetics - ONLY consTemp...")
-ConsTemperature(dict(rconditions), dict(systems), dict(constemperature))
-TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))
+print("... Computing Microkinetics ...")
+###########ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(constemperature))
+#############TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 print("... Microkinetics Completed ... Total time:", round((time.time()-start0)/60, 3), " minutes")
