@@ -13,7 +13,7 @@ import numpy as np
 import sympy as sp
 from Thermodynamics import PartitionFunctions, Energy
 from Kinetics import RConstants, REquations
-#from Experiments import ConsTemperature, TPR
+from Experiments import ConsTemperature, TPR
 from Symbols_def import temp, kb
 
 
@@ -402,7 +402,8 @@ tpd = REquations(dict(processes), dict(systems)).tpd
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 print("... Computing Microkinetics ...")
-###########ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(constemperature))
-#############TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))
+ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(constemperature))
+TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
-print("... Microkinetics Completed ... Total time:", round((time.time()-start0)/60, 3), " minutes")
+print("... Microkinetics Completed ...")
+print("\t\t\t\tTotal time:", round((time.time()-start0)/60, 3), " minutes")

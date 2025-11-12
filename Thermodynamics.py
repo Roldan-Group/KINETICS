@@ -47,16 +47,16 @@ def getdata(rconditions, properties,  datalabel):
 	for i in datalabel:
 		if not isinstance(properties[str(i)], (int, float)):
 			params = {}
-			for symbol in properties[str(i)].free_symbols:
-				if str(symbol) in constants:
-					params[symbol] = constants[str(symbol)]
+			#for symbol in properties[str(i)].free_symbols:
+			#	if str(symbol) in constants:
+			#		params[symbol] = constants[str(symbol)]
 			'''eq = properties[str(i)] #.rewrite(sp.Heaviside)
 			print(eq.has(sp.Integral))
 			print(type(eq))
 			print(eq.free_symbols)
 			print(eq)
 			print(eq.subs(constants))'''
-			equations.append(sp.simplify(properties[str(i)].subs(params)))
+			equations.append(properties[str(i)].subs(constants))
 		else:
 			equations.append(float(properties[str(i)]))
 	''' lambdify the equation and substitute rconditions'''
@@ -73,8 +73,13 @@ def getdata(rconditions, properties,  datalabel):
 			row = [t]
 			for eq in equations:
 				'''eq has been subs(constants before'''
-				print(eq)
-				value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(t))
+				try:
+					value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(t))
+				except:
+					print(eq)
+					print(type(eq))
+					print(eq.free_symbols)
+					print(eq.subs(constants))
 				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
 				row.append(f"{value:.3{c}}")
 			data.append(row)
@@ -230,8 +235,8 @@ class PartitionFunctions:
 		if properties["linear"] == "yes":
 			qrot = (8*sp.pi**2*prod_inertia*kb*temp)/(properties["symfactor"]*h**2)
 		else:
-			qrot = ((sp.sqrt(sp.pi*prod_inertia)/properties["symfactor"]) *
-					(8*sp.pi**2*kb*temp/(h**2))**(3/2))
+			qrot = (sp.sqrt(sp.pi) / properties['symfactor']) * ((8 * sp.pi ** 2 * kb * temp) / h ** 2) ** (
+				sp.Rational(3,2)) * sp.sqrt(prod_inertia)
 		return qrot
 
 	@staticmethod

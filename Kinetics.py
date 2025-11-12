@@ -21,7 +21,7 @@ class RConstants:
 				processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
 												processes[process]["ktunneling"])
 				# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
-				datalabel = ["activation"]#, "sticky", "arrhenius", 'ktunneling', "krate0"]
+				datalabel = ["activation", "sticky", "arrhenius", 'ktunneling', "krate0"]
 				#self.printdata(rconditions, processes[process], datalabel, "Process"+str(process))
 			else:
 				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, restricted_arg)
@@ -180,8 +180,7 @@ class RConstants:
 		stoi = process['rstoichio'] + [' '] + process['tsstoichio'] + [' '] + process['pstoichio']
 		for i in range(len(species)):
 			output.write(" {stoi:}{val:>{wid}s}".format(stoi=stoi[i], wid=len(species[i]) + 1, val=species[i]))
-
-		output.write("\n# Temperature[K]")
+		output.write("\n")
 		for row in data:
 			for i in range(len(row)):
 				output.write(" {val:>{wid}}".format(wid=maxlen[i], val=row[i]))
@@ -194,20 +193,15 @@ class RConstants:
 		equations = []
 		for i in datalabel:
 			if not isinstance(process[str(i)], (int, float)):
-				params = {}
-				for symbol in process[str(i)].free_symbols:
-					if symbol in constants:
-						params[symbol] = constants[str(symbol)]
-				eq = process[str(i)].rewrite(sp.Heaviside)
-				equations.append(eq.subs(params))
+				equations.append(process[str(i)].subs(constants))
 			else:
 				equations.append(float(process[str(i)]))
 		''' lambdify the equation and substitute rconditions'''
-		data = [["# Temperature", *datalabel]]
+		data = [["# Temperature[K]", *datalabel]]
 		if isinstance(rconditions["temperature"], float):
 			row = [rconditions["temperature"]]
 			for eq in equations:
-				value = float(sp.lambdify(temp, eq, 'numpy')(rconditions["temperature"]))
+				value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(rconditions["temperature"]))
 				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
 				row.append(f"{value:.3{c}}")
 			data.append(row)
@@ -216,7 +210,7 @@ class RConstants:
 			for t in np.arange(ramp[0], ramp[1], ramp[2]):
 				row = [t]
 				for eq in equations:
-					value = float(sp.lambdify(temp, eq, 'numpy')(t))
+					value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(t))
 					c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
 					row.append(f"{value:.3{c}}")
 				data.append(row)

@@ -7,7 +7,7 @@ import os, pathlib
 import sympy as sp
 import numpy as np
 from scipy.integrate import solve_ivp
-from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
+from Symbols_def import t, temp, constants
 
 
 
@@ -32,22 +32,26 @@ def printdata(experiment, data):
 	output.close()
 
 def ode_solver(time, species, rhs, ics, arguments):
+	''' time: tuple or list, e.g. (0, 10, 0.1)
+		t_num is the numeric valu of time of integration (solve_ivp)
+		species: list of sympy symbols [theta_A, theta_B, ...]
+		rhs: list of sympy expressions for d(species)/dt
+		ics: list of initial conditions
+		arguments: tuple or list of non-time parameters (e.g. temp, pressures, etc.)
+		constants: dict of physical constants {h: ..., kB: ..., ...} '''
 	''' substitute the symbolic constants, e.g. h, kb, ..., by its values '''
-	params = {}
-	for symbol in rhs.free_symbols:
-		if symbol in constants:
-			params[symbol] = constants[str(symbol)]
-	rhs = rhs.subs(params)
-	''' lambdify the equation and substitute rconditions'''
-	t_span = (time[:1])  # time grid
-	t_eval = np.arange(*time)
+	rhs = [i.subs(constants) for i in rhs]
 	conditions = [t, temp]  # conditions required to lambdify
-	f_ode = sp.lambdify((*conditions, *species), rhs, "numpy")  # Convert symbolic into numerical
-	def ode_system(t, species, temp):    # define ode function compatible with solve_ivp
-		return f_ode(t, temp, *species)
+	f_ode = sp.lambdify((*conditions, *species), rhs, ["numpy", 'sympy'])  # Convert symbolic into numerical
 
-	print(*arguments)
+	def ode_system(t_num, y, *args):    # define ode function compatible with solve_ivp
+		temp_num = args[0] if len(args) > 0 else None
+		dydt = f_ode(t_num, temp_num, *y)
+		return np.array(dydt, dtype=float).flatten()
 
+	''' substitute rconditions'''
+	t_span = (time[:2])  # time grid
+	t_eval = np.arange(*time)
 	sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval, args=(*arguments,), method='BDF', rtol=1e-8, atol=1e-10)
 	data = []
 	for t in sol.t:
@@ -60,6 +64,7 @@ def ode_solver(time, species, rhs, ics, arguments):
 
 class ConsTemperature:
 	def __init__(self, rconditions, systems, processes, equations):
+		''' in arguments, the temperature numeric value should be the first entry (arg[0] '''
 		ics, species = self.initial_species(systems)
 		rhs = []
 		for name in species:        # lists of names with the order of ics
@@ -70,7 +75,7 @@ class ConsTemperature:
 		rates_ss = [[*rconditions.keys(), *species]]
 		rates_avg = [[*rconditions.keys(), *species]]
 
-		if isintance(rconditions['temperature'], (int, float)): # single temperature
+		if isinstance(rconditions['temperature'], (int, float)): # single temperature
 			sol, sol_T = ode_solver(rconditions["time"], species, rhs, ics, [rconditions['temperature']])
 			data.append(sol_T)
 			ss, avg = self.rates(processes, species, temp, sol)
@@ -83,11 +88,20 @@ class ConsTemperature:
 				ss, avg = self.rates(processes, species, temp, sol)
 				rates_ss.append(ss)
 				rates_avg.append(avg)
+		start = time.time()
+		print("\t ... Generating Concentrations and Rates ...")
 		printdata(str("Cons_Temperature"), data)
 		printdata("SteadyState_Rates", rates_ss)    # temperature x processes
-		barplot(processes, "Steady-state", rates_ss, 0.5)
+		self.barplot(processes, "Steady-state", rates_ss, 0.5)
 		printdata("Average_Rates", rates_avg)       # temperature x processes
-		barplot(processes, "Average", rates_avg, 0.5)
+		self.barplot(processes, "Average", rates_avg, 0.5)
+		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
+		start = time.time()
+		print("\t ... Generating Degree of Rate and Selectivity Control ...")
+		self.degree_of_rate_control(rconditions, processes, systems, species, ics, rates_ss)
+
+		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
+
 
 
 	@staticmethod
@@ -137,16 +151,7 @@ class ConsTemperature:
 		''' evaluating the rates as a function of time '''
 		args = [sol.y[i] for i in range(len(species)) if species[i] in reactants]
 		args.append(temp)
-		params = {}
-		for symbol in krate.free_symbols:
-			if symbol in constants:
-				params[symbol] = constants[str(symbol)]
-				'''
-				print(type(eq))
-				print(eq.has(sp.Integral))
-				print(eq.free_symbols)
-				'''
-		rate_time = sp.lambdify(*args, processes[process]['krate0'].subs(constants), 'numpy')
+		rate_time = sp.lambdify((*args), krate.subs(constants), ['numpy', 'sympy'])
 		n_tail = int(0.1 * len(rate_time))  # 10% of the last points
 		rate_ss = rate_time[-n_tail:, :].mean(axis=0)   # rates at the steady-state, i.e. over the last 10% of the time points
 		rate_avg = np.trapezoid(rate_time, sol.t) / (sol.t[-1] - sol.t[0])   # rate averages along t_span using the trapezoidal rule to integrate the rate curve.
@@ -163,7 +168,7 @@ class ConsTemperature:
 		data_label = [data[0][0], data[-1][0]]  # initial and final temperature
 		x = [len(data_label) * i for i in range(len(labels))]   # 2 temp per specie
 		y = []
-		for i in data[0] if i in labels:   # for every column
+		for i in data[0]:   # for every column
 			y.append(data[0][i])
 			y.append(data[-1][i])
 		# GroupedBars(labels, "DACs", np.array(y), "$E_{Ads}$ (eV)", data_label)
@@ -198,13 +203,14 @@ class ConsTemperature:
 		''' The Degree of Rate Control (DRC), introduced by C. T. Campbell (J. Catal. 204, 520, 2001), quantifies how
 		   sensitive the overall reaction rate is to each elementary step’s rate constant. '''
 		time = rconditions['time']
-		k_list = np.array([processes[process]['krate0'] for process in processes], dtype=float)
+		k_list = [processes[process]['krate0'] for process in processes]
 		r0 = rates_ss[:][1:]  # steady-state rate for each k (temperature x krates)
 		eps = 1e-3  # constant perturbation factor, small enough to retain linearity
 
 		drc = [] # the degree of rate control will have krates for initial temperature
 		''' because the forward and backward reactions are distinguishable BUT both have to be perturbed to 
-		maintain the total Krate, the loop goes in 2 by 2. '''
+		maintain the total Krate, the loop goes in 2 by 2. The result (drc) will have 1/2 len(Krate) as it is for 
+		processes not for forward and backward constants'''
 		for i in range(0, len(processes), 2):
 			processes[str(i)]['krate0'] *= (1 + eps)    # the forward constant (1) + the perturbation
 			processes[str(i+1)]['krate0'] *= (1 - eps)  # the backward constant (1) - the perturbation
@@ -224,48 +230,17 @@ class ConsTemperature:
 				k_f, _ = rki_value(species, processes[str(i)]['krate0'], processes[str(i)]['reactants'], temp, sol)
 				k_b, _ = rki_value(species, processes[str(i+1)]['krate0'], processes[str(i+1)]['reactants'], temp, sol)
 				drc.append( (np.log(r_f) - np.log(r_b)) / (np.log(k_f) - np.log(k_b)) )
-
-
-	k_f = k_list.copy()     # forward constant | in the loop to clean them up every cycle
-			k_b = k_list.copy()     # backwards contant
-
-
-
-
-
-
+		''' reset the reaction constants to the original form'''
+		for i, process in enumerate(processes):
+			processes[process]['krate0'] = k_list[i]
 		# Normalize to sum = 1 (optional)
-		if np.sum(X) != 0:
-			X /= np.sum(X)
-
-		#   return X        ploted instead <<< make it general also for SELECTIVITY CONTROL
-		import matplotlib.pyplot as plt
-		labels = [f"k{i+1}" for i in range(len(X))]
-		plt.bar(labels, X)
-		plt.ylabel("Degree of Rate Control (X_i)")
-		plt.title("Rate Control Analysis (Campbell)")
-		plt.show()
-			x_limits = [min(xmin)-0.5, max(xmax)+1]
-		ax1.plot(x_limits, [0, 0], linestyle=":", lw=0.5, color=icolour[0])
-		ax1.tick_params(labelsize=14)
-		ax1.set_xticks([])
-		ax1.set_xticks(xtick_location) 
-		ax1.set_xticklabels(xtick_label, rotation=25, ha="right")    # rotation=0, ha="center")
-		ax1.set_xlim(x_limits)
-		ax1.set_ylabel(y_label, fontsize=18)
-		ax1.set_ylim(y_limit)
-		#nyticks = 5 
-		#ax1.set_yticks(np.round(np.linspace(ax1.get_ylim()[0], ax1.get_ylim()[1], nyticks), 1))
-		legend = ax1.legend(legend_lines, legend_labels, loc='best', fontsize=14) #upper left   #best
-		fig.tight_layout()
-		plt.ion()
-		plt.show()
-		SaveFig()
-		def SaveFig():
-		answer = str(input("Would you like to save the figure (y/n)?\n"))
-		if answer == "y":
-			figure_out_name = str(input("What would it be the figure's name (a word & no format)?\n"))
-			plt.savefig(figure_out_name + ".svg", dpi=300, orientation='landscape', transparent=True)
+		if np.sum(drc) != 0:
+			drc /= np.sum(drc)
+		barplot(processes, "Degree_of_Rate_Control", drc, 0.5)
+		data = [[*rconditions.keys(), *processes]]  # basic: Temp, time, processes
+		for i in np.array(drc).reshape(-1, 2):
+			data.append(i)
+		printdata("Degree_of_Rate_Control", data)
 
 
 

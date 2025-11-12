@@ -2,8 +2,6 @@
 import sympy as sp
 
 
-
-
 t, temp, cov = sp.symbols('time temperature coverage', positive=True, real=True)
 h, kb, c, hc, R, Av, Fa, qelectron, JtoeV = sp.symbols(
 	"h kb c hc R Av Fa qelectron JtoeV", real=True, positive=True)
