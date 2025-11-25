@@ -399,11 +399,9 @@ print("... Generating Rate Equations ...")
 constemperature = REquations(dict(processes), dict(systems)).constemperature
 #surf_equations = REquations(dict(processes), dict(systems)).surfequations
 tpd = REquations(dict(processes), dict(systems)).tpd
-print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
-start = time.time()
+print("\t\t\t\t", round((time.time()-start), 3), " seconds")
 print("... Computing Microkinetics ...")
 ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(constemperature))
 TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))
-print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 print("... Microkinetics Completed ...")
 print("\t\t\t\tTotal time:", round((time.time()-start0)/60, 3), " minutes")
