@@ -8,7 +8,7 @@ import time
 import sympy as sp
 import numpy as np
 from scipy.integrate import solve_ivp
-from Symbols_def import t, temp, constants
+from Symbols_def import t, temp, constants, sym_equation
 from Kinetics import REquations
 import matplotlib as mpl
 mpl.use('Agg')
@@ -113,7 +113,8 @@ class ConsTemperature:
 
 		start = time.time()
 		print("\t ... Generating Degree of Rate and Selectivity Control ...")
-		ConsTemperature.degree_of_rate_control(rconditions, processes, systems, species, ics, rates_ss)
+		ConsTemperature.degree_of_rate_control(rconditions, processes, systems, species, ics)
+		ConsTemperature.degree_of_selectivity_control(rconditions, systems, processes)
 		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
 
 	@staticmethod
@@ -215,7 +216,7 @@ class ConsTemperature:
 					transparent=True)
 
 	@staticmethod
-	def degree_of_rate_control(rconditions, processes, systems, species, ics, rates_ss):
+	def degree_of_rate_control(rconditions, processes, systems, species, ics):
 		''' The Degree of Rate Control (DRC), introduced by C. T. Campbell (J. Catal. 204, 520, 2001), quantifies how
 		   sensitive the overall reaction rate is to each elementary step’s rate constant. '''
 		time = rconditions['time']
@@ -260,89 +261,57 @@ class ConsTemperature:
 		printdata("Degree_of_Rate_Control", data)
 		ConsTemperature.barplot(labels, "Degree of Rate Control", data, labels, 0.5)
 
-
-	# Selectivity control
-'''
-
-# -------------------------
-# Utility: numeric finite-difference
-# -------------------------
-def numeric_dfdx(func, args, i, eps=1e-6):
-	args = list(args)
-	x0 = args[i]
-	h = eps * max(1.0, abs(x0))
-	args[i] = x0 + h
-	f_plus = func(*args)
-	args[i] = x0 - h
-	f_minus = func(*args)
-	return (f_plus - f_minus) / (2*h)
-
-# -------------------------
-# Degree of Selectivity Control
-# -------------------------
 	@staticmethod
-	def degree_of_selectivity_control(systems, processes, equations,  param_values, species_values=None, 
-	product_name=None, fd_eps=1e-6):
-	\'''	Compute Campbell's Degree of Selectivity Control (DSC) for a product. \'''
+	def degree_of_selectivity_control(rconditions, systems, processes):
+		'''	Compute Campbell's Degree of Selectivity Control (DSC) for a product. '''
+		# symbolic rate constants, one per reaction
+		k_symbols = {process: sp.symbols(f'k_{process}') for process in processes}
+		# Substitute actual expressions
+		k_exprs = {process: processes[process]['krate0'].subs(constants) for process in processes}
 
-	Parameters
-	----------
-	k_symbols : list of sympy.Symbol; Rate constants (e.g. [k1, k2, k3]).
-	equations?    product_rate_exprs : dict; {product_name: rate_expr}, rate_expr may be sympy or callable.
-	param_values : dict
-		{symbol: numeric value}, including all k_i.
-	sol?	species_values : dict
-		{species_symbol: numeric value}.
-	products: list with the name of products to compute selectivity control.
-	fd_eps : float; Step size for finite differences.
+		# products: molecules in systems without initial pressure
+		products = []
+		for name in systems:
+			if systems[name]['kind'] == 'molecule':
+				if systems[name]['pressure0'] == 0.0:
+					products.append(name)
 
-	Returns
-	-------
-	dict : {k_i : DSC value}
-	"""
-	# symbolic rate constants, one per reaction
-	k_symbols = {process: sp.symbols(f'k_{process}') for process in processes}
-	# Substitute actual expressions
-	k_exprs = {process: processes[process]['krate0'].subs(constants) for process in processes}	
-
-	# products: molecules in systems without initial pressure
-	products = []
-	for name in systems:
-		if systems[name]['kind'] == 'molecule':
-			if systems[name]['pressure0'] == 0.0:
-				products.append(name)
-
-	# symbolic rates
-	r_symbolic = {}
-	r_sum = 0
-	for name in products:
-		r_symbolic[name] = Symbols_def.sym_equation(processes, name)
-		r_sum += r_symbolic[name]
-	# Symbolic selectivity expression
-	s_expr = {}
-	for name in products:   
-		s_expr[name] = rate_symbolic[name] / r_sum
+		# symbolic rates
+		r_symbolic = {}
+		r_sum = 0
+		for name in products:
+			r_symbolic[name] = sym_equation(processes, name)
+			r_sum += r_symbolic[name]
+		# Symbolic selectivity expression
+		s_expr = {}
+		for name in products:
+			s_expr[name] = r_symbolic[name] / r_sum
 		
-	ds_dk = {name: {} for name in s_expr}  # nested dictionary of products and process
-	dsc = {name: {} for name in s_expr}    # nested dictionary of products and process
-	dsc_num = {name: {} for name in s_expr}    # nested dictionary with numeric dsc		
-	dsc_func = {name: {} for name in s_expr}    # nested lambdafy function
-	for name in products
-		# Symbolic derivatives dS/dk for each product and each k
-		for process in processes:
-			ds_dk[name][process] = sp.diff(s_expr[name], k_symbols[process])
-			dsc[name][process] = ds_dk[name][process] * k_symbols[process] / s_expr[name]
-    		dsc_num[name][process] = dsc[name][process].subs(k_exprs)
-            dsc_func[name][process] = sp.lambdify(temp, dsc_num[name][process], "numpy")	
-    data= []
-    for name in products_list:
-        row = [dsc_func[name][process](T_value)
-               for process in process_list]
-        matrix.append(row)
+		ds_dk = {name: {} for name in s_expr}  # nested dictionary of products and process
+		dsc = {name: {} for name in s_expr}    # nested dictionary of products and process
+		dsc_num = {name: {} for name in s_expr}    # nested dictionary with numeric dsc
+		dsc_func = {name: {} for name in s_expr}    # nested lambdify function
+		for name in products:
+			# Symbolic derivatives dS/dk for each product and each k
+			for process in processes:
+				ds_dk[name][process] = sp.diff(s_expr[name], k_symbols[process])
+				dsc[name][process] = ds_dk[name][process] * k_symbols[process] / s_expr[name]
+				dsc_num[name][process] = dsc[name][process].subs(k_exprs)
+				dsc_func[name][process] = sp.lambdify(temp, dsc_num[name][process], "numpy")
 
-		return DSC
+		labels = [f"{i}" for i in range(1, len(processes))]
+		for name in products:
+			data = [[*list(rconditions.keys())[:-1], *labels]]    # no time because it is at steady-state
+			for temp_num in np.arange(*rconditions['temperature']): # temperatures
+				row = [temp_num]
+				row.extend([dsc_func[name][process](temp_num) for process in processes])
+				data.append(row)
 
-'''
+			print("name", name, "data", data)
+
+			printdata(name + "_Degree_of_Selectivity_Control", data)
+			ConsTemperature.barplot(labels, name +" Degree of Rate Control", data, labels, 0.5)
+
 
 class TPR:
 	def __init__(self, rconditions, systems, processes, equations):

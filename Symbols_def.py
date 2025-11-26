@@ -18,3 +18,24 @@ constants = {
 	qelectron: sp.Float(-1.60217648740e-19),  # C
 	JtoeV: sp.Float(6.24150974e18)  # 1 J = 6.24..e18 eV
 	}
+
+
+def sym_equation(processes, name):  # process is processes[process]; i indicates the process number
+    '''The rates expressions re-written using the symbolic rate constant instead of the long formula.'''
+    equation  = 0
+    for process in processes.keys():
+        if name in processes[process]['products']:
+            for r in range(len(processes[process]['products'])):
+                if name == process['products'][r]:
+                    equation += processes[process]['pstoichio'][r]  # rfactor
+            equation *= sp.symbols(f'k_{process}')
+            for r in range(len(processes[process]['reactants'])):
+                equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** processes[process]['rstoichio'][r]
+        elif name in processes[process]['reactants']:
+            for r in range(len(processes[process]['reactants'])):
+                if name == process['reactants'][r]:
+                    equation -= processes[process]['rstoichio'][r]  # rfactor
+            equation *= sp.symbols(f'k_{process}')
+            for r in range(len(processes[process]['reactants'])):
+                equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** porcesses[process]['rstoichio'][r]
+    return equation
