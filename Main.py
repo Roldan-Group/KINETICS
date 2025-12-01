@@ -235,7 +235,6 @@ def mkread(inputfile, restricted_arg):
 		- the sites,
 		- the degeneration,
 		- the initial pressures/coverages,
-		- the 3N-6(5) frequencies,
 		- The number of adsorbates in an adsorbed system. '''
 	surf = []
 	for name in systems.keys():

@@ -26,16 +26,16 @@ def sym_equation(processes, name):  # process is processes[process]; i indicates
     for process in processes.keys():
         if name in processes[process]['products']:
             for r in range(len(processes[process]['products'])):
-                if name == process['products'][r]:
+                if name == processes[process]['products'][r]:
                     equation += processes[process]['pstoichio'][r]  # rfactor
             equation *= sp.symbols(f'k_{process}')
             for r in range(len(processes[process]['reactants'])):
                 equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** processes[process]['rstoichio'][r]
         elif name in processes[process]['reactants']:
             for r in range(len(processes[process]['reactants'])):
-                if name == process['reactants'][r]:
+                if name == processes[process]['reactants'][r]:
                     equation -= processes[process]['rstoichio'][r]  # rfactor
             equation *= sp.symbols(f'k_{process}')
             for r in range(len(processes[process]['reactants'])):
-                equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** porcesses[process]['rstoichio'][r]
+                equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** processes[process]['rstoichio'][r]
     return equation

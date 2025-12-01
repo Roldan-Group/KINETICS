@@ -63,18 +63,18 @@ def getdata(rconditions, properties,  datalabel):
 	if isinstance(rconditions["temperature"], float):
 		row = [rconditions["temperature"]]
 		for eq in equations:
-			value = float(sp.lambdify(temp, eq, 'numpy')(rconditions["temperature"]))
+			value = float(sp.lambdify(temp, eq, ('numpy', 'sympy'))(rconditions["temperature"]))
 			c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
 			row.append(f"{value:.3{c}}")
 		data.append(row)
 	else:
 		ramp = [float(i) for i in rconditions["temperature"]]
-		for t in np.arange(*ramp):
-			row = [t]
+		for temp_num in np.arange(*ramp):
+			row = [temp_num]
 			for eq in equations:
 				'''eq has been subs(constants before'''
 				try:
-					value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(t))
+					value = float(sp.lambdify(temp, eq, ('numpy', 'sympy'))(temp_num))
 				except:
 					print(eq)
 					print(type(eq))
@@ -170,6 +170,9 @@ class PartitionFunctions:
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
+
+						#print(name, len(systems[name][nadsorbates]['freq3d']))
+
 						systems[name][nadsorbates]["qtrans3d"] = 1.0
 						systems[name][nadsorbates]["qrot"] = 1.0
 						systems[name][nadsorbates]["qelec"] = self.qelec(systems[name][nadsorbates])
@@ -262,8 +265,8 @@ class PartitionFunctions:
 		qvib = 1
 		for freq in freqs:
 			if freq > 0.0:
-				qvib *= 1/(1-sp.exp((-hc*freq)/(kb*temp)))
-				#qvib = sp.powsimp(qvib, force=True)
+				x = (hc * freq) / (kb * temp)
+				qvib *= 1/(1-sp.exp(-x))
 		return qvib
 
 
@@ -319,7 +322,6 @@ class Energy:        # Gibbs free energy in eV
 					systems[name]["energy3d"] = systems[name][adsorbate]["energy3d"]
 					if name in tss:
 						systems[name]["ifreq"] = systems[name][adsorbate]["ifreq"]
-
 		self.systems = systems
 		print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 
@@ -345,14 +347,13 @@ class Entropy:
 						entropy = 0.0
 						for i in datalabel3d:
 							entropy += systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy3d"] = sp.factor(sp.logcombine(sp.powsimp(entropy,
-																							force=True)), modulus=None)
+						systems[name][nadsorbates]["sentropy3d"] = entropy
 						datalabel3d.append("sentropy3d")
 						datalabel2d = ["srot", "selec", "strans2d", "svib2d"]
 						entropy = 0.0
 						for i in datalabel2d:
 							entropy += systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy2d"] = sp.logcombine(sp.powsimp(entropy, force=True))
+						systems[name][nadsorbates]["sentropy2d"] = entropy
 						datalabel2d.append("sentropy2d")
 						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], datalabel3d +
 								  ["strans2d", "svib2d", "sentropy2d"], "Entropy")
@@ -370,7 +371,7 @@ class Entropy:
 						entropy = 0.0
 						for i in datalabel3d:
 							entropy += systems[name][nadsorbates][str(i)]
-						systems[name][nadsorbates]["sentropy3d"] = sp.logcombine(sp.powsimp(entropy, force=True))
+						systems[name][nadsorbates]["sentropy3d"] = entropy
 						datalabel3d.append("sentropy3d")
 						printdata(rconditions, name, nadsorbates, systems[name][nadsorbates], datalabel3d,
 								  "Entropy")
@@ -420,8 +421,8 @@ class Entropy:
 		for freq in freqs:
 			if freq > 0.0:
 				x = (hc * freq) / (kb * temp)
-				qvib += (x / (sp.exp(x) - 1)) - (sp.log(1 - sp.exp(-x)))
-				qvib = sp.powsimp(qvib, force=True)  # combine powers/exp patterns
+				qvib += (x * sp.exp(-x) / (1 - sp.exp(-x))) - (sp.log(1 - sp.exp(-x)))  # avoids overflow
+
 		return (kb * qvib) * JtoeV
 
 
@@ -476,8 +477,8 @@ class Enthalpy:
 		for freq in freqs:
 			if freq > 0.0:
 				freq_sum += freq
-				uvib += (hc*freq / (sp.exp(hc*freq/(kb*temp)) - 1))
-				uvib = sp.powsimp(uvib, force=True)
+				x = (hc * freq) / (kb * temp)
+				uvib += (hc*freq * (sp.exp(-x) / (1 - sp.exp(-x))))  # avoid exp(x) overflow
 		return (zpe*freq_sum + uvib) * JtoeV
 
 	@staticmethod
@@ -503,9 +504,12 @@ class Enthalpy:
 			for freq in properties['freq3d']:
 				x = (hc*freq) / (kb*temp)
 				# equation = constants['kb'] * (x / (2*sp.sinh(x/2)))**2
-				cp_vib += sp.powsimp(kb * (x**2 * sp.exp(x) / (sp.exp(x) - 1)**2), force=True)
+				cp_vib_large = kb * (x**2 * sp.exp(-x) / (1-sp.exp(-x))**2)    # safe for large x (uses exp(-x))
+				cp_vib_small = kb * (x**2 * sp.exp(x)) / (sp.exp(x)**2)  # good for small/moderate x
+				# Piecewise symbolic expression (keeps things symbolic until lambdify)
+				cp_vib += sp.Piecewise((cp_vib_small, sp.Lt(x, 30)), (cp_vib_large, True))
 				# closed form integral: (hc*freq/kb)*kB / (exp(hc*freq/(kb*T)) - 1) -> simplifies to h*c*nu/(exp(hc nu/(kB T))-1)
-				cp_integral += sp.simplify( (hc*freq) / (sp.exp((hc*freq) /(kb*temp)) - 1) )
+				cp_integral += sp.simplify( hc*freq * (sp.exp(-x) / (1 - sp.exp(-x))) ) # safe to avoid overflow
 		cp = sp.together(cp_trans + cp_rot + cp_vib)
 		return JtoeV * cp,  JtoeV * cp_integral
 
@@ -532,9 +536,12 @@ class Enthalpy:
 			for freq in properties['freq2d']:
 				x = (hc*freq) / (kb*temp)
 				#equation = constants['kb'] * (x / (2*sp.sinh(x/2)))**2
-				cp_vib += sp.powsimp(kb * (x**2 * sp.exp(x) / (sp.exp(x) - 1)**2), force=True)
+				cp_vib_large = kb * (x ** 2 * sp.exp(-x) / (1 - sp.exp(-x)) ** 2)  # safe for large x (uses exp(-x))
+				cp_vib_small = kb * (x ** 2 * sp.exp(x)) / (sp.exp(x) ** 2)  # good for small/moderate x
+				# Piecewise symbolic expression (keeps things symbolic until lambdify)
+				cp_vib += sp.Piecewise((cp_vib_small, sp.Lt(x, 30)), (cp_vib_large, True))
 				# closed form integral: (hc*freq/kb)*kB / (exp(hc*freq/(kb*T)) - 1) -> simplifies to h*c*nu/(exp(hc nu/(kB T))-1)
-				cp_integral += sp.simplify( (hc*freq) / (sp.exp((hc*freq) /(kb*temp)) - 1) )
+				cp_integral += sp.simplify(hc * freq * (sp.exp(-x) / (1 - sp.exp(-x))))  # safe to avoid overflow
 		cp = sp.together(cp_trans + cp_rot + cp_vib)
 		return JtoeV * cp,  JtoeV * cp_integral
 

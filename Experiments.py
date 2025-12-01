@@ -54,7 +54,7 @@ def ode_solver(time, species, rhs, ics, arguments):
 		if len(args) < 1:
 			raise ValueError("ERROR! Temperature not passed into ODE solver.")
 		temp_num = args[0]
-		dydt = f_ode(t_num, *args, *y)   # There is ONLY t and Temp, but more can be added
+		dydt = f_ode(t_num, *[temp_num], *y)   # There is ONLY t and Temp, but more can be added
 		return np.array(dydt, dtype=float).flatten()
 	''' substitute rconditions'''
 	t_span = (time[:2])  # time grid
@@ -77,7 +77,7 @@ class ConsTemperature:
 		start = time.time()
 		print("\t ... Generating Concentrations and Rates ...")
 		''' in arguments, the temperature numeric value should be the first entry (arg[0] '''
-		ics, species = self.initial_species(systems)
+		ics, species = self.initial_species(processe, systems)
 		rhs = []
 		for name in species:        # lists of names with the order of ics
 			if name in equations.keys():
@@ -118,21 +118,25 @@ class ConsTemperature:
 		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
 
 	@staticmethod
-	def initial_species(systems):  # process is processes[process]
+	def initial_species(processes, systems):  # process is processes[process]
+		no_ts = []
+		for process in processes:   # to avoid including Transition States
+			no_ts.extend(processes[process]['reactants'])
+			no_ts.extend(processes[process]['products'])
 		ics = []    # list of initial concentrations in the order of systems[names]
 		species = []    # list of species in the order on systems
 		surf0 = {}
 		sites_name = []
 		for name in systems.keys():
-			if systems[name]['kind'] == 'surface':
+			if systems[name]['kind'] == 'surface' and name not in no_ts:
 				sites_name.extend(systems[name]['sites'])
 		for s in list(set(sites_name)):
 			surf0[s] = 1
 		for name in systems.keys():
-			if systems[name]['kind'] == "molecule":
+			if systems[name]['kind'] == "molecule" and name not in no_ts:
 				ics.append(systems[name]["pressure0"])
 				species.append(name)
-			elif systems[name]['kind'] == "adsorbate":
+			elif systems[name]['kind'] == "adsorbate" and name not in no_ts:
 				ics.append(systems[name]["coverage0"])
 				''' adsorbates have only one kind of adsorption site per system '''
 				surf0[systems[name]['sites'][0]] -= systems[name]["coverage0"] * systems[name]["nsites"]
