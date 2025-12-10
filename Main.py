@@ -12,7 +12,7 @@ import time
 import numpy as np
 import sympy as sp
 from Thermodynamics import PartitionFunctions, Energy
-from Kinetics import RConstants, REquations
+from Kinetics import RConstants, REquations, Profile
 from Experiments import ConsTemperature, TPR
 from Symbols_def import temp, kb
 
@@ -245,11 +245,19 @@ def mkread(inputfile, restricted_arg):
 			systems[name]["kind"] = "molecule"
 		else:
 			systems[name]["kind"] = "adsorbate"
+
 	''' Swaping the surfaces from dict(systems) for the site '''
+	'''def replace_value(dictionary, old_value, new_value):
+		for k, v in dictionary.items():
+			if isinstance(v, dict):
+				replace_value(v, old_value, new_value)  # recursive call
+			elif v == old_value:
+				d[k] = new_value
 	for name in surf:
 		for site in systems[name][list(systems[name].keys())[0]]['sites']:
 			systems[site] = systems[name]
-		del systems[name]
+			replace_value(processes, name, site)
+		del systems[name]'''
 
 	for name in systems.keys():
 		if systems[name]["kind"] == "surface":
@@ -297,7 +305,7 @@ def mkread(inputfile, restricted_arg):
 				if key not in restricted_arg:       # only for nadsorbates
 					for i in range(len(systems[name][key]["sites"])):
 						sites[str(systems[name][key]["sites"][i])] = float(systems[name][key]["area"][i])
-	'''A molecule will adsorb on one site with a particular area (marea). If the molecules has more than site to 
+	'''A molecule will adsorb on one site with a particular area (marea). If the molecules has more than one site to 
 	adsorbed, differente systems needs to be described'''
 	for name in systems.keys():
 		if systems[name]["kind"] == "molecule":
@@ -344,28 +352,48 @@ def mkread(inputfile, restricted_arg):
 							freq.append(i)
 				systems[name][key]["freq3d"] = freq
 
-	''' Check the species in processes and convert the "surfaces" in kind of 
-	sites with the corresponding stoichiometry'''
-	def take_molecule(names, systems):
-		for i in range(len(names)):
-			try:
-				molsite = systems[names[i]]['molsite']
-				site_stoi = systems[names[i]]['nmolsite']
-				molecule = i
-			except:
-				continue
-		return molsite, site_stoi, [i for i in range(len(names)) if i != molecule][0]
+	''' Check the species in processes and convert the "surfaces" in kind of sites with the corresponding 
+	stoichiometry'''
+	'''def take_molecule(name, systems):
+		molsite = systems[name]['molsite']
+		site_stoi = systems[name]['nmolsite']
+		return molsite, site_stoi
+	def find_mol(names):
+		site = None
+		i = 0
+		while site == None:
+			if names[i] in systems:
+				if systems[names[i]]['kind'] == 'molecule':
+					site = systems[names[i]]['molsite']
+					print(".......................", names[i], i, site)
+			i += 1
+		update = []
+		for i in names:
+			if i not in systems:
+				update.append(site)
+			else:
+				update.append(i)
+		return names
 
 	species = []
 	for pr in processes.keys():
 		if processes[str(pr)]['kind'] == "A":
-			molsite, site_stoi, i = take_molecule(processes[str(pr)]['reactants'], systems)
-			processes[str(pr)]['reactants'][i] = molsite   # in case the Surf name is changed by the site
-			processes[str(pr)]['rstoichio'][i] = site_stoi
+			#processes[str(pr)]['reactants'] = find_mol(processes[str(pr)]['reactants'])
+			for i, name in enumerate(processes[str(pr)]['reactants']):
+				if systems[name]['kind'] != 'surface':
+					molsite, site_stoi = take_molecule(name, systems)
+					processes[str(pr)]['reactants'][i] = molsite   # in case the Surf name is changed by the site
+					processes[str(pr)]['rstoichio'][i] = site_stoi
 		elif processes[str(pr)]['kind'] == "D":
-			molsite, site_stoi, i = take_molecule(processes[str(pr)]['products'], systems)
-			processes[str(pr)]['products'][i] = molsite   # in case the Surf name is changed by the site
-			processes[str(pr)]['pstoichio'][i] = site_stoi
+			#processes[str(pr)]['products'] = find_mol(processes[str(pr)]['products'])
+			for i, name in enumerate(processes[str(pr)]['products']):
+				if systems[name]['kind'] != 'surface':
+					molsite, site_stoi = take_molecule(name, systems)
+					processes[str(pr)]['products'][i] = molsite   # in case the Surf name is changed by the site
+					processes[str(pr)]['pstoichio'][i] = site_stoi
+	'''
+	species = []
+	for pr in processes.keys():
 		species.extend(processes[str(pr)]['reactants'])
 		species.extend(processes[str(pr)]['ts'])
 		species.extend(processes[str(pr)]['products'])
@@ -390,6 +418,9 @@ systems = PartitionFunctions(dict(rconditions), dict(systems), list(restricted_a
 print("... Generating Thermodynamics ...")
 systems = Energy(dict(rconditions), dict(processes), dict(systems), list(restricted_arg)).systems
 start = time.time()
+print("... Generating Energy Profile ...")
+Profile(dict(processes), dict(systems))
+start = time.time()
 print("... Generating Reaction Constants ...")
 processes = RConstants(dict(rconditions), dict(systems), dict(processes), list(restricted_arg)).processes
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
@@ -398,7 +429,7 @@ print("... Generating Rate Equations ...")
 constemperature = REquations(dict(processes), dict(systems)).constemperature
 #surf_equations = REquations(dict(processes), dict(systems)).surfequations
 tpd = REquations(dict(processes), dict(systems)).tpd
-print("\t\t\t\t", round((time.time()-start), 3), " seconds")
+print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 print("... Computing Microkinetics ...")
 ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(constemperature))
 TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))

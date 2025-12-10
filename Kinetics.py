@@ -2,11 +2,15 @@
 	This script builds on the perl version by A.Roldan.
 
 """
-
 import os, pathlib
 import sympy as sp
 import numpy as np
 from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
+import matplotlib as mpl
+mpl.use('TkAgg')
+import matplotlib.pyplot as plt
+from scipy.interpolate import splrep, splev
+from collections import deque
 
 
 class RConstants:
@@ -217,7 +221,6 @@ class RConstants:
 		return data
 
 
-
 class REquations:
 	def __init__(self, processes, systems):
 		constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
@@ -318,4 +321,149 @@ class REquations:
 		output.close()
 
 
+class Profile:
+	def __init__(self, processes, systems):
+		''' Generate an energy Profile from the species in processes '''
+		temp_num = 300.0   # temperature in K at which G is measured
+		ilabel = {} # dictionary of process-species with their Gibbs energy (systems[name]["energy3d"])
+		''' Details processes energies at temp_num'''
+		data = [["# Process", "Reaction", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
+		for process in processes:   # generates ilabels
+			for i in ['reactants', 'ts', 'products']:
+				names = processes[process][i]
+				if len(names) >= 1:
+					ilabel.update(self.labels(systems, names, temp_num))
+			data.append(self.getprocess(processes[process], ilabel))
+		self.printprofile(data)
+		''' The profile starts with the first process '''
+		states = deque(["_".join(processes['1']['reactants'])])
+		visited = set(states)
+		e_reference = ilabel["_".join(processes['1']['reactants'])]
+		xlabels = []
+		xdata = [1]
+		ydata = [0.0]
+		while states and len(xdata) < len(ilabel):
+			state = states.popleft()
+			xlabels.append("+".join([f"${i}$" for i in state.split("_")]))
+			its, iproducts, y = self.items(processes, state)
+			x = xdata[-1]
+			for i in range(its):
+				xlabels.append("TS")
+				ydata.append(ilabel[y[i]] - e_reference)
+				xdata.append(x + 1)
+			for j in range(iproducts):
+				new_state = y[its + j]
+				ydata.append(ilabel[new_state] - e_reference)
+				xdata.append(x + 2)
+				if new_state not in visited:
+					visited.add(new_state)
+					states.append(new_state)
+		###xlabels.append(states[-1])  # the last state len(xdata) == len(ilabel)
+		self.plotprofile(xlabels, xdata, ydata, temp_num)
 
+
+	@staticmethod
+	def printprofile(data):
+		maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
+		outputfile = "Processes.txt"
+		output = open(outputfile, "w")
+		for i in range(len(data)):
+			for j in range(len(data[i])):
+				output.write("{val:>{wid}s} ".format(wid=maxlen[j], val=data[i][j]))
+			output.write("\n")
+		output.close()
+
+	@staticmethod
+	def getprocess(pr, ilabel):
+		kind = pr['kind']
+		react = []
+		ts = []
+		pro = []
+		for i in range(len(pr['reactants'])):
+			react.append(".".join([str(pr['rstoichio'][i]), pr['reactants'][i]]))
+		react = " + ".join(react)
+		ereact = ilabel["_".join(pr['reactants'])]
+		if len(pr['ts']) > 0:
+			for i in range(len(pr['ts'])):
+				ts.append(".".join([str(pr['tsstoichio'][i]), pr['ts'][i]]))
+			ts = " + ".join(ts)
+			ets = ilabel["_".join(pr['ts'])]
+			ea = round(ets - ereact, 2)
+			ets = str(round(ets, 2))
+		else:
+			ts = ''
+			ets = ''
+			ea = "--"
+		for i in range(len(pr['products'])):
+			pro.append(".".join([str(pr['pstoichio'][i]), pr['products'][i]]))
+		pro = " + ".join(pro)
+		epro = ilabel["_".join(pr['products'])]
+		er = round(epro - ereact, 2)
+		ereact = str(round(ereact, 2))
+		epro = str(round(epro, 2))
+		reaction = " > ".join([react, ts, pro])
+		ereaction = " > ".join([ereact, ets, epro])
+		return [f"Process={kind}", f"{reaction}", f"{ereaction}", f"{ea}", f"{er}"]
+
+	@staticmethod
+	def items(processes, state):
+		its = 0
+		iproducts = 0
+		y = []
+		for process in processes:
+			if "_".join(processes[process]['reactants']) == state:
+				if len(processes[process]['ts']) >= 1:
+					y.append("_".join(processes[process]["ts"]))
+					its += 1
+				y.append("_".join(processes[process]["products"]))
+				iproducts += 1
+		return its, iproducts, y
+
+	@staticmethod
+	def labels(systems, names, temp_num):
+		dic = {}
+		key = "_".join(names)
+		value = sum([Profile.energy(systems[i], temp_num) for i in names])
+		dic[key] = round(value, 2)
+		return dic
+
+	@staticmethod
+	def energy(sname, temp_num):
+		func = sname['energy3d'].subs(constants)
+		value = float(sp.lambdify(temp, func, ('numpy', 'sympy'))(temp_num))
+		return value
+
+	@staticmethod
+	def plotprofile(xticks, x, y, temp_num):
+		fig, ax1 = plt.subplots(figsize=(9, 6), clear=True)  # prepares a figure
+		xtick_location = []
+		xtick_label = []
+		for i in range(len(y)):  # row
+			if xticks[i] != "TS":
+				ax1.plot([x[i], x[i] + 0.5], [y[i], y[i]], linestyle='-', lw=2.5, color="k")
+				if i > 0 and xticks[i - 1] != "TS":
+					ax1.plot([x[i - 1] + 0.5, x[i]], [y[i - 1], y[i]], linestyle='--', lw=1.0, color="k")
+				if xticks[i] not in xtick_label:
+					xtick_location.append(x[i] + 0.25)
+					xtick_label.append(xticks[i])
+			elif xticks[i] == "TS":
+				x0 = [x[i] - 0.5, x[i] - 0.5 + 0.75 / 2, x[i] + 0.25, x[i] + 0.25 + 0.75 / 2, x[i] + 1]
+				y0 = [y[i - 1], y[i - 1] + (y[i] - y[i - 1]) / 2, y[i], y[i] + (y[i + 1] - y[i]) / 2, y[i + 1]]
+				spl = splrep(x0, y0, k=2)  # , s=0.5, t=[i+0.25])
+				xts = np.linspace(i - 0.5, i + 1, 51)
+				ax1.plot(xts, splev(xts, spl), linestyle='--', lw=1.0, color="k", alpha=1)
+				ax1.annotate("$E_{{A}}$={:.2f} $eV$".format(round(y[i] - y[i - 1], 2)),
+							 xy=(x[i] - 0.1, max(splev(xts, spl))),
+							 xycoords="data", size=12, color="k",
+							 bbox=dict(boxstyle="round, pad=0.1", fc="white", ec="white", lw=1, alpha=0.8))
+		x_limits = [min(x) - 0.5, max(x) + 1]
+		ax1.plot(x_limits, [0, 0], linestyle=":", lw=0.5, color="k")
+		ax1.tick_params(labelsize=16)
+		ax1.set_xticks([])
+		ax1.set_xticks(xtick_location)
+		ax1.set_xticklabels(xtick_label, rotation=25, ha="right")  # rotation=0, ha="center")
+		ax1.set_xlim(x_limits)
+		ax1.set_ylabel(f"$ \Delta G(T={temp_num}K)$ $(eV)$", fontsize=18)
+		fig.tight_layout()
+		plt.ion()
+		plt.savefig("Energy_Profile.svg", dpi=300, orientation='landscape', transparent=True)

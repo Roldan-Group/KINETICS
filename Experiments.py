@@ -77,7 +77,7 @@ class ConsTemperature:
 		start = time.time()
 		print("\t ... Generating Concentrations and Rates ...")
 		''' in arguments, the temperature numeric value should be the first entry (arg[0] '''
-		ics, species = self.initial_species(processe, systems)
+		ics, species = self.initial_species(processes, systems)
 		rhs = []
 		for name in species:        # lists of names with the order of ics
 			if name in equations.keys():
@@ -127,20 +127,20 @@ class ConsTemperature:
 		species = []    # list of species in the order on systems
 		surf0 = {}
 		sites_name = []
-		for name in systems.keys():
-			if systems[name]['kind'] == 'surface' and name not in no_ts:
-				sites_name.extend(systems[name]['sites'])
-		for s in list(set(sites_name)):
-			surf0[s] = 1
-		for name in systems.keys():
-			if systems[name]['kind'] == "molecule" and name not in no_ts:
+		for name in list(set(no_ts)):
+			if systems[name]['kind'] == 'surface':
+				surf0[name] = 1
+		for name in list(set(no_ts)):
+			if systems[name]['kind'] == "molecule":
 				ics.append(systems[name]["pressure0"])
 				species.append(name)
-			elif systems[name]['kind'] == "adsorbate" and name not in no_ts:
+			elif systems[name]['kind'] == "adsorbate":
 				ics.append(systems[name]["coverage0"])
-				''' adsorbates have only one kind of adsorption site per system '''
-				surf0[systems[name]['sites'][0]] -= systems[name]["coverage0"] * systems[name]["nsites"]
 				species.append(name)
+				''' adsorbates have only one kind of adsorption site per system '''
+				for s in surf0.keys():
+					if systems[s]['sites'] == systems[name]['sites'][0]:
+						surf0[s] -= systems[name]["coverage0"] * systems[name]["nsites"]
 		for s in surf0.keys():
 			ics.append(surf0[s])
 			species.append(s)
@@ -225,7 +225,7 @@ class ConsTemperature:
 		   sensitive the overall reaction rate is to each elementary step’s rate constant. '''
 		time = rconditions['time']
 		k_list = [processes[process]['krate0'] for process in processes]
-		eps = 1e-3  # constant perturbation factor, small enough to retain linearity
+		eps = 1e-2  # constant perturbation factor, small enough to retain linearity
 		''' because the forward and backward reactions are distinguishable BUT both have to be perturbed to 
 		maintain the total Krate, the loop goes in 2 by 2. The result (drc) will have 1/2 len(Krate) as it is for 
 		processes not for forward and backward constants'''
@@ -253,7 +253,13 @@ class ConsTemperature:
 				r_b = rates[i+1]    # backward constant right after the forward process (i)
 				k_f, _ = ConsTemperature.rki_value(species, processes[str(i)]['krate0'], temp_num, sol)
 				k_b, _ = ConsTemperature.rki_value(species, processes[str(i+1)]['krate0'], temp_num, sol)
-				drc.append( (np.log(r_f) - np.log(r_b)) / (np.log(k_f) - np.log(k_b)) )
+
+				denominator = np.log(k_f) - np.log(k_b)
+				if abs(denominator) < 1e-12:
+					drc.append(0.0)
+				else:
+					drc.append( (np.log(r_f) - np.log(r_b)) / denominator)
+
 				''' reset the reaction constants to the original form'''
 				processes[str(i)]['krate0'] = k_list[i-1]   # k_list starts from 0 but processes from 1
 				processes[str(i+1)]['krate0'] = k_list[i]   # k_list starts from 0 but processes from 1
@@ -290,7 +296,7 @@ class ConsTemperature:
 		s_expr = {}
 		for name in products:
 			s_expr[name] = r_symbolic[name] / r_sum
-		
+
 		ds_dk = {name: {} for name in s_expr}  # nested dictionary of products and process
 		dsc = {name: {} for name in s_expr}    # nested dictionary of products and process
 		dsc_num = {name: {} for name in s_expr}    # nested dictionary with numeric dsc
@@ -311,7 +317,7 @@ class ConsTemperature:
 				row.extend([dsc_func[name][process](temp_num) for process in processes])
 				data.append(row)
 
-			print("name", name, "data", data)
+			print("SELECTIVITY: name", name, "data", data)
 
 			printdata(name + "_Degree_of_Selectivity_Control", data)
 			ConsTemperature.barplot(labels, name +" Degree of Rate Control", data, labels, 0.5)
@@ -363,20 +369,13 @@ class TPR:
 	@staticmethod
 	def initial_species(systems):  # process is processes[process]
 		species = []    # list of species in the order on systems
-		surf0 = {}
-		sites_name = []
-		for name in systems.keys():
-			if systems[name]['kind'] == 'surface':
-				sites_name.extend(systems[name]['sites'])
-		for s in list(set(sites_name)):
-			surf0[s] = 1
 		for name in systems.keys():
 			if systems[name]['kind'] == "molecule":
 				species.append(name)
 			elif systems[name]['kind'] == "adsorbate":
 				species.append(name)
-		for s in surf0.keys():
-			species.append(s)
+			elif systems[name]['kind'] == 'surface':
+				species.append(name)
 		return species
 
 
