@@ -327,24 +327,35 @@ class Profile:
 		temp_num = 300.0   # temperature in K at which G is measured
 		ilabel = {} # dictionary of process-species with their Gibbs energy (systems[name]["energy3d"])
 		''' Details processes energies at temp_num'''
-		data = [["# Process", "Reaction", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
-		for process in processes:   # generates ilabels
-			for i in ['reactants', 'ts', 'products']:
-				names = processes[process][i]
-				if len(names) >= 1:
-					ilabel.update(self.labels(systems, names, temp_num))
-			data.append(self.getprocess(processes[process], ilabel))
+		data = [["# Process", "Kind", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
+		for i, process in enumerate(processes):   # generates ilabels
+			names = processes[process]['reactants']
+			stoichiometry = processes[process]['rstoichio']
+			if len(names) >= 1:
+				ilabel.update(self.labels(systems, names, stoichiometry, temp_num))
+			names = processes[process]['ts']
+			stoichiometry = processes[process]['tsstoichio']
+			if len(names) >= 1:
+				ilabel.update(self.labels(systems, names, stoichiometry, temp_num))
+			names = processes[process]['products']
+			stoichiometry = processes[process]['pstoichio']
+			if len(names) >= 1:
+				ilabel.update(self.labels(systems, names, stoichiometry, temp_num))
+			data.append(self.getprocess(i, processes[process], ilabel))
 		self.printprofile(data)
 		''' The profile starts with the first process '''
-		states = deque(["_".join(processes['1']['reactants'])])
+		key = []
+		for i in range(len(processes['1']['reactants'])):
+			key.append(Profile.name(processes['1']['rstoichio'][i], processes['1']['reactants'][i]))
+		states = deque([" + ".join(key)])
 		visited = set(states)
-		e_reference = ilabel["_".join(processes['1']['reactants'])]
+		e_reference = ilabel[" + ".join(key)]
 		xlabels = []
 		xdata = [1]
 		ydata = [0.0]
 		while states and len(xdata) < len(ilabel):
 			state = states.popleft()
-			xlabels.append("+".join([f"${i}$" for i in state.split("_")]))
+			xlabels.append(state)
 			its, iproducts, y = self.items(processes, state)
 			x = xdata[-1]
 			for i in range(its):
@@ -369,25 +380,25 @@ class Profile:
 		output = open(outputfile, "w")
 		for i in range(len(data)):
 			for j in range(len(data[i])):
-				output.write("{val:>{wid}s} ".format(wid=maxlen[j], val=data[i][j]))
+				output.write("{val:{wid}s} ".format(wid=maxlen[j], val=data[i][j]))
 			output.write("\n")
 		output.close()
 
 	@staticmethod
-	def getprocess(pr, ilabel):
+	def getprocess(pr_num, pr, ilabel):
 		kind = pr['kind']
 		react = []
 		ts = []
 		pro = []
 		for i in range(len(pr['reactants'])):
-			react.append(".".join([str(pr['rstoichio'][i]), pr['reactants'][i]]))
+			react.append(Profile.name(pr['rstoichio'][i], pr['reactants'][i]))
 		react = " + ".join(react)
-		ereact = ilabel["_".join(pr['reactants'])]
+		ereact = ilabel[react]
 		if len(pr['ts']) > 0:
 			for i in range(len(pr['ts'])):
-				ts.append(".".join([str(pr['tsstoichio'][i]), pr['ts'][i]]))
+				ts.append(Profile.name(pr['tsstoichio'][i], pr['ts'][i]))
 			ts = " + ".join(ts)
-			ets = ilabel["_".join(pr['ts'])]
+			ets = ilabel[ts]
 			ea = round(ets - ereact, 2)
 			ets = str(round(ets, 2))
 		else:
@@ -395,37 +406,65 @@ class Profile:
 			ets = ''
 			ea = "--"
 		for i in range(len(pr['products'])):
-			pro.append(".".join([str(pr['pstoichio'][i]), pr['products'][i]]))
+			pro.append(Profile.name(pr['pstoichio'][i], pr['products'][i]))
 		pro = " + ".join(pro)
-		epro = ilabel["_".join(pr['products'])]
+		epro = ilabel[pro]
 		er = round(epro - ereact, 2)
 		ereact = str(round(ereact, 2))
 		epro = str(round(epro, 2))
 		reaction = " > ".join([react, ts, pro])
 		ereaction = " > ".join([ereact, ets, epro])
-		return [f"Process={kind}", f"{reaction}", f"{ereaction}", f"{ea}", f"{er}"]
+		return [f"Process {pr_num} {kind}", f"{reaction}", f"{ereaction}", f"{ea}", f"{er}"]
 
 	@staticmethod
 	def items(processes, state):
-		its = 0
-		iproducts = 0
-		y = []
 		for process in processes:
-			if "_".join(processes[process]['reactants']) == state:
+			its = 0
+			iproducts = 0
+			y = []
+			item = []
+			for i in range(len(processes[process]['reactants'])):
+				stoi = processes[process]['rstoichio'][i]
+				iname = processes[process]['reactants'][i]
+				item.append(Profile.name(stoi, iname))
+			if " + ".join(item) == state:
 				if len(processes[process]['ts']) >= 1:
-					y.append("_".join(processes[process]["ts"]))
+					item = []
+					for i in range(len(processes[process]['ts'])):
+						stoi = processes[process]['tsstoichio'][i]
+						iname = processes[process]['ts'][i]
+						item.append(Profile.name(stoi, iname))
+					y.append(" + ".join(item))
 					its += 1
-				y.append("_".join(processes[process]["products"]))
+				item = []
+				for i in range(len(processes[process]['products'])):
+					stoi = processes[process]['pstoichio'][i]
+					iname = processes[process]['products'][i]
+					item.append(Profile.name(stoi, iname))
+				y.append(" + ".join(item))
 				iproducts += 1
 		return its, iproducts, y
 
 	@staticmethod
-	def labels(systems, names, temp_num):
+	def labels(systems, names, stoichiometry, temp_num):
 		dic = {}
-		key = "_".join(names)
-		value = sum([Profile.energy(systems[i], temp_num) for i in names])
+		key = []
+		value = 0
+		if len(names) >= 1:
+			for i in range(len(names)):
+				key.append(Profile.name(stoichiometry[i], names[i]))
+				value += stoichiometry[i] * Profile.energy(systems[names[i]], temp_num)
+			key = " + ".join(key)
 		dic[key] = round(value, 2)
 		return dic
+
+	@staticmethod
+	def name(stoichiometry, name):
+		try:
+			stoi = str(int(stoichiometry))
+		except:
+			stoi = str(stoichiometry)
+		return ".".join([stoi, name])
 
 	@staticmethod
 	def energy(sname, temp_num):

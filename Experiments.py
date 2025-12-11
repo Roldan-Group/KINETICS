@@ -171,10 +171,17 @@ class ConsTemperature:
 		for tidx in range(sol.y.shape[1]):    # species values at time tidx
 			rate_time.append(rate_fn(temp_num, *sol.y[:, tidx]))
 		n_tail = int(0.1 * len(rate_time))  # 10% of the last points
-		rate_ss = np.array(rate_time[-n_tail:]).mean(axis=0)   # rates at the steady-state, i.e. over the last 10% of
-		# the time points
+		rate_ss = np.array(rate_time[-n_tail:]).mean(axis=0)   # rates at the steady-state, i.e. over the last 10% of the time points
+		# Defensive conditions
+		if len(sol.t) < 2:
+			raise RuntimeError("ODE solver returned too few time points in Experiments.rki_value.")
+		dt = sol.t[-1] - sol.t[0]
+		if dt == 0 or not np.isfinite(dt):
+			raise RuntimeError("Invalid time interval in ODE solution in Experiments.rki_value.")
+		if np.any(~np.isfinite(rate_time)):
+			raise RuntimeError("rate_time contains NaN or inf -- Experiments.rki_value.")
 		''' Numpy versions > 2.0 uses "trapezoid" instead of "trapz" '''
-		rate_avg = np.trapz(rate_time, sol.t) / (sol.t[-1] - sol.t[0])   # rate averages along t_span using the trapezoidal rule to integrate the rate curve.
+		rate_avg = np.trapz(rate_time, sol.t) / dt  # rate averages along t_span using the trapezoidal rule to integrate the rate curve.
 		return rate_ss, rate_avg
 
 	@staticmethod
@@ -350,8 +357,8 @@ class TPR:
 						ics.append(0.)
 				n_elements = len([*rconditions.keys(), *species])
 				if out_file not in tpd_done:
-					# t_rate =   0.01, 0.1,  1, 5, 10  K/min
-					for t_num in [60]:  #################[60000, 6000, 600, 120, 60]:
+					# t_rate =   0.1,  1, 10  K/min
+					for t_num in [6000, 600, 60]:
 						t_eval = [0, 2*(10/t_num), 10/t_num]       # temperature rate in k/s --- from 0 to 10/t_num
 						data = [*rconditions.keys(), *species]  # basic: Temp, time, species
 						for temp_num in np.arange(50, 1010, 10): # integrate at different temperatures
