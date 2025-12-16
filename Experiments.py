@@ -7,7 +7,10 @@ import pathlib
 import time
 import sympy as sp
 import numpy as np
+from scipy.sparse import csr_matrix, diags
 from scipy.integrate import solve_ivp
+from scipy.optimize._numdiff import approx_derivative
+from types import SimpleNamespace
 from Symbols_def import t, temp, constants, sym_equation
 from Kinetics import REquations
 import matplotlib as mpl
@@ -47,8 +50,12 @@ def ode_solver(time, species, rhs, ics, arguments):
 	''' substitute the symbolic constants, e.g. h, kb, ..., by its values '''
 	rhs = [i.subs(constants) for i in rhs]
 	conditions = [t, temp]  # conditions required to lambdify
+	eps = 1e-10 * max(1.0, np.max(ics))    # to avoid absolute 0 and Nan in the log
 	''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species'''
 	f_ode = sp.lambdify((*conditions, *species), rhs, ["numpy", 'sympy'])  #
+	''' substitute rconditions'''
+	t_span = (time[:2])  # time grid
+	t_eval = np.arange(*time)
 	''' Old versions of scipy do not accept args, so temp_num and other could be unwrapped here.'''
 	def ode_system(t_num, y, *args):    # define ode function compatible with solve_ivp
 		if len(args) < 1:
@@ -56,20 +63,55 @@ def ode_solver(time, species, rhs, ics, arguments):
 		temp_num = args[0]
 		dydt = f_ode(t_num, *[temp_num], *y)   # There is ONLY t and Temp, but more can be added
 		return np.array(dydt, dtype=float).flatten()
-	''' substitute rconditions'''
-	t_span = (time[:2])  # time grid
-	t_eval = np.arange(*time)
-	sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval,
+
+	def ode_log(t, z, *args):
+		y = np.exp(z) - eps
+		f = ode_system(t, y, *args)
+		return f / (y + eps)
+
+	''' with better stability AND ensures positive concentrations '''
+	''' The jacobian provides stability and accelerate the ODE convergence '''
+	s_jacobian = sp.Matrix(rhs).jacobian(species)
+	def symbolic_sparsity(s_jacobian):
+		n = s_jacobian.rows
+		rows = []
+		cols = []
+		for i in range(n):
+			for j in range(n):
+				if not s_jacobian[i, j].is_zero:
+					rows.append(i)
+					cols.append(j)
+		data = np.ones(len(rows), dtype=bool)
+		return csr_matrix((data, (rows, cols)), shape=(n, n))
+
+	''' Jacobian sparsity speed the ODE '''
+	jac_y_pattern = symbolic_sparsity(s_jacobian)
+	jac_z_pattern = (jac_y_pattern + diags(np.ones(len(species)))).astype(bool)
+	jacobian = sp.lambdify((*conditions, *species), s_jacobian, "numpy")
+
+	def jac_log_sparse(t, z, *args):
+		y = np.exp(z) - eps
+		f = ode_system(t, y, *args)
+		jac_y = csr_matrix(jacobian(t, *args, *y))
+		inverse = diags(1.0 / (y + eps))
+		diagonal = diags(y + eps)
+		return  inverse @ jac_y @ diagonal - diags(f / (y + eps))
+
+	sol = solve_ivp(ode_log, t_span, np.log(ics + eps), t_eval=t_eval,
 					args=arguments if isinstance(arguments, tuple) else (arguments,),
-					method='BDF', rtol=1e-8, atol=1e-10)
+					method='BDF', jac=jac_log_sparse, jac_sparsity=jac_z_pattern, rtol=1e-8, atol=1e-10)
+	# transform back
+	solution = SimpleNamespace(t=sol.t, y=np.exp(sol.y) - eps, t_events=sol.t_events, y_events=sol.y_events,
+	                           success=sol.success, message=sol.message)
+	print(f"ODE solver message: {solution.message}.")
 	# Combine outputs (arguments + time + species)
-	n_points = len(sol.t)
+	n_points = len(solution.t)
 	data = np.column_stack([
 		np.tile(arguments, (n_points, 1)),  # repeat all args per row
-		sol.t,
-		sol.y.T
+		solution.t,
+		solution.y.T
 	])
-	return sol, data.flatten().tolist()
+	return solution, data.flatten().tolist()
 
 
 class ConsTemperature:
@@ -106,8 +148,8 @@ class ConsTemperature:
 
 		labels = [process for process in processes]
 		printdata("SteadyState_Rates", rates_ss)    # temperature x processes
-		ConsTemperature.barplot(processes, "SteadyState Rates", rates_ss, labels, 0.5)
 		printdata("Average_Rates", rates_avg)  # temperature x processes
+		ConsTemperature.barplot(processes, "SteadyState Rates", rates_ss, labels, 0.5)
 		ConsTemperature.barplot(processes, "Average Rates", rates_avg, labels, 0.5)
 		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
 
@@ -163,11 +205,17 @@ class ConsTemperature:
 	@staticmethod
 	def rki_value(species, krate, temp_num, sol):
 		''' - equations: list of sympy expressions r1(..), r2(..), ... using species symbols
-		 - species: list of sympy symbols [theta_A, theta_B, ...]
-		substitute the symbolic constants, e.g. h, kb, ..., by its values '''
+			- species: list of sympy symbols [theta_A, theta_B, ...]
+			- substitute the symbolic constants, e.g. h, kb, ..., by its values '''
 		''' evaluating the rates as a function of time '''
 		rate_fn = sp.lambdify((temp, *species), krate.subs(constants), ['numpy'])
 		rate_time = []
+
+		print("len of solt.t at rki", len(sol.t))
+		print("len of sol.y.shape[1] in rki", len(sol.y.shape[1]))
+
+
+
 		for tidx in range(sol.y.shape[1]):    # species values at time tidx
 			rate_time.append(rate_fn(temp_num, *sol.y[:, tidx]))
 		n_tail = int(0.1 * len(rate_time))  # 10% of the last points
@@ -192,17 +240,16 @@ class ConsTemperature:
 
 		y_label = "TOF ($molecule \cdot site^{-1} \cdot s^{-1}$)"
 		x_label = experiment
-		temps = [row[0] for row in data[1:]]  # temperatures; first row is for labels
+		temps = [row[0] for row in [data[1], data[-1]]]  # temperatures; first row is for labels
 		gap = 0.7   # gap between group of columns, e.g. processes
 		x = np.arange(len(labels)) * (1 + gap)
-		y = []
-		for row in range(len(data)-1):   # for every process | column 0 is temperature
-			y.append([float(data[row+1][column+1]) for column in range(len(labels))])
-		# Convert to array and apply positive floor for log-scale
-		y = np.array(y, dtype=float)
+		temp0 = [float(data[1][column+1]) for column in range(len(labels))] # for every process | column 0 is
+		temp1 = [float(data[-1][column+1]) for column in range(len(labels))]   # lables is the list of processes
+		y = [temp0, temp1]
+		y = np.array(y, dtype=float) # Convert to array and apply positive floor for log-scale
 		y[y <= 0] = 1e-20    # to prevent log crash
 
-		fig, ax1 = plt.subplots(figsize=(8, 6), clear=True)
+		fig, ax1 = plt.subplots(figsize=(10, 6), clear=True)
 		ax1.set_ylim(bottom=np.min(y) * 0.5, top=np.max(y) * 5)  # Prevents from hitting zero during autoscaling
 		for n in range(len(y)):    # processes | the first column is temperature
 			offset = (n - len(temps)/2) * bar_width + bar_width/2
@@ -214,7 +261,7 @@ class ConsTemperature:
 		ax1.set_xlim(x_limit)
 		ax1.set_xlabel(x_label, fontsize=16)
 		ax1.set_xticks(x)
-		ax1.tick_params(axis='x', rotation=0, labelsize=16)
+		ax1.tick_params(axis='x', rotation=0, labelsize=14)
 		ax1.set_xticklabels(labels, rotation=0, ha="center")
 
 		ax1.set_ylabel(y_label, fontsize=18)

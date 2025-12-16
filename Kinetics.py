@@ -10,7 +10,8 @@ import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 from scipy.interpolate import splrep, splev
-from collections import deque
+from collections import defaultdict
+
 
 
 class RConstants:
@@ -320,14 +321,16 @@ class REquations:
 		'''
 		output.close()
 
-
+'''
 class Profile:
 	def __init__(self, processes, systems):
-		''' Generate an energy Profile from the species in processes '''
+		\''' Generate an Processes.txt file from the species in processes \'''
 		temp_num = 300.0   # temperature in K at which G is measured
 		ilabel = {} # dictionary of process-species with their Gibbs energy (systems[name]["energy3d"])
-		''' Details processes energies at temp_num'''
-		data = [["# Process", "Kind", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
+
+
+		\''' Details processes energies at temp_num\'''
+		data = [["#Process", "Kind", "Reaction", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
 		for i, process in enumerate(processes):   # generates ilabels
 			names = processes[process]['reactants']
 			stoichiometry = processes[process]['rstoichio']
@@ -341,19 +344,19 @@ class Profile:
 			stoichiometry = processes[process]['pstoichio']
 			if len(names) >= 1:
 				ilabel.update(self.labels(systems, names, stoichiometry, temp_num))
-			data.append(self.getprocess(i, processes[process], ilabel))
+			data.append(self.getprocess(i+1, processes[process], ilabel))   # +1 to start at 1, not 0.
 		self.printprofile(data)
-		''' The profile starts with the first process '''
+		\''' The profile starts with the first process \'''
 		key = []
 		for i in range(len(processes['1']['reactants'])):
 			key.append(Profile.name(processes['1']['rstoichio'][i], processes['1']['reactants'][i]))
 		states = deque([" + ".join(key)])
-		visited = set(states)
+		visited = set(key)
 		e_reference = ilabel[" + ".join(key)]
 		xlabels = []
 		xdata = [1]
 		ydata = [0.0]
-		while states and len(xdata) < len(ilabel):
+		while states:
 			state = states.popleft()
 			xlabels.append(state)
 			its, iproducts, y = self.items(processes, state)
@@ -369,9 +372,11 @@ class Profile:
 				if new_state not in visited:
 					visited.add(new_state)
 					states.append(new_state)
+
+			print("--- Profile states:", states, "its", its, "iproducts", iproducts, "y", y)
+
 		###xlabels.append(states[-1])  # the last state len(xdata) == len(ilabel)
 		self.plotprofile(xlabels, xdata, ydata, temp_num)
-
 
 	@staticmethod
 	def printprofile(data):
@@ -414,7 +419,7 @@ class Profile:
 		epro = str(round(epro, 2))
 		reaction = " > ".join([react, ts, pro])
 		ereaction = " > ".join([ereact, ets, epro])
-		return [f"Process {pr_num} {kind}", f"{reaction}", f"{ereaction}", f"{ea}", f"{er}"]
+		return [f"{pr_num}", f"{kind}", f"{reaction}", f"{ereaction}", f"{ea}", f"{er}"]
 
 	@staticmethod
 	def items(processes, state):
@@ -477,6 +482,11 @@ class Profile:
 		fig, ax1 = plt.subplots(figsize=(9, 6), clear=True)  # prepares a figure
 		xtick_location = []
 		xtick_label = []
+
+		print("--- Profile xticks", len(xticks), xticks)
+		print("--- Profile xdata", len(x), x)
+		print("--- Profile ydata", len(y), y)
+
 		for i in range(len(y)):  # row
 			if xticks[i] != "TS":
 				ax1.plot([x[i], x[i] + 0.5], [y[i], y[i]], linestyle='-', lw=2.5, color="k")
@@ -502,7 +512,136 @@ class Profile:
 		ax1.set_xticks(xtick_location)
 		ax1.set_xticklabels(xtick_label, rotation=25, ha="right")  # rotation=0, ha="center")
 		ax1.set_xlim(x_limits)
-		ax1.set_ylabel(f"$ \Delta G(T={temp_num}K)$ $(eV)$", fontsize=18)
+		ax1.set_ylabel(f"$ \Delta G_{{T={temp_num}\\,K}}\\;(eV)$", fontsize=18)
 		fig.tight_layout()
 		plt.ion()
-		plt.savefig("Energy_Profile.svg", dpi=300, orientation='landscape', transparent=True)
+		plt.savefig("Profile.svg", dpi=300, orientation='landscape', transparent=True)
+
+'''
+
+
+class Profile:
+	def __init__(self, processes, systems, temp_num=300.0):
+		''' Generate an energy Profile from the species in processes '''
+		graph = self.build_graph(processes)
+		p0 = list(processes.values())[0]
+		reference = self.state_key(p0["reactants"], p0["rstoichio"])
+		self.plot_shared_reactant(graph, reference, systems, temp_num)
+		self.printprofile(graph, temp_num)
+
+
+	@staticmethod
+	def build_graph(processes):
+		graph = defaultdict(list)
+		for pr in processes.values():
+			r = Profile.state_key(pr["reactants"], pr["rstoichio"])
+			p = Profile.state_key(pr["products"], pr["pstoichio"])
+			ts = None
+			if pr["ts"]:
+				ts = Profile.state_key(pr["ts"], pr["tsstoichio"])
+			graph[r].append({"ts": ts, "products": p})
+		return graph
+
+	@staticmethod
+	def printprofile(graph, temp_num):
+		data = [["#Process", "Kind", "Reaction", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
+		for pr in processes.values:
+			r = Profile.state_label(pr['reactants'])
+			e0 = Profile.state_energy(pr['reactants'], systems, temp_num, cache)
+			if graph[reactants]['ts'] is None:
+				ts = ''
+				ets = ''
+				ea = '---'
+			else:
+				ts = Profile.state_label(graph[reactants]['ts'])
+				ets = Profile.state_energy(graph[reactants]['ts'], systems, temp_num, cache)
+				ea = ets - e0
+			p = Profile.state_label(graph[reactants]['products'])
+			ep = Profile.state_energy(graph[reactants]['products'], systems, temp_num, cache)
+			er = ep - e0
+			reaction = " > ".join([r, ts, p])
+			ereaction = " > ".join([e0, ets, ep])
+			data.append([f"{pr}", f"{pr['kind']}", f"{reaction}", f"{ereaction}", f"{ea}", f"{er}"])
+		maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
+		outputfile = "Processes.txt"
+		output = open(outputfile, "w")
+		for i in range(len(data)):
+			for j in range(len(data[i])):
+				output.write("{val:{wid}s} ".format(wid=maxlen[j], val=data[i][j]))
+			output.write("\n")
+		output.close()
+
+	@staticmethod
+	def state_key(names, stoich):
+		return tuple(sorted(zip(names, stoich)))
+
+	@staticmethod
+	def state_energy(state, systems, temp_num, cache):
+		if state in cache:
+			return cache[state]
+		e = 0.0
+		if state:
+			for name, stoi in state:
+				expr = systems[name]["energy3d"].subs(constants)
+				f = sp.lambdify(temp, expr, ("numpy", "sympy"))
+				e += stoi * float(f(temp_num))
+		cache[state] = e
+		return e
+
+	@staticmethod
+	def state_label(state):
+		item = []
+		for name, stoi in state:
+			try:
+				stoi = int(stoi)
+			except:
+				pass
+			item.append(f"{stoi}.{name}")
+		return " + ".join(item)
+
+	@staticmethod
+	def plot_shared_reactant(graph, reference, systems, temp_num):
+		cache = {}
+		e0 = Profile.state_energy(reference, systems, temp_num, cache)
+		branches = graph[reference]
+		n = len(branches)
+		fig, ax = plt.subplots(figsize=(9, 6), clear=True)  # prepares a figure
+
+		x_react = 0     # x positions
+		x_ts = 1
+		x_prod = 2
+		y_react = 0.0   # y position of reactant
+		offsets = np.linspace(-0.8, 0.8, n) if n > 1 else [0.0]     # horizontal spacing for branches
+
+		# plot reactant
+		ax.plot([x_react - 0.3, x_react + 0.3], [y_react, y_react], linestyle='-', lw=2.5, color="k", alpha=1)
+		ax.text(x_react, y_react - 0.2, Profile.state_label(reference), ha="center", va="top", fontsize=14)
+		for offset, step in zip(offsets, branches):
+			prod = step["products"]
+			y_prod = Profile.state_energy(prod, systems, temp_num, cache) - e0
+			ax.plot([x_prod - 0.3, x_prod + 0.3], [y_prod, y_prod], lw=2.5, color="k")
+			ax.text(x_prod, y_prod - 0.2, Profile.state_label(prod), ha="center", va="top", fontsize=14)
+			if step["ts"]:
+				ts = step["ts"]
+				y_ts = Profile.state_energy(ts, systems, temp_num, cache) - e0
+				ea = y_ts - y_react
+				# spline through TS
+				x0 = [x_react +0.3, x_ts, x_prod -0.3]
+				y0 = [y_react, y_ts, y_prod]
+				spl = splrep(x0, y0, k=2)
+				xt = np.linspace(x_react, x_prod, 60)
+				ax.plot(xt, splev(xt, spl), linestyle='--', lw=1.0, color="k", alpha=1)
+				ax.text(x_ts, y_ts + 0.2, f"$E_A$ = {ea:.2f} eV", ha="center", fontsize=14)
+			else:   # linking reactants and products
+				ax.plot([x_react + 0.3, x_prod - 0.3], [y_react, y_prod], linestyle='--', lw=1.0, color="k", alpha=1)
+		ax.axhline(0, lw=1, ls=":", color="k")
+		ax.tick_params(labelsize=16)
+		ax.set_ylabel(rf"$\Delta G_{{T={temp_num}\,K}}$ (eV)", fontsize=18)
+		ax.set_xticks([])
+		#ax.set_xlim(-0.5, 2.5)
+		fig.tight_layout()
+		plt.savefig("Profile.svg", dpi=300, orientation='landscape', transparent=True)
+
+
+
+
