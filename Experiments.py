@@ -48,6 +48,7 @@ def ode_solver(time, species, rhs, ics, arguments):
 		arguments: tuple or list of non-time parameters (e.g. temp, pressures, etc.)
 		constants: dict of physical constants {h: ..., kB: ..., ...} '''
 	''' substitute the symbolic constants, e.g. h, kb, ..., by its values '''
+	ics = np.asarray(ics, dtype=float)
 	rhs = [i.subs(constants) for i in rhs]
 	conditions = [t, temp]  # conditions required to lambdify
 	eps = 1e-10 * max(1.0, np.max(ics))    # to avoid absolute 0 and Nan in the log
@@ -71,7 +72,8 @@ def ode_solver(time, species, rhs, ics, arguments):
 
 	''' with better stability AND ensures positive concentrations '''
 	''' The jacobian provides stability and accelerate the ODE convergence '''
-	s_jacobian = sp.Matrix(rhs).jacobian(species)
+	''' Guaranteed safe construction of s_jacobian '''
+	s_jacobian = sp.Matrix(rhs).jacobian([sp.Symbol(s) for s in species])
 	def symbolic_sparsity(s_jacobian):
 		n = s_jacobian.rows
 		rows = []
@@ -102,9 +104,9 @@ def ode_solver(time, species, rhs, ics, arguments):
 					method='BDF', jac=jac_log_sparse, jac_sparsity=jac_z_pattern, rtol=1e-8, atol=1e-10)
 	# transform back
 	solution = SimpleNamespace(t=sol.t, y=np.exp(sol.y) - eps, t_events=sol.t_events, y_events=sol.y_events,
-	                           success=sol.success, message=sol.message)
-	print(f"ODE solver message: {solution.message}.")
-	# Combine outputs (arguments + time + species)
+							   success=sol.success, message=sol.message)
+	if not solution.success:
+		raise RuntimeError(f"ODE solver failed: {solution.message}")
 	n_points = len(solution.t)
 	data = np.column_stack([
 		np.tile(arguments, (n_points, 1)),  # repeat all args per row
@@ -149,8 +151,9 @@ class ConsTemperature:
 		labels = [process for process in processes]
 		printdata("SteadyState_Rates", rates_ss)    # temperature x processes
 		printdata("Average_Rates", rates_avg)  # temperature x processes
-		ConsTemperature.barplot(processes, "SteadyState Rates", rates_ss, labels, 0.5)
-		ConsTemperature.barplot(processes, "Average Rates", rates_avg, labels, 0.5)
+		ylabel = "TOF ($molecule \cdot site^{-1} \cdot s^{-1}$)"
+		ConsTemperature.barplot(processes, "SteadyState Rates", ylabel, rates_ss, labels, 0.5)
+		ConsTemperature.barplot(processes, "Average Rates", ylabel, rates_avg, labels, 0.5)
 		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
 
 		start = time.time()
@@ -208,17 +211,11 @@ class ConsTemperature:
 			- species: list of sympy symbols [theta_A, theta_B, ...]
 			- substitute the symbolic constants, e.g. h, kb, ..., by its values '''
 		''' evaluating the rates as a function of time '''
-		rate_fn = sp.lambdify((temp, *species), krate.subs(constants), ['numpy'])
+		rate_fn = sp.lambdify((temp, *species), krate.subs(constants), ['numpy', 'sympy'])
 		rate_time = []
-
-		print("len of solt.t at rki", len(sol.t))
-		print("len of sol.y.shape[1] in rki", len(sol.y.shape[1]))
-
-
-
 		for tidx in range(sol.y.shape[1]):    # species values at time tidx
 			rate_time.append(rate_fn(temp_num, *sol.y[:, tidx]))
-		n_tail = int(0.1 * len(rate_time))  # 10% of the last points
+		n_tail = max(1, int(0.1 * len(rate_time)))  # if rate_time !=0, get 10% of the last points
 		rate_ss = np.array(rate_time[-n_tail:]).mean(axis=0)   # rates at the steady-state, i.e. over the last 10% of the time points
 		# Defensive conditions
 		if len(sol.t) < 2:
@@ -229,16 +226,16 @@ class ConsTemperature:
 		if np.any(~np.isfinite(rate_time)):
 			raise RuntimeError("rate_time contains NaN or inf -- Experiments.rki_value.")
 		''' Numpy versions > 2.0 uses "trapezoid" instead of "trapz" '''
-		rate_avg = np.trapz(rate_time, sol.t) / dt  # rate averages along t_span using the trapezoidal rule to integrate the rate curve.
+		rate_time = np.asarray(rate_time)
+		rate_avg = np.trapz(rate_time, sol.t, axis=0) / dt  # rate averages along t_span using the trapezoidal rule to integrate the rate curve.
 		return rate_ss, rate_avg
 
 	@staticmethod
-	def barplot(processes, experiment, data, labels, bar_width):
+	def barplot(processes, experiment, y_label, data, labels, bar_width):
 		icolour = ["b", "r", "c", "g", "m", "y", "grey", "olive", "brown", "pink", "darkgreen", "seagreen", "khaki",
 		   "teal"]
 		ipatterns = ["///", "...", "xx", "**", "\\", "|", "--", "++", "oo", "OO"]
 
-		y_label = "TOF ($molecule \cdot site^{-1} \cdot s^{-1}$)"
 		x_label = experiment
 		temps = [row[0] for row in [data[1], data[-1]]]  # temperatures; first row is for labels
 		gap = 0.7   # gap between group of columns, e.g. processes
@@ -323,7 +320,8 @@ class ConsTemperature:
 			data_row.extend(drc)
 			data.append(data_row)
 		printdata("Degree_of_Rate_Control", data)
-		ConsTemperature.barplot(labels, "Degree of Rate Control", data, labels, 0.5)
+		ylabel = "$DRC_{i}$"
+		ConsTemperature.barplot(labels, "Degree of Rate Control", ylabel, data, labels, 0.5)
 
 	@staticmethod
 	def degree_of_selectivity_control(rconditions, systems, processes):
@@ -374,7 +372,8 @@ class ConsTemperature:
 			print("SELECTIVITY: name", name, "data", data)
 
 			printdata(name + "_Degree_of_Selectivity_Control", data)
-			ConsTemperature.barplot(labels, name +" Degree of Rate Control", data, labels, 0.5)
+			ylabel = "$DSC_{i}$"
+			ConsTemperature.barplot(labels, name +" Degree of Rate Control", ylabel, data, labels, 0.5)
 
 
 class TPR:
@@ -398,10 +397,11 @@ class TPR:
 					if name in processes[process]['reactants']:
 						for i, reactant in enumerate(processes[process]['reactants']):    # starting point of adsorbed species
 							if name == reactant:
-								ics.append(np.floor([1/processes[process]['rstoichio'][i]]))
+								ics.append(float(np.floor(1/processes[process]['rstoichio'][i])))
 								out_file = 'TPD_' + str(name)
 					else:
 						ics.append(0.)
+				ics = np.asarray(ics, dtype=float)
 				n_elements = len([*rconditions.keys(), *species])
 				if out_file not in tpd_done:
 					# t_rate =   0.1,  1, 10  K/min
@@ -431,8 +431,3 @@ class TPR:
 			elif systems[name]['kind'] == 'surface':
 				species.append(name)
 		return species
-
-
-
-
-
