@@ -85,7 +85,7 @@ def mkread(inputfile, restricted_arg):
 				for i in range(3):      # [reactants, TSs, products]
 					species = []
 					stoichio = []
-					for j in reaction[i].split("+"):
+					for j in reaction[i].split("+"):    # ERROR if a '>' is missing
 						k = j[0:len(j.rsplit(r'[0-9]'))]
 						try:
 							stoichio.append(float(k))
@@ -418,19 +418,20 @@ systems = PartitionFunctions(dict(rconditions), dict(systems), list(restricted_a
 print("... Generating Thermodynamics ...")
 systems = Energy(dict(rconditions), dict(processes), dict(systems), list(restricted_arg)).systems
 start = time.time()
-print("... Generating Energy Profile ...")
+print("\t... Generating Energy Profile ...")
 Profile(dict(processes), dict(systems))
+print("\t\t\t\t", round(time.time()-start, 3), " seconds")
 start = time.time()
-print("... Generating Reaction Constants ...")
+print("... Computing Microkinetics ...")
+print("\t... Generating Reaction Constants ...")
 processes = RConstants(dict(rconditions), dict(systems), dict(processes), list(restricted_arg)).processes
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
-print("... Generating Rate Equations ...")
+print("\t... Generating Rate Equations ...")
 constemperature = REquations(dict(processes), dict(systems)).constemperature
 #surf_equations = REquations(dict(processes), dict(systems)).surfequations
 tpd = REquations(dict(processes), dict(systems)).tpd
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
-print("... Computing Microkinetics ...")
 ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(constemperature))
 TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd))
 print("... Microkinetics Completed ...")

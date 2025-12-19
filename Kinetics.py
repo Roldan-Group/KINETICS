@@ -136,7 +136,10 @@ class RConstants:
 		''' Reaction conditions are set as symbols using SYMPY '''
 		k = 1
 		for i in range(len(process['ts'])):     # systems[process['ts'][i] is the system's name
-			k = 1 + 1/24 * (hc * systems[process['ts'][i]]['ifreq'] /(2*sp.pi * kb*temp))**2
+			try:
+				k = 1 + 1/24 * (hc * systems[process['ts'][i]]['ifreq'] /(2*sp.pi * kb*temp))**2
+			except:
+				pass
 		return k
 
 	@staticmethod
@@ -229,43 +232,34 @@ class REquations:
 		tpd = {}  # dictionary of equations WITHOUT adsorptions
 		print_tpd = {}
 		'''surfequations = {}
-		print_surfequations = {}
-		all_sites = []
 		for name in systems.keys():
 			if systems[name]['kind'] == 'surface':
-				all_sites += systems[name]['sites']
-		sites_name = list(set(all_sites))
-		no_ts = list(set(no_ts))
-		for s in sites_name:
-			surfequations[s] = 1
-			print_surfequations[s] = ['  1']
-		'''
+				surfequations[name] = 1'''
 		no_ts = []
 		for process in processes:
 			no_ts.extend(processes[process]['reactants'])
 			no_ts.extend(processes[process]['products'])
-		for name in no_ts:  # species without TSs but including surfaces
-			#if systems[name]['kind'] != "surface":
-			constemperature[name] = 0
-			print_constemperature[name] = []
-			tpd[name] = 0
-			print_tpd[name] = []
-			for process in processes:
-				eq, peq = self.equation(processes[process], name, str(process))
-				constemperature[name] += eq
-				print_constemperature[name] += peq
-				if processes[process]["kind"] != "A":
-					tpd[name] += eq
-					print_tpd[name] += peq
+		for name in no_ts:  # species without TSs
+			if systems[name]['kind'] != "surface": # excluding surfaces to avoid DAE
+				constemperature[name] = 0
+				print_constemperature[name] = []
+				tpd[name] = 0
+				print_tpd[name] = []
+				for process in processes:
+					eq, peq = self.equation(processes[process], name, str(process))
+					constemperature[name] += eq
+					print_constemperature[name] += peq
+					if processes[process]["kind"] != "A":
+						tpd[name] += eq
+						print_tpd[name] += peq
 				'''
 				if systems[name]['kind'] == 'adsorbate':
-					for s in systems[name]['sites']:        # although usually one adsorbate takes only one kind of site
-						\''' the coverage is not multiplied for the number of sites the adsorbate occupies because the
-						site is defined within the "area" the molecule occupies. Again, it is assumed that the adsorbates
-						for this site are similar in volume.\'''
-						surfequations[s] -= sp.symbols(f"{name}") * systems[name]['nsites']
-						print_surfequations[s].append("-[" + name + "]*" + str(systems[name]['nsites']))
-				'''
+					for s in surfequations:
+						if systems[s]['sites'] == systems[name]['sites']:
+							\''' the coverage is multiplied by the number of sites the adsorbate occupies because the
+							site is defined as the "area" of a single site and a molecule may occupy more than 
+							one, e.g. O2 occupies to O sites.\'''
+							surfequations[s] -= sp.symbols(f"{name}") * systems[name]['nsites']'''
 
 		self.constemperature = constemperature
 		#self.surfequations = surfequations
@@ -323,18 +317,21 @@ class REquations:
 
 
 class Profile:
+	''' generates a Processes.txt with all the reactions and energies.
+		generates a Profile.svg image ONLY with the ODD reaction steps simulating a forward process. '''
 	def __init__(self, processes, systems, temp_num=300.0):
 		''' Generate an energy Profile from the species in processes '''
-		graph = self.build_graph(processes)
+		graph = self.build_graph(processes)  # graph_forward only includes ODD steps in processes
 		p0 = list(processes.values())[0]
 		reference = self.state_key(p0["reactants"], p0["rstoichio"])
 		cache = {}
 		self.printprofile(processes, systems, temp_num, cache)
-		self.plot_shared_reactant(graph, reference, systems, temp_num, cache)
+		''' there are many REQUISITES to generate a sensible profile 
+		self.plot_shared_reactant(graph, reference, systems, temp_num, cache) '''
 
 	@staticmethod
 	def build_graph(processes):
-		graph = defaultdict(list)
+		graph = defaultdict(list)        # ALL the steps, i.e. back and forwards.
 		for pr in processes.values():
 			r = Profile.state_key(pr["reactants"], pr["rstoichio"])
 			p = Profile.state_key(pr["products"], pr["pstoichio"])
@@ -407,58 +404,66 @@ class Profile:
 
 	@staticmethod
 	def plot_shared_reactant(graph, reference, systems, temp_num, cache):
-		#cache = {}
+		def note(text, xy):
+			ax.annotate(f"{text}", xy=(xy[0], xy[1]), xytext=(0, -5),  # 15 points below
+						textcoords="offset points", ha="center", fontsize=12, rotation=90, va='top',
+						bbox=dict(boxstyle="round, pad=0.1", fc="white", ec="white", lw=1, alpha=0.8))
+
 		e0 = Profile.state_energy(reference, systems, temp_num, cache)
-		branches = graph[reference]
-		n = len(branches)
-		xticks = []
-		xlabels = []
-		fig, ax = plt.subplots(figsize=(9, 6), clear=True)  # prepares a figure
+		xtick = 0.0
+		xticks = [xtick]
+		xlabels = [Profile.state_label(reference)]
+		step_length = 1.0/2 #    length of every minima
 
-		x_react = 0     # x positions
-		x_ts = 1
-		x_prod = 2
-		y_react = 0.0   # y position of reactant
-		offsets = np.linspace(-0.8, 0.8, n) if n > 1 else [0.0]     # horizontal spacing for branches
+		fig, ax = plt.subplots(figsize=(10, 6), clear=True)  # prepares a figure
 
-		ax.plot([x_react - 0.3, x_react + 0.3], [y_react, y_react], linestyle='-', lw=2.5, color="k", alpha=1)
-		#ax.text(x_react, y_react - 0.2, Profile.state_label(reference), ha="center", va="top", fontsize=14)
-		ax.annotate(f"{Profile.state_label(reference)}", xy=(x_react, y_react), xytext=(0, -15),  # 15 points below
-					textcoords="offset points", ha="center", fontsize=14)
-		xticks.append(x_react)
-		xlabels.append(Profile.state_label(reference))
-		for offset, step in zip(offsets, branches):
-			prod = step["products"]
-			y_prod = Profile.state_energy(prod, systems, temp_num, cache) - e0
-			ax.plot([x_prod - 0.3, x_prod + 0.3], [y_prod, y_prod], lw=2.5, color="k")
-			ax.annotate(f"{Profile.state_label(prod)}", xy=(x_prod, y_prod), xytext=(0, -15),    # 15 points below
-						textcoords="offset points", ha="center", fontsize=14)
-			#ax.text(x_prod, y_prod - 0.2, , ha="center", va="top", fontsize=14)
-			xticks.append(x_prod)
-			xlabels.append(Profile.state_label(prod))
-			if step["ts"]:
-				ts = step["ts"]
-				y_ts = Profile.state_energy(ts, systems, temp_num, cache) - e0
-				ea = y_ts - y_react
-				# spline through TS
-				x0 = [x_react +0.3, x_ts, x_prod -0.3]
-				y0 = [y_react, y_ts, y_prod]
-				spl = splrep(x0, y0, k=2)
-				xt = np.linspace(x_react, x_prod, 60)
-				ax.plot(xt, splev(xt, spl), linestyle='--', lw=1.0, color="k", alpha=1)
-				#ax.text(x_ts, y_ts + 0.2, f"$E_A$ = {ea:.2f} eV", ha="center", fontsize=14)
-				ax.annotate(f"$E_{{A}}$ = {ea:.2f} eV", xy=(x_ts, y_ts), xytext=(0, 15),  # 15 points above
-							textcoords="offset points", ha="center", fontsize=14)
-			else:   # linking reactants and products
-				ax.plot([x_react + 0.3, x_prod - 0.3], [y_react, y_prod], linestyle='--', lw=1.0, color="k", alpha=1)
+		ax.plot([xtick - step_length, xtick + step_length], [0.0, 0.0], linestyle='-', lw=5, color="k", alpha=1)
+		#ax.text(xtick, -0.2, Profile.state_label(reference), ha="center", va="top", fontsize=14)
+		note(Profile.state_label(reference), [xtick, 0.0])
+
+		for key in graph.keys():
+			branches = graph[key]
+			n = len(branches)
+			offsets = [0.0] #np.linspace(-0.8, 0.8, n) if n > 1 else [0.0]     # horizontal spacing for branches
+
+			x_react = xtick  # x positions
+			x_ts = xtick + 1
+			x_prod = xtick + 2
+			y_react = Profile.state_energy(key, systems, temp_num, cache) - e0
+
+			for offset, step in zip(offsets, branches):
+				prod = step["products"]
+				y_prod = Profile.state_energy(prod, systems, temp_num, cache) - e0
+				ax.plot([x_prod - step_length, x_prod + step_length], [y_prod, y_prod], lw=2.5, color="k")
+				# ax.text(x_prod, y_prod - 0.2, Profile.state_label(prod), ha="center", va="top", fontsize=14)
+				note(Profile.state_label(prod), [x_prod, y_prod])
+				xticks.append(x_prod)
+				xlabels.append(Profile.state_label(prod))
+
+				if step["ts"]:
+					ts = step["ts"]
+					y_ts = Profile.state_energy(ts, systems, temp_num, cache) - e0
+					ea = y_ts - y_react
+					# spline through TS
+					x0 = [x_react +step_length, x_ts, x_prod -step_length]
+					y0 = [y_react, y_ts, y_prod]
+					spl = splrep(x0, y0, k=2)
+					xt = np.linspace(min(x0), max(x0), 60)
+					ax.plot(xt, splev(xt, spl), linestyle='--', lw=1.0, color="k", alpha=1)
+					#ax.text(x_ts, y_ts + 0.2, f"$E_A$ = {ea:.2f} eV", ha="center", fontsize=14)
+					ax.annotate(f"$E_{{A}}$ = {ea:.2f} eV", xy=(x_ts, y_ts), xytext=(0, 15),  # 15 points below
+								textcoords="offset points", ha="center", fontsize=12)
+				else:   # linking reactants and products
+					ax.plot([x_react +step_length, x_prod -step_length], [y_react, y_prod], linestyle='--',
+							lw=1.0, color="k", alpha=1)
+			xtick += 2  # connecting with the previous process
+
 		ax.axhline(0, lw=1, ls=":", color="k")
-		ax.tick_params(labelsize=16)
+		ax.tick_params(labelsize=14)
 		ax.set_xticks([])
 		#ax.set_xticks(xticks)
 		#ax.set_xticklabels(xlabels, rotation=25, ha="right")  # rotation=0, ha="center")
-		ax.set_ylabel(f"$\Delta G_{{T={temp_num}\,K}}$ (eV)", fontsize=18)
+		ax.set_ylabel(f"$\Delta G_{{T={temp_num}\,K}}$ (eV)", fontsize=16)
 		fig.tight_layout()
 		plt.ion()
 		plt.savefig("Profile.svg", dpi=300, orientation='landscape', transparent=True)
-
-

@@ -321,7 +321,10 @@ class Energy:        # Gibbs free energy in eV
 				else:
 					systems[name]["energy3d"] = systems[name][adsorbate]["energy3d"]
 					if name in tss:
-						systems[name]["ifreq"] = systems[name][adsorbate]["ifreq"]
+						try:
+							systems[name]["ifreq"] = systems[name][adsorbate]["ifreq"]
+						except:
+							pass
 		self.systems = systems
 		print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 

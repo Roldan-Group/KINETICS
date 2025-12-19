@@ -35,11 +35,12 @@ def printdata(experiment, data):
 	for row in data[1:]:
 		for i in range(len(row)):
 			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen+1, val= float(row[i]),
-												c='e' if float(row[i]) > 1e3 or np.abs(float(row[i])) < 1e-2 else 'f'))
+												c='e' if float(row[i]) > 1e3 or
+														 1e-5 < np.abs(float(row[i])) < 1e-2 else 'f'))
 		output.write("\n")
 	output.close()
 
-def ode_solver(time, species, rhs, ics, arguments):
+def ode_solver(systems, time, species, rhs, ics, arguments):
 	''' time: tuple or list, e.g. (0, 10, 0.1)
 		t_num is the numeric valu of time of integration (solve_ivp)
 		species: list of sympy symbols [theta_A, theta_B, ...]
@@ -51,26 +52,47 @@ def ode_solver(time, species, rhs, ics, arguments):
 	ics = np.asarray(ics, dtype=float)
 	rhs = [i.subs(constants) for i in rhs]
 	conditions = [t, temp]  # conditions required to lambdify
-	eps = 1e-10 * max(1.0, np.max(ics))    # to avoid absolute 0 and Nan in the log
+	eps = 1e-8 * max(1.0, np.max(ics))    # to avoid absolute 0 and Nan in the log
+	''' Identify surface symbols and their adsorbates '''
+	surfaces_s = [sp.Symbol(s) for s in systems.keys() if systems[s]['kind'] == 'surface']
+	adsorbates_by_surface = {}
+	for s in surfaces_s:
+		adsorbates_by_surface[str(s)] = [i for i, name in enumerate(species) if systems[name]["kind"] == "adsorbate"
+		                                 and systems[name]["sites"] == systems[str(s)]["sites"]]
 	''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species'''
-	f_ode = sp.lambdify((*conditions, *species), rhs, ["numpy", 'sympy'])  #
+	f_ode = sp.lambdify((*conditions, *species, *surfaces_s), rhs, ["numpy", 'sympy'])  #
 	''' substitute rconditions'''
 	t_span = (time[:2])  # time grid
 	t_eval = np.arange(*time)
+
 	''' Old versions of scipy do not accept args, so temp_num and other could be unwrapped here.'''
 	def ode_system(t_num, y, *args):    # define ode function compatible with solve_ivp
 		if len(args) < 1:
 			raise ValueError("ERROR! Temperature not passed into ODE solver.")
 		temp_num = args[0]
-		dydt = f_ode(t_num, *[temp_num], *y)   # There is ONLY t and Temp, but more can be added
-		return np.array(dydt, dtype=float).flatten()
-
+		# y = np.clip(y, 0.0, None)     # Enforce physical bounds on adsorbates
+		''' reconstruct algebraic expression to define Surface sites in the rhs'''
+		surface_values = []
+		for s_sym in surfaces_s:
+			s_name = str(s_sym)
+			coverage = 1.0    # Start with one full site
+			for idx in adsorbates_by_surface[s_name]:	# Subtract adsorbates occupying this surface
+				name = species[idx]     # idx is the position of the adsorbate in species
+				coverage -= y[idx] * systems[name]["nsites"]
+			#coverage = max(coverage, 1e-12) # Prevent zero / negative free coverage
+			surface_values.append(coverage)
+		dydt = f_ode(t_num,  *[temp_num], *y, *surface_values)	# Evaluate RHS | There is ONLY t and Temp, for now
+		if not np.all(np.isfinite(dydt)):	# Safety check
+			raise RuntimeError(f"Non-finite RHS at t={t_num}\n", f"y={y}\n",
+			                   f"surface={surface_values}\n", f"dydt={dydt}")
+		return np.array(dydt, dtype=float)  # .flatten()
+	''' with better stability AND ensures positive concentrations '''
 	def ode_log(t, z, *args):
 		y = np.exp(z) - eps
+		y_safe = np.maximum(y + eps, 1e-20)     # prevent underflow
 		f = ode_system(t, y, *args)
-		return f / (y + eps)
+		return f / y_safe
 
-	''' with better stability AND ensures positive concentrations '''
 	''' The jacobian provides stability and accelerate the ODE convergence '''
 	''' Guaranteed safe construction of s_jacobian '''
 	s_jacobian = sp.Matrix(rhs).jacobian([sp.Symbol(s) for s in species])
@@ -87,24 +109,48 @@ def ode_solver(time, species, rhs, ics, arguments):
 		return csr_matrix((data, (rows, cols)), shape=(n, n))
 
 	''' Jacobian sparsity speed the ODE '''
-	jac_y_pattern = symbolic_sparsity(s_jacobian)
-	jac_z_pattern = (jac_y_pattern + diags(np.ones(len(species)))).astype(bool)
-	jacobian = sp.lambdify((*conditions, *species), s_jacobian, "numpy")
-
+	jacobian = sp.lambdify((*conditions, *species, *surfaces_s), s_jacobian, ["numpy", "sympy"])
 	def jac_log_sparse(t, z, *args):
 		y = np.exp(z) - eps
-		f = ode_system(t, y, *args)
-		jac_y = csr_matrix(jacobian(t, *args, *y))
-		inverse = diags(1.0 / (y + eps))
-		diagonal = diags(y + eps)
-		return  inverse @ jac_y @ diagonal - diags(f / (y + eps))
+		y_safe = np.maximum(y + eps, 1e-20)    # prevent underflow
+		''' reconstruct algebraic expression to define Surface sites in the rhs'''
+		surface_values = []
+		for s_sym in surfaces_s:
+			s_name = str(s_sym)
+			coverage = 1.0    # Start with one full site
+			for idx in adsorbates_by_surface[s_name]:	# Subtract adsorbates occupying this surface
+				name = species[idx]     # idx is the position of the adsorbate in species
+				coverage -= y_safe[idx] * systems[name]["nsites"]
+			#coverage = max(coverage, 1e-12) # Prevent zero / negative free coverage
+			surface_values.append(coverage)
+		f = ode_system(t, y_safe, *args)
+		jac_y = csr_matrix(jacobian(t, *args, *y_safe, *surface_values))
+		if not np.all(np.isfinite(jac_y.data)):
+			raise RuntimeError("Non-finite Jacobian")
+		inverse = diags(1.0 / y_safe)
+		diagonal = diags(y_safe)
+		return  inverse @ jac_y @ diagonal - diags(f / y_safe)
+
+	jac_y_pattern = symbolic_sparsity(s_jacobian)
+	jac_z_pattern = jac_y_pattern.astype(bool)
 
 	sol = solve_ivp(ode_log, t_span, np.log(ics + eps), t_eval=t_eval,
 					args=arguments if isinstance(arguments, tuple) else (arguments,),
-					method='BDF', jac=jac_log_sparse, jac_sparsity=jac_z_pattern, rtol=1e-8, atol=1e-10)
+					method='BDF', jac=jac_log_sparse, jac_sparsity=jac_z_pattern, rtol=1e-6, atol=1e-8)
+	'''sol = solve_ivp(ode_log, t_span, np.log(ics + eps), t_eval=t_eval,
+					args=arguments if isinstance(arguments, tuple) else (arguments,),
+					method='BDF', rtol=1e-8, atol=1e-10)'''
+	'''sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval,
+					args=arguments if isinstance(arguments, tuple) else (arguments,),
+					method='BDF', jac=jacobian, jac_sparsity=jac_z_pattern, rtol=1e-8, atol=1e-10)'''
+	'''sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval,
+					args=arguments if isinstance(arguments, tuple) else (arguments,),
+					method='BDF', rtol=1e-8, atol=1e-10)'''
+
 	# transform back
 	solution = SimpleNamespace(t=sol.t, y=np.exp(sol.y) - eps, t_events=sol.t_events, y_events=sol.y_events,
 							   success=sol.success, message=sol.message)
+	#solution = sol
 	if not solution.success:
 		raise RuntimeError(f"ODE solver failed: {solution.message}")
 	n_points = len(solution.t)
@@ -133,14 +179,17 @@ class ConsTemperature:
 		rates_avg = rates_ss.copy()   # time not required as it is an average along time
 		rates_elements = len(rates_ss[0])
 		if isinstance(rconditions['temperature'], (int, float)): # single temperature
-			sol, sol_T = ode_solver(rconditions["time"], species, rhs, ics, (rconditions['temperature'],))
+			sol, sol_T = ode_solver(systems, rconditions["time"], species, rhs, ics, (rconditions['temperature'],))
 			data += sol_T
 			ss, avg = ConsTemperature.rates(processes, species, rconditions['temperature'], sol)
 			rates_ss.append(ss)
 			rates_avg.append(avg)
 		else:      # temperature ramp
 			for temp_num in np.arange(*rconditions["temperature"]):     # integrate at different temperatures
-				sol, sol_T = ode_solver(rconditions["time"], species, rhs, ics, (temp_num,))
+
+				print("TEMPERATURE=", temp_num)
+
+				sol, sol_T = ode_solver(systems, rconditions["time"], species, rhs, ics, (temp_num,))
 				data += sol_T  # transposed solution: (time x species)
 				ss, avg = ConsTemperature.rates(processes, species, temp_num, sol)
 				rates_ss.append(ss)
@@ -186,9 +235,10 @@ class ConsTemperature:
 				for s in surf0.keys():
 					if systems[s]['sites'] == systems[name]['sites'][0]:
 						surf0[s] -= systems[name]["coverage0"] * systems[name]["nsites"]
-		for s in surf0.keys():
+		''' No include the surfaces to avoid algebraic expressions in ODE, i.e. DAE '''
+		'''for s in surf0.keys():
 			ics.append(surf0[s])
-			species.append(s)
+			species.append(s)'''
 		return ics, species
 
 	@staticmethod
@@ -404,8 +454,8 @@ class TPR:
 				ics = np.asarray(ics, dtype=float)
 				n_elements = len([*rconditions.keys(), *species])
 				if out_file not in tpd_done:
-					# t_rate =   0.1,  1, 10  K/min
-					for t_num in [6000, 600, 60]:
+					# t_rate =      1, 10  K/min
+					for t_num in [600, 60]:
 						t_eval = [0, 2*(10/t_num), 10/t_num]       # temperature rate in k/s --- from 0 to 10/t_num
 						data = [*rconditions.keys(), *species]  # basic: Temp, time, species
 						for temp_num in np.arange(50, 1010, 10): # integrate at different temperatures
@@ -428,6 +478,7 @@ class TPR:
 				species.append(name)
 			elif systems[name]['kind'] == "adsorbate":
 				species.append(name)
-			elif systems[name]['kind'] == 'surface':
-				species.append(name)
+			''' No consider surfaces to aviod algebraic expression in ODE, i.e. DAE'''
+			'''elif systems[name]['kind'] == 'surface':
+				species.append(name)'''
 		return species
