@@ -20,7 +20,7 @@ constants = {
 	}
 
 
-def sym_equation(processes, name):  # process is processes[process]; i indicates the process number
+def sym_equation(processes, name):
     '''The rates expressions re-written using the symbolic rate constant instead of the long formula.'''
     equation  = 0
     for process in processes.keys():

@@ -64,8 +64,11 @@ def mkread(inputfile, restricted_arg):
 					rconditions["temperature"][1] = rconditions['temperature'][1] + rconditions['temperature'][2]
 
 			if head == "TIME" or head == "Time":
-				rconditions["time"] = [0, float(tail[0]), int(tail[-1])]  # initial time is 0
-				rconditions["time"][1] = rconditions['time'][1] + rconditions['time'][2]
+				t_step = float(tail[0]) / 100
+				if float(tail[-1]) > t_step:
+					tail[-1] = t_step
+					print (f"   NOTE: Time step updated to {t_step}.")
+				rconditions["time"] = [0, float(tail[0])+float(tail[-1]), float(tail[-1])]  # initial time is 0
 
 			''' Processes (Adsorption, Reaction, Desorption) in a dictionary (processes)
 			with key = number of the process, including:
