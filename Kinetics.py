@@ -17,6 +17,8 @@ from collections import defaultdict
 class RConstants:
 	def __init__(self, rconditions, systems, processes, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
+		ramp = [float(i) for i in rconditions["temperature"]]
+		constants_data = [[temp_num for temp_num in np.arange(ramp[0], ramp[1], ramp[2])]]
 		for process in processes:
 			processes[process]["activation"] = self.activation(processes[process], systems)
 			if processes[process]['kind'] == 'A':
@@ -37,6 +39,11 @@ class RConstants:
 				datalabel = ["activation", "arrhenius", 'ktunneling', "krate0"]
 			data = self.getdata(rconditions, processes[process], datalabel)
 			self.printdata(rconditions, processes[process], "Process"+str(process), data)
+			constants_data.append([row[-1] for row in data[1:]])
+		stack = np.column_stack([i for i in constants_data])
+		constants_data = [["# Temperature", *list(processes.keys())]]
+		constants_data.append(stack)
+		self.barplot("Reaction Constants", "Reaction Constants $(M^{ \dagger } \cdot s^{-1})$", constants_data, 0.5)
 		self.processes = processes
 
 	@staticmethod
@@ -44,12 +51,13 @@ class RConstants:
 		''' the activation energy in adsorption and desorption processes is considered as the difference between
 		a state in which the molecule has only two degrees of freedom (being the third degree the reaction coordinate)
 		and the reactants '''
-		ets = 0     # total energy for transition states
 		if len(process['ts']) > 0:
+			ets = 0  # total energy for transition states
 			for i in range(len(process['ts'])):
 				ets += process['tsstoichio'][i] * systems[process['ts'][i]]['energy3d']
 		elif 'molecule' in [systems[i]['kind'] for i in process['reactants']]:  # for adsorption processes
 			''' This elif considers molecules in reactants as in adsorption processes '''
+			ets = 0  # total energy for transition states
 			for i in range(len(process['reactants'])):
 				if 'energy2d' in systems[process['reactants'][i]]:
 					ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
@@ -57,14 +65,16 @@ class RConstants:
 					ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
 		elif 'molecule' in [systems[i]['kind'] for i in process['products']]:   # for desorption processes
 			''' This elif considers molecules in products as in desorption processes '''
+			ets = 0  # total energy for transition states
 			for i in range(len(process['products'])):
 				if 'energy2d' in systems[process['products'][i]]:
 					ets += process['pstoichio'][i] * systems[process['products'][i]]['energy2d']
 				else:
 					ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
 		else:
-			''' In the rare case that there is to transtion state and none of the reactants is a molecule the energy of 
-			the transition states will be the energy of the final state.'''
+			''' In the rare case that there is two transtion states and none of the reactants is a molecule the 
+			energy of the transition states will be the energy of the final state.'''
+			ets = 0  # total energy for transition states
 			for i in range(len(process['products'])):
 				ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
 		er = 0      # total energy for reactants
@@ -191,7 +201,7 @@ class RConstants:
 		output.write("\n")
 		for row in data:
 			for i in range(len(row)):
-				output.write(" {val:>{wid}}".format(wid=maxlen[i], val=row[i]))
+				output.write("{val:>{wid}}".format(val=row[i], wid=maxlen[i]))
 			output.write("\n")
 		output.close()
 
@@ -209,20 +219,55 @@ class RConstants:
 		if isinstance(rconditions["temperature"], float):
 			row = [rconditions["temperature"]]
 			for eq in equations:
-				value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(rconditions["temperature"]))
-				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
-				row.append(f"{value:.3{c}}")
+				row.append(float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(rconditions["temperature"])))
 			data.append(row)
 		else:
 			ramp = [float(i) for i in rconditions["temperature"]]
-			for t in np.arange(ramp[0], ramp[1], ramp[2]):
-				row = [t]
+			for temp_num in np.arange(ramp[0], ramp[1], ramp[2]):
+				row = [temp_num]
 				for eq in equations:
-					value = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(t))
-					c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
-					row.append(f"{value:.3{c}}")
+					a = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(temp_num))
+					value = "{val:>.3{c}}".format(val=a, c='f' if 1e-3 < np.abs(a) < 1e3 else 'e')
+					row.append(value)
 				data.append(row)
 		return data
+
+	@staticmethod
+	def barplot(experiment, y_label, data, bar_width):
+		icolour = ["b", "r", "c", "g", "m", "y", "grey", "olive", "brown", "pink", "darkgreen", "seagreen", "khaki",
+		   "teal"]
+		ipatterns = ["///", "...", "xx", "**", "\\", "|", "--", "++", "oo", "OO"]
+		gap = 0.7   # gap between group of columns, e.g. processes
+		labels = data[0][1:].copy()
+		x_label = experiment
+		x = np.arange(0, len(labels)) * (1 + gap)
+		temps = [float(data[1][0][0]), float(data[1][-1][0])]  # temperatures; first row is for labels
+		y = np.array([data[1][0][1:], data[1][-1][1:]], dtype=float)		# elements after 1 but only T0 and T-1
+		y[y <= 0] = 1e-20  # to prevent log crash
+
+		fig, ax1 = plt.subplots(figsize=(10, 6), clear=True)
+		ax1.set_ylim(bottom=np.min(y) * 0.5, top=np.max(y) * 5)  # Prevents from hitting zero during autoscaling
+		for n in range(len(y)):    # processes | the first column is temperature
+			offset = (n - len(temps)/2) * bar_width + bar_width/2
+			ax1.bar(x + offset, y[n], log=True,
+					width=bar_width, hatch=ipatterns[n], color=icolour[n], label=f"{temps[n]} K", alpha=0.7)
+
+		x_limit = [ax1.get_xlim()[0], ax1.get_xlim()[1]]
+		#ax1.plot(x_limit, [1e-20, 1e-20], "k-", lw=1.5)
+		ax1.set_xlim(x_limit)
+		ax1.set_xlabel(x_label, fontsize=16)
+		ax1.set_xticks(x)
+		ax1.tick_params(axis='x', rotation=0, labelsize=14)
+		ax1.set_xticklabels(labels, rotation=0, ha="center")
+
+		ax1.set_ylabel(y_label, fontsize=18)
+		ax1.tick_params(axis='y', rotation=0, labelsize=16)
+		leg_lines, leg_labels = ax1.get_legend_handles_labels()
+		legend = ax1.legend(leg_lines[0:len(temps)], leg_labels[0:len(temps)], loc='best', fontsize=16)
+		fig.tight_layout()
+		plt.ion()
+		plt.savefig('./KINETICS/PROCESSES/' + "_".join(experiment.split()) + ".svg", dpi=300, orientation='landscape',
+					transparent=True)
 
 
 class REquations:
