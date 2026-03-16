@@ -214,16 +214,17 @@ class PartitionFunctions:
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		 page 88
-		 huge numbers are expected, e.g. for CO: 6.8*1010 m-1 at 500 K in one dimension'''
-		return properties["volume"]*((2*sp.pi*properties["mass"]*kb*temp)**(3/2))/(h**3)
+		 PER m^3'''
+		return ((2*sp.pi*properties["mass"]*kb*temp)**(3/2))/(h**3) * 1	# per m^3
 
 	@staticmethod
 	def qtrans2d(properties):
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 88 '''
-		return properties["marea"]*(2*sp.pi*properties["mass"]*kb*temp)/(h**2)
+		 page 88
+		  PER m^2 '''
+		return (2*sp.pi*properties["mass"]*kb*temp)/(h**2) * 1 	# 1 m^2
 
 	@staticmethod
 	def qrot(properties):
@@ -231,13 +232,12 @@ class PartitionFunctions:
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		 page 90
-		 large values are expected, e.g. for CO: 180 at 500 K'''
-		prod_inertia = 1.0
-		for i in properties["inertia"]:
-			prod_inertia *= i
+		 approximation that omits nuclear spin and assumes many states are occupied, i.e. no nuclear spin included'''
 		if properties["linear"] == "yes":
+			prod_inertia = max(properties["inertia"])
 			qrot = (8*sp.pi**2*prod_inertia*kb*temp)/(properties["symfactor"]*h**2)
 		else:
+			prod_inertia = np.prod(properties["inertia"])
 			qrot = (sp.sqrt(sp.pi) / properties['symfactor']) * ((8 * sp.pi ** 2 * kb * temp) / h ** 2) ** (
 				sp.Rational(3,2)) * sp.sqrt(prod_inertia)
 		return qrot
@@ -386,25 +386,28 @@ class Entropy:
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
 		 (Note that the translational component also includes components from the Stirling approximation)
 		 the Sackur-Tetrode equation for ideal gases'''
-		return (kb*(sp.log(((2*sp.pi*properties["mass"]*kb*temp)/h**2)**(3/2) *	(kb*temp)/1 ) + 5/2)) * JtoeV
+		tbw = h / (2*sp.pi*properties["mass"]*kb*temp)**(1/2)		# Thermal De Broglie Wavelength
+		strans = kb*(sp.log(properties["volume"]/tbw**3) + 5/2) 	# Sackur-Tetrode Equation
+		return strans * JtoeV
 
 	@staticmethod
 	def strans2d(properties):
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
 		 (Note that the translational component also includes components from the Stirling approximation)'''
-		return (kb*(sp.log(((2*sp.pi*properties["mass"]*kb*temp)/h**2)**(2/2) * (kb*temp)/1 ) + 3/2)) * JtoeV
+		tbw = h / (2*sp.pi*properties["mass"]*kb*temp)**(1/2)		# Thermal De Broglie Wavelength
+		strans = kb*(sp.log(properties["marea"]/tbw**2) + 2) 		# Sackur-Tetrode Equation
+		return  strans * JtoeV
 
 	@staticmethod
 	def srot(properties):
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
-		prod_inertia = 1.0
-		for i in properties["inertia"]:
-			prod_inertia *= i
 		if properties["linear"] == "yes":
+			prod_inertia = max(properties["inertia"])
 			srot = (kb*(sp.log((1/properties["symfactor"])*(8*sp.pi**2*kb*temp*prod_inertia/(h**2))) + 1)) * JtoeV
 		else:
+			prod_inertia = np.prod(properties["inertia"])
 			srot = (kb*(sp.log((sp.sqrt(sp.pi*prod_inertia)/properties["symfactor"]) *
 							  (8*sp.pi**2*kb*temp/(h**2))**(3/2)) +3/2)) * JtoeV
 		return srot
@@ -413,10 +416,10 @@ class Entropy:
 	def selec(properties):
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html'''
-		return (kb*(sp.log(2*properties["degeneration"] + 1))) * JtoeV
+		return (kb*(sp.log(properties["degeneration"]))) * JtoeV
 
 	@staticmethod
-	def svib(freqs):
+	def svib(freqs):	# works for both SVIB 3D and 2D
 		'''re-Formulation from explicit derivatives::
 		 https://wiki.fysik.dtu.dk/ase/ase/thermochemistry/thermochemistry.html
 		 harmonic oscillator '''
@@ -425,7 +428,6 @@ class Entropy:
 			if freq > 0.0:
 				x = (hc * freq) / (kb * temp)
 				qvib += (x * sp.exp(-x) / (1 - sp.exp(-x))) - (sp.log(1 - sp.exp(-x)))  # avoids overflow
-
 		return (kb * qvib) * JtoeV
 
 

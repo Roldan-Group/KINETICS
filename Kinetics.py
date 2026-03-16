@@ -43,7 +43,7 @@ class RConstants:
 		stack = np.column_stack([i for i in constants_data])
 		constants_data = [["# Temperature", *list(processes.keys())]]
 		constants_data.append(stack)
-		self.barplot("Reaction Constants", "Reaction Constants $(M^{ \dagger } \cdot s^{-1})$", constants_data, 0.5)
+		self.barplot("Reactions", "Reaction Constants $(M^{ \dagger } \cdot s^{-1})$", constants_data, 0.5)
 		self.processes = processes
 
 	@staticmethod
@@ -150,6 +150,12 @@ class RConstants:
 				k = 1 + 1/24 * (hc * systems[process['ts'][i]]['ifreq'] /(2*sp.pi * kb*temp))**2
 			except:
 				pass
+		return k
+
+	@staticmethod
+	def ext_pressure(process, systems, ):
+		''' Reaction conditions are set as symbols using SYMPY '''
+		k = 1
 		return k
 
 	@staticmethod
@@ -260,6 +266,7 @@ class RConstants:
 		ax1.tick_params(axis='x', rotation=0, labelsize=14)
 		ax1.set_xticklabels(labels, rotation=0, ha="center")
 
+		ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
 		ax1.set_ylabel(y_label, fontsize=18)
 		ax1.tick_params(axis='y', rotation=0, labelsize=16)
 		leg_lines, leg_labels = ax1.get_legend_handles_labels()
@@ -273,6 +280,7 @@ class RConstants:
 class REquations:
 	def __init__(self, processes, systems):
 		constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
+		equation_factors = {}	# dictionary with the factors for rate eqations, i.e. 2 * k_1[A][B]
 		print_constemperature = {}
 		tpd = {}  # dictionary of equations WITHOUT adsorptions
 		print_tpd = {}
@@ -286,16 +294,18 @@ class REquations:
 			no_ts.extend(processes[process]['products'])
 		for name in no_ts:  # species without TSs
 			if systems[name]['kind'] != "surface": # excluding surfaces to avoid DAE
-				constemperature[name] = 0
+				constemperature[name] = []
+				equation_factors[name] = []
 				print_constemperature[name] = []
-				tpd[name] = 0
+				tpd[name] = []
 				print_tpd[name] = []
 				for process in processes:
-					eq, peq = self.equation(processes[process], name, str(process))
-					constemperature[name] += eq
+					eq, rfactor, peq = self.equation(processes[process], name, str(process))
+					constemperature[name].append(eq)
+					equation_factors[name].append(rfactor)
 					print_constemperature[name] += peq
 					if processes[process]["kind"] != "A":
-						tpd[name] += eq
+						tpd[name].append(eq)
 						print_tpd[name] += peq
 				'''
 				if systems[name]['kind'] == 'adsorbate':
@@ -306,38 +316,39 @@ class REquations:
 							one, e.g. O2 occupies to O sites.\'''
 							surfequations[s] -= sp.symbols(f"{name}") * systems[name]['nsites']'''
 
-		self.constemperature = constemperature
+		#self.constemperature = constemperature
+		#self.equation_factors = equation_factors
 		#self.surfequations = surfequations
-		self.tpd = tpd
+		#self.tpd = tpd
+		self.all_equations = (constemperature, equation_factors, tpd)
 
 		self.printdata(print_constemperature, 'Cons_Temperature')
 		self.printdata(print_tpd, 'TPD')
 
 	@staticmethod
 	def equation(process, name, i):  # process is processes[process]; i indicates the process number
+		rfactor = 0
 		equation = 0
 		pequation = []      # list of equations to print
 		if name in process['products']:
 			for r in range(len(process['products'])):
 				if name == process['products'][r]:
-					rfactor = process['pstoichio'][r]
-					prfactor = process['pstoichio'][r]
-			pequation.append("   +" + str(prfactor) + " * K_" + str(i))
-			equation += rfactor * process['krate0']
+					rfactor = float(process['pstoichio'][r])
+					equation += process['krate0']
+			pequation.append("   +" + str(rfactor) + " * K_" + str(i))
 			for r in range(len(process['reactants'])):
 				equation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
 				pequation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
 		elif name in process['reactants']:
 			for r in range(len(process['reactants'])):
 				if name == process['reactants'][r]:
-					rfactor = process['rstoichio'][r]
-					prfactor = process['rstoichio'][r]
-			pequation.append("   -" + str(prfactor) + " * K_" + str(i))
-			equation -= rfactor * process['krate0']
+					rfactor = float(process['rstoichio'][r])	# positive number as the "-" is in equation
+			equation -= process['krate0']
+			pequation.append("    -" + str(rfactor) + " * K_" + str(i))
 			for r in range(len(process['reactants'])):
 				equation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
 				pequation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
-		return equation, pequation
+		return equation, rfactor, pequation
 
 	@staticmethod
 	def printdata(equations, experiment):
