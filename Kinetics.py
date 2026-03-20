@@ -6,6 +6,7 @@ import os, pathlib
 import sympy as sp
 import numpy as np
 from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
+from sympy import Max
 import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -80,7 +81,7 @@ class RConstants:
 		er = 0      # total energy for reactants
 		for i in range(len(process['reactants'])):
 			er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
-		return ets - er
+		return sp.Max(ets - er, 0.0)    # ensures that the activation energy is never below 0
 
 	@staticmethod
 	def sticky(process, systems, ):
@@ -128,7 +129,7 @@ class RConstants:
 					qts *= systems[process['ts'][i]]['q3d'] ** process['tsstoichio'][i]
 				for i in range(len(process['reactants'])):
 					qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
-			else:
+			else:   # e.g. for desorption processes
 				for i in range(len(process['products'])):
 					if 'q2d' in systems[process['products'][i]]:
 						qts *= systems[process['products'][i]]['q2d'] ** process['pstoichio'][i]
@@ -233,7 +234,7 @@ class RConstants:
 				row = [temp_num]
 				for eq in equations:
 					a = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(temp_num))
-					value = "{val:>.3{c}}".format(val=a, c='f' if 1e-3 < np.abs(a) < 1e3 else 'e')
+					value = "{val:>.3{c}}".format(val=a, c='f' if 1e-3 < np.abs(a) < 1e3 or 0. else 'e')
 					row.append(value)
 				data.append(row)
 		return data
@@ -411,8 +412,16 @@ class Profile:
 				ea = ets - e0
 			else:
 				t = ''
-				ets = None
-				ea = None
+				if pr['kind'] == "A":
+					ts = Profile.state_key(pr['reactants'], pr['rstoichio'])
+					ets = Profile.state_energy_ts(ts, systems, temp_num)
+					ea = ets - e0
+				elif pr['kind'] == "D":
+					ts = Profile.state_key(pr['products'], pr['pstoichio'])
+					ets = Profile.state_energy_ts(ts, systems, temp_num)
+					ea = ets - e0
+				else:
+					ets = None
 			pro = Profile.state_key(pr["products"], pr["pstoichio"])
 			p = Profile.state_label(pro)
 			ep = Profile.state_energy(pro, systems, temp_num, cache)
@@ -420,7 +429,7 @@ class Profile:
 			reaction = " > ".join([r, t, p])
 			ereaction = " > ".join([f"{e0:.2f}", f"{ets:.2f}" if ets is not None else "", f"{ep:.2f}"])
 			data.append([f"{n+1}", f"{pr['kind']}", f"{reaction}", f"{ereaction}",
-						 f"{ea:.2f}" if ets is not None else "---", f"{er:.2f}"])
+						 f"{ea:5.2f}" if ets is not None else "  ---", f"{er:.2f}"])
 		maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
 		outputfile = "Processes.txt"
 		output = open(outputfile, "w")
@@ -445,6 +454,19 @@ class Profile:
 				f = sp.lambdify(temp, expr, ("numpy", "sympy"))
 				e += stoi * float(f(temp_num))
 		cache[state] = e
+		return e
+
+	@staticmethod
+	def state_energy_ts(state, systems, temp_num):
+		e = 0.0
+		if state:
+			for name, stoi in state:
+				if systems[name]['kind'] == "molecule":
+					expr = systems[name]["energy2d"].subs(constants)
+				else:
+					expr = systems[name]["energy3d"].subs(constants)
+				f = sp.lambdify(temp, expr, ("numpy", "sympy"))
+				e += stoi * float(f(temp_num))
 		return e
 
 	@staticmethod

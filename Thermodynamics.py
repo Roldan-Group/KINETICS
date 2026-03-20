@@ -80,7 +80,7 @@ def getdata(rconditions, properties,  datalabel):
 					print(type(eq))
 					print(eq.free_symbols)
 					print(eq.subs(constants))
-				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 else 'f'
+				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 or 0. else 'f'
 				row.append(f"{value:.3{c}}")
 			data.append(row)
 	return data
@@ -159,7 +159,13 @@ class PartitionFunctions:
 							q3d *= systems[name][nadsorbates][str(i)]
 						systems[name][nadsorbates]["q3d"] = q3d
 						datalabel3d.append("q3d")
-						datalabel2d = ["qrot", "qelec", "qtrans2d", "qvib2d"]
+						''' if the pre-adsorbed state is completely mobile (Chorkendorff, I. & Niemantsverdriet, 
+						J. W. "Concepts of Modern Catalysis and Kinetics." doi:10.1002/3527602658. page 121 '''
+						##########datalabel2d = ["qrot", "qelec", "qtrans2d", "qvib2d"]
+						''' if the pre-adsorbed state is partially immobile as direct adsorption (Chorkendorff, I. 
+						& Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics." doi:10.1002/3527602658. 
+						page 119 '''
+						datalabel2d = ["qrot", "qelec", "qvib2d"]
 						q2d = 1.0
 						for i in datalabel2d:
 							q2d *= systems[name][nadsorbates][str(i)]
@@ -170,9 +176,6 @@ class PartitionFunctions:
 			else:
 				for nadsorbates in systems[name].keys():    # number of species, i.e. "coverage"
 					if nadsorbates not in restricted_arg:       # only for nadsorbates
-
-						#print(name, len(systems[name][nadsorbates]['freq3d']))
-
 						systems[name][nadsorbates]["qtrans3d"] = 1.0
 						systems[name][nadsorbates]["qrot"] = 1.0
 						systems[name][nadsorbates]["qelec"] = self.qelec(systems[name][nadsorbates])

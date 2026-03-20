@@ -36,8 +36,7 @@ def printdata(experiment, data):
 	for row in data[1:]:
 		for i in range(len(row)):
 			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val= float(row[i]),
-												c='e' if float(row[i]) > 1e3 or
-														1e-20 < np.abs(float(row[i])) < 1e-2 else 'f'))
+			                                         c='f' if 1e-5 < np.abs(float(row[i])) < 1e3 or 0. else 'e'))
 		output.write("\n")
 	output.close()
 
@@ -54,6 +53,7 @@ def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, i
 
 	''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species'''
 	f_ode = sp.lambdify((*conditions, *species, *surfaces_s), rhs, ["numpy", 'sympy'])  #
+
 	''' substitute rconditions'''
 	t_span = (time[:2])  # time grid
 	t_eval = np.arange(*time)
@@ -65,7 +65,7 @@ def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, i
 		temp_num = args[0]
 		y = np.clip(y, 0.0, None)     # Enforce physical bounds on adsorbates
 		''' reconstruct algebraic expression to define Surface sites in the rhs'''
-		surface_values = []
+		surface_values = [] ## no worthy to pass it through the subroutine, too many patches.
 		for s_sym in surfaces_s:
 			s_name = str(s_sym)
 			coverage = 1.0    # Start with one full site
@@ -92,9 +92,10 @@ def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, i
 			y2[i] += h
 			jacobian[:, i] = (ode_system(t, y2, temp_num) - f0) / h
 		return jacobian
+
 	sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval,
 					args=arguments if isinstance(arguments, tuple) else (arguments,),
-					method='BDF', jac=jac_numeric, rtol=1e-4, atol=1e-8)	#, events=steady_state_event)  # Alternative: "BDF" or "Radau"
+					method='BDF', jac=jac_numeric, rtol=1e-6, atol=1e-8)	#, events=steady_state_event)  # Alternative: "BDF" or "Radau"
 	if not sol.success:
 		raise RuntimeError(f"ODE solver failed: {sol.message}")
 	''' Build the augmented solution (gasses + adsorbates + surfaces) '''
@@ -145,6 +146,11 @@ class ConsTemperature:
 			for temp_num in np.arange(*rconditions["temperature"]):     # integrate at different temperatures
 				sol, solution, sol_T = ode_solver(systems, rconditions["time"], species, surfaces, adsorbates_by_surface,
 												  rhs, ics, (temp_num,))
+
+
+				print("TEMP:", temp_num, "SOL:", sol.y)
+
+
 				data += sol_T  # transposed solution: (time x species)
 				drc_data[str(temp_num)] = sol
 				dsc_data[str(temp_num)] = solution.y[:, -1]
@@ -297,7 +303,8 @@ class ConsTemperature:
 				coverage -= np.abs(sol.y[idx, -1]) * systems[name]["nsites"]
 			if np.any(coverage < -1e-20) or np.any(coverage > 1 + 1e-20):  # the 1e-20 gives some wiggle
 				raise ValueError(f"ERROR! Coverage {s_sym} is beyon the [0,1] limit.")
-			surface_values.append(np.maximum(coverage, 0.0))  # clipping the lower limit
+			surface_values.append(np.clip(coverage, 0.0, 1.))     # Enforce physical bounds on adsorbates
+			# np.maximum(coverage, 0.0))  # clipping the lower limit
 		return surface_values
 
 	@staticmethod
@@ -307,7 +314,7 @@ class ConsTemperature:
 		   sensitive the overall reaction rate is to each elementary step’s rate constant. '''
 		k_list = [processes[process]['krate0'] for process in processes]    # the first process is "1"
 		temp_list = [float(i) for i in sol_base.keys()]
-		eps = 1e-4  # constant perturbation factor, small enough to retain linearity
+		eps = 1e-6  # constant perturbation factor, small enough to retain linearity
 		''' Find the reactants and forming products to define the net rate '''
 		reactants = []
 		products = []
