@@ -35,8 +35,9 @@ def printdata(experiment, data):
 	output.write("\n")
 	for row in data[1:]:
 		for i in range(len(row)):
-			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val= float(row[i]),
-			                                         c='f' if 1e-5 < np.abs(float(row[i])) < 1e3 or 0. else 'e'))
+			a = np.abs(float(row[i]))
+			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val= a, c='f' if 1e-5 < a < 1e3 or a == 0. else
+			'e'))
 		output.write("\n")
 	output.close()
 
@@ -359,17 +360,12 @@ class ConsTemperature:
 				net_rate0[name] = np.float64(sp.lambdify((*conditions[1:], *species, *surfaces),
 			                                    rate_equation, "numpy")(temp_num, **coverages, **surfaces_num))
 
-				print(net_rate0[name])
-
 				if net_rate0[name] <= 0.:
 					print(name, rate_equation)
 					print("temp", temp_num)
 					print("coverages", coverages)
 					print("surfaces", surfaces_num)
 					exit()
-
-
-				print(name, "rate0", net_rate0[name])
 
 			for i in range(1, len(processes), 2):
 				''' The partial derivative is taken holding constant the rate constants, k_j, for all 
@@ -401,15 +397,12 @@ class ConsTemperature:
 					net_rate1 = (sp.lambdify((*conditions[1:], *species, *surfaces), rate_equation, "numpy")
 								 (temp_num, **local_coverages, **local_surfaces_num))
 
-
-
-
 					if net_rate0[name] <= 0 or net_rate1 <= 0:
 						a = np.nan
 					else:
 						a = float(np.log(net_rate1/net_rate0[name]) / np.log(1. + eps))
 
-					print("RATES for ", name,  net_rate0[name], net_rate1, f"process {i}/{i + 1} at {temp_num} K =", a)
+					print("RATES for ", name, net_rate1, net_rate0[name], f"process {i}/{i + 1} at {temp_num} K =", a)
 
 					data_row[name].append(a)
 

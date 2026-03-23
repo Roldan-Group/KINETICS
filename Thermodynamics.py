@@ -80,7 +80,7 @@ def getdata(rconditions, properties,  datalabel):
 					print(type(eq))
 					print(eq.free_symbols)
 					print(eq.subs(constants))
-				c = 'e' if value > 1e3 or np.abs(value) < 1e-2 or 0. else 'f'
+				c = 'f' if 1e-3 < np.abs(value) < 1e3 or np.abs(value) == 0. else 'e'
 				row.append(f"{value:.3{c}}")
 			data.append(row)
 	return data
@@ -159,12 +159,9 @@ class PartitionFunctions:
 							q3d *= systems[name][nadsorbates][str(i)]
 						systems[name][nadsorbates]["q3d"] = q3d
 						datalabel3d.append("q3d")
-						''' if the pre-adsorbed state is completely mobile (Chorkendorff, I. & Niemantsverdriet, 
-						J. W. "Concepts of Modern Catalysis and Kinetics." doi:10.1002/3527602658. page 121 '''
-						##########datalabel2d = ["qrot", "qelec", "qtrans2d", "qvib2d"]
-						''' if the pre-adsorbed state is partially immobile as direct adsorption (Chorkendorff, I. 
-						& Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics." doi:10.1002/3527602658. 
-						page 119 '''
+
+						''' SUITABLE TO DESCRIVE DESORPTIONS.
+						The sticky coefficient is a function of the adsorption energy '''
 						datalabel2d = ["qrot", "qelec", "qvib2d"]
 						q2d = 1.0
 						for i in datalabel2d:
@@ -195,15 +192,15 @@ class PartitionFunctions:
 		for name in systems.keys():     # species
 			if len([adsorbate for adsorbate in systems[name] if adsorbate not in restricted_arg]) > 1:
 				if systems[name]["kind"] == "molecule":
-					systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
-					systems[name]["q2d"] = interpolate(rconditions, systems, name, restricted_arg, "q2d")
+					for i in ["q3d", "q2d", "qrot", "qelec", "qtrans3d", "qtrans2d", "qvib3d", "qvib2d"]:
+						systems[name][i] = interpolate(rconditions, systems, name, restricted_arg, i)
 				else:
 					systems[name]["q3d"] = interpolate(rconditions, systems, name, restricted_arg, "q3d")
 			else:
 				adsorbate =  [i for i in systems[name] if i not in restricted_arg][0]
 				if systems[name]["kind"] == "molecule":
-					systems[name]["q3d"] = systems[name][adsorbate]["q3d"]
-					systems[name]["q2d"] = systems[name][adsorbate]["q2d"]
+					for i in ["q3d", "q2d", "qrot", "qelec", "qtrans3d", "qtrans2d", "qvib3d", "qvib2d"]:
+						systems[name][i] = systems[name][adsorbate][i]
 				else:
 					systems[name]["q3d"] = systems[name][adsorbate]["q3d"]
 
@@ -216,8 +213,7 @@ class PartitionFunctions:
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 88
-		 PER m^3'''
+		 page 88		 PER m^3'''
 		return ((2*sp.pi*properties["mass"]*kb*temp)**(3/2))/(h**3) * 1	# per m^3
 
 	@staticmethod
@@ -225,16 +221,14 @@ class PartitionFunctions:
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
 		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 88
-		  PER m^2 '''
+		 page 88		  PER m^2 '''
 		return (2*sp.pi*properties["mass"]*kb*temp)/(h**2) * 1 	# 1 m^2
 
 	@staticmethod
 	def qrot(properties):
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
-		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 90
+		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.		 page 90
 		 approximation that omits nuclear spin and assumes many states are occupied, i.e. no nuclear spin included'''
 		if properties["linear"] == "yes":
 			prod_inertia = max(properties["inertia"])
@@ -249,8 +243,7 @@ class PartitionFunctions:
 	def qelec(properties):
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
-		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 92 '''
+		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.		 page 92 '''
 		''' It is consider that the contribution of excited states is negligible
 		at the working temperatures '''
 		return float(properties["degeneration"])
@@ -259,8 +252,7 @@ class PartitionFunctions:
 	def qvib(freqs):
 		''' Chorkendorff, I. & Niemantsverdriet, J. W. "Concepts of Modern Catalysis and Kinetics."
 		 Adsorption Journal Of The International Adsorption Society
-		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
-		 page 89 '''
+		 (Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.		 page 89 '''
 		''' The equation used is respect the lowest occupied state, not the bottom of the potential energy curve.
 		It also consider small frequencies, when h*v ~ kb*T (v=frequencies). 
 		The Zero Point Energy should be added to the energy as this qvib is to calculate the entropy (S),
@@ -277,7 +269,8 @@ class Energy:        # Gibbs free energy in eV
 	def __init__(self, rconditions, processes, systems, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
 		''' Entropy is required to calculate the specific heat (Cp), which contributes 
-		to the enthalpy at specific temperatures '''
+		to the enthalpy at specific temperatures 
+		*** H and S are independent of the partition function contributiones, e.g. qtrans2d to energy2d'''
 		start = time.time()
 		print("\t... Generating Entropic Contribution ...")
 		self.systems = Entropy(rconditions, systems, restricted_arg).systems         # in eV

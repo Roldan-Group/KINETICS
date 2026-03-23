@@ -6,7 +6,7 @@ import os, pathlib
 import sympy as sp
 import numpy as np
 from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
-from sympy import Max
+from sympy import Max, Piecewise
 import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -23,9 +23,9 @@ class RConstants:
 		for process in processes:
 			processes[process]["activation"] = self.activation(processes[process], systems)
 			if processes[process]['kind'] == 'A':
-				processes[process]["sticky"] = self.sticky(processes[process], systems, )
+				processes[process]["sticky"] = self.sticky(processes[process], systems)
 				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, restricted_arg)
-				processes[process]["ktunneling"] = self.tunneling(processes[process], systems, )
+				processes[process]["ktunneling"] = self.tunneling(processes[process], systems)
 				processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
 												processes[process]["ktunneling"])
 				# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
@@ -78,18 +78,29 @@ class RConstants:
 			ets = 0  # total energy for transition states
 			for i in range(len(process['products'])):
 				ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
+
 		er = 0      # total energy for reactants
 		for i in range(len(process['reactants'])):
 			er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
-		return sp.Max(ets - er, 0.0)    # ensures that the activation energy is never below 0
+		e_activation = sp.Max(ets - er, 0.0)    # ensures that the activation energy is never below 0
+		return e_activation
 
 	@staticmethod
-	def sticky(process, systems, ):
+	def sticky(process, systems):
 		''' the sticky coefficient is evaluate as the reduction of degrees of freedom, i.e. from a 3D free molecule
 		to a 2D trapped molecule moving parallel to the surface (being the third degree the reaction coordinate) '''
 		''' Reaction conditions are set as symbols using SYMPY '''
-		qts = 1     # total partition function for transition states
 		qr = 1     # total partition function for reactants
+		for i in range(len(process['reactants'])):
+			qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
+
+		def build_qts(name, q_list):	# to calculate the qts of molecular Adsorptions
+			expr = 1
+			for q in q_list:
+				expr *= systems[name][q] ** process['rstoichio'][i]
+			return expr
+
+		qts = 1     # total partition function for transition states
 		if len(process['ts']) > 0:
 			for i in range(len(process['ts'])):
 				qts *= systems[process['ts'][i]]['q3d']**process['tsstoichio'][i]
@@ -97,13 +108,24 @@ class RConstants:
 				qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
 		else:
 			for i in range(len(process['reactants'])):
-				if 'q2d' in systems[process['reactants'][i]].keys():
-					qts *=  systems[process['reactants'][i]]['q2d']**process['rstoichio'][i]
+				name = process['reactants'][i]
+				if systems[name]["kind"] == "molecule":
+					''' TS can be mobile or immobile (Chorkendorff, I. & Niemantsverdriet, 
+					J. W. "Concepts of Modern Catalysis and Kinetics." doi:10.1002/3527602658. page 119-121 '''
+					e_a = process['activation']
+					expr1 = build_qts(name, ["q3d"])	# minimal distortion
+					expr2 = build_qts(name, ["qrot", "qelec", "qtrans3d", "qvib2d"])	# mobile TS
+					expr3 = build_qts(name, ["qrot", "qelec", "qtrans2d", "qvib2d"])	# mobile TS in 2D
+					expr4 = build_qts(name, ["qrot", "qelec", "qvib2d"])	# partially immobile TS (Direct adsorption)
+					expr5 = build_qts(name, ["qelec", "qvib2d"])	# immobile TS
+					qts *= Piecewise((expr1, (e_a <= 0.01)),
+									(expr2, (0.01 < e_a) & (e_a <= 0.3)),
+									(expr3, (0.3 < e_a) & (e_a <= 0.7)),
+									(expr4, (0.7 < e_a) & (e_a <= 1.)),
+									(expr5 * sp.exp(-e_a / (kb * temp * JtoeV)), (e_a > 1.)))
 				else:
-					qts *=  systems[process['reactants'][i]]['q3d']**process['rstoichio'][i]
-			for i in range(len(process['reactants'])):
-				qr *=  systems[process['reactants'][i]]['q3d']**process['rstoichio'][i]
-		return (qts/qr)*sp.exp(-process['activation']/(kb*temp*JtoeV))
+					qts *= systems[name]['q3d']**process['rstoichio'][i]
+		return qts/qr
 
 	@staticmethod
 	def arrhenius(process, systems, restricted_arg):
@@ -208,7 +230,11 @@ class RConstants:
 		output.write("\n")
 		for row in data:
 			for i in range(len(row)):
-				output.write("{val:>{wid}}".format(val=row[i], wid=maxlen[i]))
+				if isinstance(row[i], (float, int)):
+					output.write("{val:>{wid}.3{c}}".format(val=row[i], wid=maxlen[i],
+														c='f' if 1e-5 < np.abs(row[i]) < 1e3 or row[i] == 0. else 'e'))
+				else:
+					output.write("{val:>{wid}}".format(val=row[i], wid=maxlen[i]))
 			output.write("\n")
 		output.close()
 
@@ -234,7 +260,7 @@ class RConstants:
 				row = [temp_num]
 				for eq in equations:
 					a = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(temp_num))
-					value = "{val:>.3{c}}".format(val=a, c='f' if 1e-3 < np.abs(a) < 1e3 or 0. else 'e')
+					value = "{val:>.3{c}}".format(val=a, c='f' if 1e-3 < np.abs(a) < 1e3 or np.abs(a) == 0. else 'e')
 					row.append(value)
 				data.append(row)
 		return data

@@ -410,7 +410,8 @@ def mkread(inputfile, restricted_arg):
 
 ''' list of restricted argunments in systems[name] containing the interpolated functions'''
 restricted_arg = ["kind", "pressure0", "coverage0", "sites", "nsites", 'molsite', 'nmolsite',
-				  'q3d', 'q2d', 'energy3d', 'energy2d', 'ifreq']
+				  'q3d', 'q2d', "qrot", "qelec", "qtrans3d", "qtrans2d", "qvib3d", "qvib2d", 'energy3d',
+				  'energy2d', 'ifreq']
 
 start0 = time.time()
 rconditions, processes, systems = mkread(str(sys.argv[1]), list(restricted_arg))
