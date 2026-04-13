@@ -20,22 +20,11 @@ constants = {
 	}
 
 
-def sym_equation(processes, name):
-    '''The rates expressions re-written using the symbolic rate constant instead of the long formula.'''
-    equation  = 0
-    for process in processes.keys():
-        if name in processes[process]['products']:
-            for r in range(len(processes[process]['products'])):
-                if name == processes[process]['products'][r]:
-                    equation += processes[process]['pstoichio'][r]  # rfactor
-            equation *= sp.symbols(f'k_{process}')
-            for r in range(len(processes[process]['reactants'])):
-                equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** processes[process]['rstoichio'][r]
-        elif name in processes[process]['reactants']:
-            for r in range(len(processes[process]['reactants'])):
-                if name == processes[process]['reactants'][r]:
-                    equation -= processes[process]['rstoichio'][r]  # rfactor
-            equation *= sp.symbols(f'k_{process}')
-            for r in range(len(processes[process]['reactants'])):
-                equation *= sp.symbols(f"{processes[process]['reactants'][r]}") ** processes[process]['rstoichio'][r]
+def sym_equation(processes, process):
+    '''The rates expressions re-written using the symbolic rate constant instead of the long formula.
+    reaction facors are passd from kinetics.py '''
+    equation = sp.symbols(f'k_{process}', commutative=False)
+    for i, r in enumerate(processes[process]['reactants']):
+        equation *= sp.symbols(f"{r}", commutative=False) ** processes[process]['rstoichio'][i]
+
     return equation

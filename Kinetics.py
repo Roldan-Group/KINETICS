@@ -7,6 +7,9 @@ import sympy as sp
 import numpy as np
 from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
 from sympy import Max, Piecewise
+from math import gcd
+from functools import reduce
+from itertools import product
 import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -44,7 +47,7 @@ class RConstants:
 		stack = np.column_stack([i for i in constants_data])
 		constants_data = [["# Temperature", *list(processes.keys())]]
 		constants_data.append(stack)
-		self.barplot("Reactions", "Reaction Constants $(M^{ \dagger } \cdot s^{-1})$", constants_data, 0.5)
+		self.barplot("Elementary Steps", "Reaction Constants $(M^{ \dagger } \cdot s^{-1})$", constants_data, 0.5)
 		self.processes = processes
 
 	@staticmethod
@@ -119,8 +122,8 @@ class RConstants:
 					expr4 = build_qts(name, ["qrot", "qelec", "qvib2d"])	# partially immobile TS (Direct adsorption)
 					expr5 = build_qts(name, ["qelec", "qvib2d"])	# immobile TS
 					qts *= Piecewise((expr1, (e_a <= 0.01)),
-									(expr2, (0.01 < e_a) & (e_a <= 0.3)),
-									(expr3, (0.3 < e_a) & (e_a <= 0.7)),
+									(expr2, (0.01 < e_a) & (e_a <= 0.25)),
+									(expr3, (0.25 < e_a) & (e_a <= 0.7)),
 									(expr4, (0.7 < e_a) & (e_a <= 1.)),
 									(expr5 * sp.exp(-e_a / (kb * temp * JtoeV)), (e_a > 1.)))
 				else:
@@ -293,7 +296,7 @@ class RConstants:
 		ax1.tick_params(axis='x', rotation=0, labelsize=14)
 		ax1.set_xticklabels(labels, rotation=0, ha="center")
 
-		ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
+		#ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
 		ax1.set_ylabel(y_label, fontsize=18)
 		ax1.tick_params(axis='y', rotation=0, labelsize=16)
 		leg_lines, leg_labels = ax1.get_legend_handles_labels()
@@ -310,6 +313,7 @@ class REquations:
 		equation_factors = {}	# dictionary with the factors for rate eqations, i.e. 2 * k_1[A][B]
 		print_constemperature = {}
 		tpd = {}  # dictionary of equations WITHOUT adsorptions
+		tpd_factors = {}
 		print_tpd = {}
 		'''surfequations = {}
 		for name in systems.keys():
@@ -325,57 +329,104 @@ class REquations:
 				equation_factors[name] = []
 				print_constemperature[name] = []
 				tpd[name] = []
+				tpd_factors[name] = []
 				print_tpd[name] = []
 				for process in processes:
 					eq, rfactor, peq = self.equation(processes[process], name, str(process))
-					constemperature[name].append(eq)
-					equation_factors[name].append(rfactor)
+					constemperature[name].append(eq) #if rfactor != 0 else 0
+					equation_factors[name].append(rfactor) #if rfactor != 0 else None
 					print_constemperature[name] += peq
 					if processes[process]["kind"] != "A":
 						tpd[name].append(eq)
+						tpd_factors[name].append(rfactor)
 						print_tpd[name] += peq
-				'''
-				if systems[name]['kind'] == 'adsorbate':
-					for s in surfequations:
-						if systems[s]['sites'] == systems[name]['sites']:
-							\''' the coverage is multiplied by the number of sites the adsorbate occupies because the
-							site is defined as the "area" of a single site and a molecule may occupy more than 
-							one, e.g. O2 occupies to O sites.\'''
-							surfequations[s] -= sp.symbols(f"{name}") * systems[name]['nsites']'''
+				if sum(equation_factors[name]) != 0:
+					raise ValueError(f"The species {name} does not considers equilibrium")
 
-		#self.constemperature = constemperature
-		#self.equation_factors = equation_factors
-		#self.surfequations = surfequations
-		#self.tpd = tpd
-		self.all_equations = (constemperature, equation_factors, tpd)
-
+		self.all_equations = (constemperature, equation_factors, tpd, tpd_factors)
 		self.printdata(print_constemperature, 'Cons_Temperature')
 		self.printdata(print_tpd, 'TPD')
+		self.overall_stoichiometry(systems, equation_factors)
 
 	@staticmethod
 	def equation(process, name, i):  # process is processes[process]; i indicates the process number
 		rfactor = 0
-		equation = 0
+		requation = 0
 		pequation = []      # list of equations to print
 		if name in process['products']:
 			for r in range(len(process['products'])):
 				if name == process['products'][r]:
 					rfactor = float(process['pstoichio'][r])
-					equation += process['krate0']
-			pequation.append("   +" + str(rfactor) + " * K_" + str(i))
+			requation = process['krate0']
+			pequation.append("+" + str(rfactor) + "*K_" + str(i))
 			for r in range(len(process['reactants'])):
-				equation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
+				requation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
 				pequation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
 		elif name in process['reactants']:
 			for r in range(len(process['reactants'])):
 				if name == process['reactants'][r]:
-					rfactor = float(process['rstoichio'][r])	# positive number as the "-" is in equation
-			equation -= process['krate0']
-			pequation.append("    -" + str(rfactor) + " * K_" + str(i))
+					rfactor = -1*float(process['rstoichio'][r])	# positive number as the "-" is in equation
+			requation = process['krate0']
+			pequation.append(str(rfactor) + "*K_" + str(i))
 			for r in range(len(process['reactants'])):
-				equation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
+				requation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
 				pequation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
-		return equation, rfactor, pequation
+		return requation, rfactor, pequation
+
+	@staticmethod
+	def overall_stoichiometry(systems, factors):
+		coeff_range = range(1, 2)  # range for vectors combination. Grows very fast so keep the range small.
+		names = list(factors.keys())
+		stoich_matrix = np.array([factors[name] for name in names])
+		ads_matrix = sp.Matrix([factors[name] for name in names if systems[name]['kind'] == 'adsorbate'])
+
+		def lcm(a, b):
+			return abs(int(a) * int(b)) // gcd(int(a), int(b))
+		def lcm_list(lst):
+			return reduce(lcm, lst)
+		def normalize_integer_vector(v):
+			v = [sp.nsimplify(x) for x in v]	# Convert to rationals
+			denoms = [x.as_numer_denom()[1] for x in v]    # Get denominators
+			lcm_denom = lcm_list(denoms)
+			v_int = [int(x * lcm_denom) for x in v]    # Scale to integers
+			nonzero = [abs(x) for x in v_int if x != 0]    # Remove common gcd
+			if nonzero:
+				g = reduce(gcd, nonzero)
+				v_int = [x // g for x in v_int]
+			return sp.Matrix(v_int)
+		def is_nonzero_reaction(overall_reaction):
+			return any(x != 0 for x in overall_reaction)
+
+		ns = ads_matrix.nullspace()    # Nullspace: eliminate surface species
+		if not ns:
+			raise ValueError("No solution eliminating adsorbate species")
+		solutions = []
+		for i, vec in enumerate(ns):
+			v_int = normalize_integer_vector(vec)
+			if any(x < 0 for x in v_int):    # Optional: enforce positive direction
+				v_int = -v_int
+		overall_reaction = stoich_matrix * v_int
+		solutions.append((v_int, overall_reaction))
+		filtered = [sol for sol in solutions if is_nonzero_reaction(sol[1])]
+		react = []
+		prod = []
+		for i, name in enumerate(names):
+			f =  filtered[0][1][i]
+			if f != 0 and systems[name]["kind"] == 'molecule' and systems[name]["pressure0"] > 0:
+				react.append(f"{int(f) * -1}.{name}")
+			elif f !=0 and systems[name]["kind"] == 'molecule' and systems[name]["pressure0"] == 0:
+				prod.append(f"{int(f)}.{name}")
+		folder = './KINETICS/EQUATIONS'
+		outputfile = folder + "/Overall_Reaction.dat"
+		output = open(outputfile, "w")
+		output.write("\n\t")
+		for i in range(len(react)-1):
+			output.write("{val} + ".format(val=react[i]))
+		output.write("{val} --> ".format(val=react[-1]))
+		for i in range(len(prod)-1):
+			output.write("{val} + ".format(val=prod[i]))
+		output.write("{val}\n\n".format(val=prod[-1]))
+		return list(filtered[0][1])
 
 	@staticmethod
 	def printdata(equations, experiment):

@@ -432,11 +432,11 @@ processes = RConstants(dict(rconditions), dict(systems), dict(processes), list(r
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 print("\t... Generating Rate Equations ...")
-cons_temperature, equation_factors, tpd = REquations(dict(processes), dict(systems)).all_equations
+cons_temperature, equation_factors, tpd, tpd_factors = REquations(dict(processes), dict(systems)).all_equations
 #surf_equations = REquations(dict(processes), dict(systems)).surfequations
 #tpd = REquations(dict(processes), dict(systems)).tpd
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 ConsTemperature(dict(rconditions), dict(systems), dict(processes), dict(cons_temperature), dict(equation_factors))
-TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd), dict(equation_factors))
+TPR(dict(rconditions), dict(systems), dict(processes), dict(tpd), dict(tpd_factors))
 print("... Microkinetics Completed ...")
 print("\t\t\t\tTotal time:", round((time.time()-start0)/60, 3), " minutes")
