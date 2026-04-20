@@ -19,12 +19,3 @@ constants = {
 	JtoeV: sp.Float(6.24150974e18)  # 1 J = 6.24..e18 eV
 	}
 
-
-def sym_equation(processes, process):
-    '''The rates expressions re-written using the symbolic rate constant instead of the long formula.
-    reaction facors are passd from kinetics.py '''
-    equation = sp.symbols(f'k_{process}', commutative=False)
-    for i, r in enumerate(processes[process]['reactants']):
-        equation *= sp.symbols(f"{r}", commutative=False) ** processes[process]['rstoichio'][i]
-
-    return equation

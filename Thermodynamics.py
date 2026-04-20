@@ -508,7 +508,10 @@ class Enthalpy:
 				cp_vib_large = kb * (x**2 * sp.exp(-x) / (1-sp.exp(-x))**2)    # safe for large x (uses exp(-x))
 				cp_vib_small = kb * (x**2 * sp.exp(x)) / (sp.exp(x)**2)  # good for small/moderate x
 				# Piecewise symbolic expression (keeps things symbolic until lambdify)
-				cp_vib += sp.Piecewise((cp_vib_small, sp.Lt(x, 30)), (cp_vib_large, True))
+				#cp_vib += sp.Piecewise((cp_vib_small, sp.Lt(x, 30)), (cp_vib_large, True))
+				delta = 1.0		# smooth transition Numpy-friendly (suggested by ChatGPT)
+				switch = 1 / (1 + sp.exp((x - 30) / delta))
+				cp_vib += switch * cp_vib_small + (1 - switch) * cp_vib_large
 				# closed form integral: (hc*freq/kb)*kB / (exp(hc*freq/(kb*T)) - 1) -> simplifies to h*c*nu/(exp(hc nu/(kB T))-1)
 				cp_integral += sp.simplify( hc*freq * (sp.exp(-x) / (1 - sp.exp(-x))) ) # safe to avoid overflow
 		cp = sp.together(cp_trans + cp_rot + cp_vib)
@@ -540,7 +543,10 @@ class Enthalpy:
 				cp_vib_large = kb * (x ** 2 * sp.exp(-x) / (1 - sp.exp(-x)) ** 2)  # safe for large x (uses exp(-x))
 				cp_vib_small = kb * (x ** 2 * sp.exp(x)) / (sp.exp(x) ** 2)  # good for small/moderate x
 				# Piecewise symbolic expression (keeps things symbolic until lambdify)
-				cp_vib += sp.Piecewise((cp_vib_small, sp.Lt(x, 30)), (cp_vib_large, True))
+				#cp_vib += sp.Piecewise((cp_vib_small, sp.Lt(x, 30)), (cp_vib_large, True))
+				delta = 1.0		# smooth transition Numpy-friendly (suggested by ChatGPT)
+				switch = 1 / (1 + sp.exp((x - 30) / delta))
+				cp_vib += switch * cp_vib_small + (1 - switch) * cp_vib_large
 				# closed form integral: (hc*freq/kb)*kB / (exp(hc*freq/(kb*T)) - 1) -> simplifies to h*c*nu/(exp(hc nu/(kB T))-1)
 				cp_integral += sp.simplify(hc * freq * (sp.exp(-x) / (1 - sp.exp(-x))))  # safe to avoid overflow
 		cp = sp.together(cp_trans + cp_rot + cp_vib)

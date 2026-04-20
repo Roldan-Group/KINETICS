@@ -6,7 +6,7 @@ import os, pathlib
 import sympy as sp
 import numpy as np
 from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
-from sympy import Max, Piecewise
+#from sympy import Max, Piecewise
 from math import gcd
 from functools import reduce
 from itertools import product
@@ -103,6 +103,9 @@ class RConstants:
 				expr *= systems[name][q] ** process['rstoichio'][i]
 			return expr
 
+		def smooth_step(x, x0, w):
+			return 1 / (1 + sp.exp(-(x - x0) / w))
+
 		qts = 1     # total partition function for transition states
 		if len(process['ts']) > 0:
 			for i in range(len(process['ts'])):
@@ -121,11 +124,16 @@ class RConstants:
 					expr3 = build_qts(name, ["qrot", "qelec", "qtrans2d", "qvib2d"])	# mobile TS in 2D
 					expr4 = build_qts(name, ["qrot", "qelec", "qvib2d"])	# partially immobile TS (Direct adsorption)
 					expr5 = build_qts(name, ["qelec", "qvib2d"])	# immobile TS
-					qts *= Piecewise((expr1, (e_a <= 0.01)),
-									(expr2, (0.01 < e_a) & (e_a <= 0.25)),
-									(expr3, (0.25 < e_a) & (e_a <= 0.7)),
-									(expr4, (0.7 < e_a) & (e_a <= 1.)),
-									(expr5 * sp.exp(-e_a / (kb * temp * JtoeV)), (e_a > 1.)))
+					w1 = 1 - smooth_step(e_a, 0.01, 0.01)
+					w2 = smooth_step(e_a, 0.01, 0.01) * (1 - smooth_step(e_a, 0.25, 0.02))
+					w3 = smooth_step(e_a, 0.25, 0.02) * (1 - smooth_step(e_a, 0.7, 0.05))
+					w4 = smooth_step(e_a, 0.7, 0.05) * (1 - smooth_step(e_a, 1.0, 0.05))
+					w5 = smooth_step(e_a, 1.0, 0.05)
+					# qts *= Piecewise((expr1, (e_a <= 0.01)), (expr2, (0.01 < e_a) & (e_a <= 0.25)),
+					#				(expr3, (0.25 < e_a) & (e_a <= 0.7)), (expr4, (0.7 < e_a) & (e_a <= 1.)),
+					#				(expr5 * sp.exp(-e_a / (kb * temp * JtoeV)), (e_a > 1.)))
+					qts *= (w1 * expr1 + w2 * expr2 + w3 * expr3 + w4 * expr4 +
+							w5 * expr5 * sp.exp(-e_a / (kb * temp * JtoeV)))
 				else:
 					qts *= systems[name]['q3d']**process['rstoichio'][i]
 		return qts/qr
@@ -144,8 +152,7 @@ class RConstants:
 					area = float([systems[i][j]['marea'] for j in systems[i].keys() if j not in restricted_arg][0])
 					''' Same reasoning is applied for the molecular mass'''
 					mass = float([systems[i][j]['mass'] for j in systems[i].keys() if j not in restricted_arg][0])
-			arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*kb*temp)
-			# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
+			arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*kb*temp)	# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
 		else:
 			qts = 1  # total partition function for transition states
 			qr = 1  # total partition function for reactants
@@ -291,10 +298,10 @@ class RConstants:
 		x_limit = [ax1.get_xlim()[0], ax1.get_xlim()[1]]
 		#ax1.plot(x_limit, [1e-20, 1e-20], "k-", lw=1.5)
 		ax1.set_xlim(x_limit)
-		ax1.set_xlabel(x_label, fontsize=16)
+		ax1.set_xlabel(x_label, fontsize=18)
 		ax1.set_xticks(x)
 		ax1.tick_params(axis='x', rotation=0, labelsize=14)
-		ax1.set_xticklabels(labels, rotation=0, ha="center")
+		ax1.set_xticklabels(labels, rotation=90, ha="right")
 
 		#ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
 		ax1.set_ylabel(y_label, fontsize=18)

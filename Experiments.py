@@ -8,8 +8,9 @@ import time
 import sympy as sp
 import numpy as np
 from scipy.integrate import solve_ivp
-from Symbols_def import t, temp, constants, sym_equation
-from Kinetics import REquations
+from scipy.optimize import root
+from Symbols_def import t, temp, kb, JtoeV, constants
+#from Kinetics import REquations
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -36,12 +37,12 @@ def printdata(experiment, data):
 	for row in data[1:]:
 		for i in range(len(row)):
 			a = np.abs(float(row[i]))
-			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val= a, c='f' if 1e-5 < a < 1e3 or a == 0. else
+			output.write(" {val:>{wid}.3{c}}".format(wid=maxlen[i], val= a, c='f' if 1e-3 < a < 1e3 or a == 0. else
 			'e'))
 		output.write("\n")
 	output.close()
 
-def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, ics, arguments):
+def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, gas_number, rhs, ics, arguments):
 	''' time: tuple or list, e.g. (0, 10, 0.1)
 		species: list of sympy symbols [theta_A, theta_B, ...]
 		rhs: list of sympy expressions for d(species)/dt
@@ -49,12 +50,14 @@ def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, i
 		arguments: tuple or list of non-time parameters (e.g. temp, pressures, etc.) '''
 	''' substitute the symbolic constants, e.g. h, kb, ..., by its values '''
 	ics = np.asarray(ics, dtype=float)
-	rhs = [i.subs(constants) for i in rhs]
+	#rhs = [i.subs(constants) for i in rhs]	# already done in ConsTEMP
 	conditions = [t, temp]  # conditions required to lambdify
 
-	''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species'''
-	f_ode = sp.lambdify((*conditions, *species, *surfaces_s), rhs, ["numpy", 'sympy'])  #
-
+	''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species
+	surfaces have been substituted in the rhs '''
+	f_ode = sp.lambdify((*conditions, *species), rhs, ["numpy", 'sympy'])  #
+	jacobian = sp.Matrix(rhs).jacobian(species)
+	f_jac = sp.lambdify((*conditions, *species), jacobian, ["numpy", "sympy"])
 	''' substitute rconditions'''
 	t_span = (time[:2])  # time grid
 	t_eval = np.arange(*time)
@@ -63,44 +66,25 @@ def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, i
 	def ode_system(t_num, y, *args):    # define ode function compatible with solve_ivp
 		if len(args) < 1:
 			raise ValueError("ERROR! Temperature not passed into ODE solver.")
-		temp_num = args[0]
-		y = np.clip(y, 0.0, None)     # Enforce physical bounds on adsorbates
-		''' reconstruct algebraic expression to define Surface sites in the rhs'''
-		surface_values = [] ## no worthy to pass it through the subroutine, too many patches.
-		for s_sym in surfaces_s:
-			s_name = str(s_sym)
-			coverage = 1.0    # Start with one full site
-			for idx in adsorbates_by_surface[s_name]:	# Subtract adsorbates occupying this surface
-				name = species[idx]     # idx is the position of the adsorbate in species
-				coverage -= y[idx] * systems[name]["nsites"]
-			if coverage > 1:
-				raise ValueError(f"ERROR! Coverage {s_sym} is bigger than 1.")
-			coverage = np.clip(coverage, 0.0, 1.0) # Prevent zero / negative free coverage
-			surface_values.append(coverage)
-		dydt = f_ode(t_num,  *[temp_num], *y, *surface_values)	# Evaluate RHS | There is ONLY t and Temp, for now
+		dydt = f_ode(t_num, *args, *y)	# Evaluate RHS | There is ONLY t and Temp, for now
 		if not np.all(np.isfinite(dydt)):	# Safety check
-			raise RuntimeError(f"Non-finite RHS at t={t_num}\n", f"y={y}\n",
-							   f"surface={surface_values}\n", f"dydt={dydt}")
-		return np.array(dydt, dtype=float)  # .flatten()
+			raise RuntimeError(f"Non-finite RHS at t={t_num}\n", f"y={y}\n", f"dydt={dydt}")
+		return np.array(dydt, dtype=float)
 
 	''' The jacobian provides stability and accelerate the ODE convergence '''
-	def jac_numeric(t, y, temp_num):
-		jacobian = np.zeros((len(y), len(y)))
-		f0 = ode_system(t, y, temp_num)
-		for i in range(len(y)):
-			h = 1e-8 * max(1.0, abs(y[i]))  # “Perturb species i by a very small amount (10⁻⁸), recompute the RHS.
-			y2 = y.copy()
-			y2[i] += h
-			jacobian[:, i] = (ode_system(t, y2, temp_num) - f0) / h
-		return jacobian
+	def jac_analytic(t_num, y, *args):
+		jac_eval = f_jac(t_num, *args, *y)
+		return np.array(jac_eval, dtype=float)
 
 	sol = solve_ivp(ode_system, t_span, ics, t_eval=t_eval,
 					args=arguments if isinstance(arguments, tuple) else (arguments,),
-					method='BDF', jac=jac_numeric, rtol=1e-6, atol=1e-8)	#, events=steady_state_event)  # Alternative: "BDF" or "Radau"
+					method='LSODA', jac=jac_analytic, rtol=1e-6, atol=1e-8)	#, rtol <=1e-4 | BDF or Radau
 	if not sol.success:
 		raise RuntimeError(f"ODE solver failed: {sol.message}")
+
 	''' Build the augmented solution (gasses + adsorbates + surfaces) '''
-	surface_values = ConsTemperature.surface_coverages(sol, species, surfaces_s, adsorbates_by_surface, systems)
+	sol.y = clip_species(surfaces_s, adsorbates_by_surface, gas_number, sol.y.copy())
+	surface_values = surface_coverages(sol.y, species, surfaces_s,	adsorbates_by_surface, systems)
 	solution = SimpleNamespace()
 	solution.t = sol.t
 	solution.y = np.vstack([sol.y, *surface_values])
@@ -111,56 +95,100 @@ def ode_solver(systems, time, species, surfaces_s, adsorbates_by_surface, rhs, i
 
 	return sol, solution, data.flatten().tolist()   # gas + ads, gas + ads + surfaces
 
+def check_adsorbates(systems, species, surfaces_s, adsorbates_by_surface, y, t_check):
+	''' Print adsorbates' coverage '''
+	for s_sym in surfaces_s:
+		s_name = str(s_sym)
+		message = []
+		a_sum = 0
+		for idx in adsorbates_by_surface[s_name]:  # idx is the position of the adsorbate in species
+			name = species[idx]  # name is the system, e.g, H2O
+			message.append(f"{species[idx]}:{np.abs(y[idx, t_check]) * systems[name]["nsites"]}")
+			a_sum += np.abs(y[idx, t_check]) * systems[name]["nsites"]
+	print(f"ADSORBATES(t={t_check}): {message} --> SUM: {a_sum}")
+
+def clip_species(surfaces_s, adsorbates_by_surface, gas_number, y):
+	for s_sym in surfaces_s:
+		s_name = str(s_sym)
+		for idx in adsorbates_by_surface[s_name]:  # idx is the position of the adsorbate in species
+			y[idx] = np.clip(y[idx], 0.0, 1.0)  # adsorbates between 0 and 1
+	for idx in gas_number:
+		y[idx] = np.clip(y[idx], 0.0, None)  # ensures gases > 0
+	return y
+
+def surface_coverages(y, species, surfaces, adsorbates_by_surface, systems):
+	surface_values = []
+	for s_sym in surfaces:
+		s_name = str(s_sym)
+		coverage = np.ones(y.shape[1])
+		message = []
+		for idx in adsorbates_by_surface[s_name]:  # idx is the position of the adsorbate in species
+			name = species[idx]  # name is the system NOT symbol, e.g, H2O
+			coverage -= y[idx, :] * systems[name]["nsites"]
+			message.append(f"{species[idx]}:{y[idx] * systems[name]["nsites"]}")
+		#if np.any(coverage < -1e-8) or np.any(coverage > 1. + 1e-8):  # the 1e-8 some wiggle for optimisation
+		#	check_adsorbates(systems, species, surfaces, adsorbates_by_surface, y, -1)
+		#	raise ValueError(f"ERROR! Coverage {s_name}: min={coverage.min()}, max={coverage.max()}")
+		surface_values.append(np.clip(coverage, 0.0, 1.0))  # Enforce physical meaning
+	return surface_values
 
 class ConsTemperature:
 	def __init__(self, rconditions, systems, processes, equations, equation_factors):
 		start = time.time()
 		print("\t... Generating Concentrations and Rates ...")
 		''' in arguments, the temperature numeric value should be the first entry (arg[0] '''
-		ics, species, surfaces, adsorbates_by_surface = self.initial_species(processes, systems)
+		ics, species, surfaces, gas_number, adsorbates_by_surface = self.initial_species(processes, systems)
+
+		''' reconstruct algebraic expression to define Surface sites '''
+		surface_expr = {}	 ## no worthy to pass it through the subroutine, too many patches.
+		for s_sym in surfaces:
+			s_name = str(s_sym)
+			coverage_expr = 1.0    # Start with one full site
+			for idx in adsorbates_by_surface[s_name]:	# Subtract adsorbates occupying this surface
+				name = species[idx]     # idx is the position of the adsorbate in species
+				coverage_expr -=  sp.symbols(name) * systems[str(name)]["nsites"]	#	symbolic
+			surface_expr[s_sym] = coverage_expr
+
+		''' Defines rhs and substitutes the contants and Surface sites'''
 		rhs = []
 		for name in species:        # lists of names with the order of ics
 			dydt = 0
 			for i in range(len(equations[name])):
-				dydt += equation_factors[name][i]*equations[name][i]
-			rhs.append(dydt)     # rhs for SciPy
+				dydt += equation_factors[name][i] * equations[name][i]
+			rhs.append(dydt.subs(constants))     # rhs for SciPy
+		rhs = [i.subs(surface_expr) for i in rhs]		# This replaces ALL surfaces simultaneously.
+
 		''' evaluate the Reaction Rates '''
 		data = [*rconditions.keys(), *species, *surfaces]  # basic: Temp, time, species
 		data_elements = len(data)
 		rates_ss = [key for key in rconditions.keys() if key != "time"] + [*species]  # time not
-		rates_elements = len(rates_ss)
-		# required as it is at steady-state
+		rates_elements = len(rates_ss)		# required as it is at steady-state
 		rates_avg = rates_ss.copy()   # time not required as it is an average along time
 		drc_data = {}   # nested dictionary of temperatures and concentrations at time[-1]
 		dsc_data = {}   # nested dictionary of temperatures and concentrations at time[-1]
 		if isinstance(rconditions['temperature'], (int, float)): # single temperature
-			sol, solution, sol_T = ode_solver(systems, rconditions["time"], species, surfaces, adsorbates_by_surface,  rhs, ics,
-									(rconditions['temperature'],))
+			sol, solution, sol_T = ode_solver(systems, rconditions["time"], species, surfaces, adsorbates_by_surface,
+											  gas_number, rhs, ics,	(rconditions['temperature'],))
 			data += sol_T
 			drc_data[rconditions['temperature']] = sol.y
 			dsc_data[rconditions['temperature']] = solution.y[:, -1]
-			ss, avg = ConsTemperature.rates(systems, species, surfaces, adsorbates_by_surface, rhs, sol,
-											rconditions['temperature'])
+			ss, avg = ConsTemperature.rates(species, rhs, sol, rconditions['temperature'])
 			rates_ss += ss
 			rates_avg += avg
 		else:      # temperature ramp
 			for temp_num in np.arange(*rconditions["temperature"]):     # integrate at different temperatures
 				sol, solution, sol_T = ode_solver(systems, rconditions["time"], species, surfaces, adsorbates_by_surface,
-												  rhs, ics, (temp_num,))
-
-
-				print("TEMP:", temp_num, "SOL:", sol.y)
-
-
+												  gas_number, rhs, ics, (temp_num,))
 				data += sol_T  # transposed solution: (time x species)
 				drc_data[str(temp_num)] = sol
 				dsc_data[str(temp_num)] = solution.y[:, -1]
-				ss, avg = ConsTemperature.rates(systems, species, surfaces, adsorbates_by_surface, equations, sol,
-												temp_num)
+				ss, avg = ConsTemperature.rates(species, rhs, sol, temp_num)
 				rates_ss += ss
 				rates_avg += avg
+		''' Cons_Temp Experiments '''
 		data = np.array(data).reshape(-1, data_elements)  # n columns, inferred rows
 		printdata("Cons_Temperature", data)
+		''' Rates Experiments '''
 		rates_ss = np.array(rates_ss).reshape(-1, rates_elements)
 		rates_avg = np.array(rates_avg).reshape(-1, rates_elements)
 		printdata("SteadyState_Rates", rates_ss)    # temperature x processes
@@ -170,17 +198,14 @@ class ConsTemperature:
 		ConsTemperature.barplot("Average Rates", "Species", ylabel, rates_avg, species, 0.5)
 		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
 
+		print("DATA RATES", rates_avg)
+
+
 		start = time.time()
 		print("\t... Generating Degree of Rate Control ...")
-		ConsTemperature.degree_of_rate_control(rconditions, processes, systems, species, surfaces,
-											   adsorbates_by_surface, equations, equation_factors, drc_data)
+		ConsTemperature.analytical_degree_of_rate_control(systems, processes, species, equation_factors, drc_data,
+														  surfaces, adsorbates_by_surface, gas_number)
 		print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
-		#start = time.time()
-		#print("\t... Generating Degree of Selectivity Control ...")
-
-		#print("DSC_DATA\n", dsc_data)
-		#ConsTemperature.degree_of_selectivity_control(rconditions, systems, processes, species, surfaces, dsc_data)
-		#print("\t\t\t\t", round((time.time() - start) / 60, 3), " minutes")
 
 	@staticmethod
 	def initial_species(processes, systems):  # process is processes[process]
@@ -210,41 +235,35 @@ class ConsTemperature:
 			adsorbates_by_surface[str(s)] = [i for i, name in enumerate(species) if
 											 systems[name]["kind"] == "adsorbate"
 											 and systems[name]["sites"] == systems[str(s)]["sites"]]
+		gas_number = [i for i, name in enumerate(gases)]
 
-		return ics_gases + ics_ads, species, sorted(surfaces), adsorbates_by_surface
+		return ics_gases + ics_ads, species, sorted(surfaces), gas_number, adsorbates_by_surface
 
 	@staticmethod
-	def rates(systems, species, surfaces, adsorbates_by_surface, equations, sol, temp_num):
+	def rates(species, rhs, sol, temp_num):
 		''' rhs: list of sympy expressions r1(..), r2(..), ... using species symbols
 		species: list of sympy symbols [theta_A, theta_B, ...] '''
-		''' Find the surface converages at temp_num using sol'''
-		surface_values = ConsTemperature.surface_coverages(sol, species, surfaces, adsorbates_by_surface, systems)
-		''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species'''
-		conditions = [t, temp]  # conditions required to lambdify
-		rate_equations = []
-		for name in species:
-			r_i = 0
-			for i in range(len(equations[name])):
-				r_i += equations[name][i]
-			rate_equations.append(r_i.subs(constants))
-		rate_fn = sp.lambdify((*conditions, *species, *surfaces), rate_equations,["numpy", 'sympy'])
-
 		if len(sol.t) < 2:		# Defensive conditions
 			raise RuntimeError("ODE solver returned too few time points in Experiments.rates.")
 		dt = sol.t[-1] - sol.t[0]
 		if dt == 0 or not np.isfinite(dt):
 			raise RuntimeError("Invalid time interval in ODE solution in Experiments.rates.")
 
+		''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species 
+		 No need to include the surfaces because rhs has them substituted with adsorbates. '''
+		conditions = [t, temp]  # conditions required to lambdify
+		rate_fn = sp.lambdify((*conditions, *species), rhs,["numpy", 'sympy'])
+
 		''' evaluating the rates as a function of time '''
-		rate_time = np.array(rate_fn(sol.t, temp_num, *sol.y,  *surface_values), dtype=float).T # (times x species)
+		rate_time = np.array(rate_fn(sol.t, temp_num, *sol.y), dtype=float).T # (times x species)
 		if rate_time.ndim != 2:
 			print("rate_time", rate_time)
 			raise ValueError(f"rate_time should be 2D (time, species), got {rate_time.shape}")
 		n_tail = max(1, int(0.1 * len(rate_time)))  # if rate_time !=0, get 10% of the last points
-		rate_ss = [float(temp_num)] + [i for i in np.array(rate_time[-n_tail:]).mean(axis=0).tolist()]   # rates at the
-		# steady-state, i.e. over the last 10% of the time points
+		rate_ss = [float(temp_num)] + [i for i in np.array(rate_time[-n_tail:]).mean(axis=0).tolist()]
 		if np.any(~np.isfinite(rate_time)):
 			raise RuntimeError("rate_time contains NaN or inf -- Experiments.rates.")
+
 		''' Numpy versions > 2.0 uses "trapezoid" instead of "trapz" '''
 		avg = np.trapz(rate_time, sol.t, axis=0) / dt  # rate averages along t_span using the trapezoidal rule
 		rate_avg = [float(temp_num)] + avg.tolist()
@@ -275,12 +294,12 @@ class ConsTemperature:
 		x_limit = [ax1.get_xlim()[0], ax1.get_xlim()[1]]
 		#ax1.plot(x_limit, [1e-20, 1e-20], "k-", lw=1.5)
 		ax1.set_xlim(x_limit)
-		ax1.set_xlabel(x_label, fontsize=16)
+		ax1.set_xlabel(x_label, fontsize=18)
 		ax1.set_xticks(x)
 		ax1.tick_params(axis='x', rotation=0, labelsize=14)
-		ax1.set_xticklabels(labels, rotation=45, ha="center")
+		ax1.set_xticklabels(labels, rotation=45, ha="right")
 
-		ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
+		#ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
 		ax1.set_ylabel(y_label, fontsize=18)
 		ax1.tick_params(axis='y', rotation=0, labelsize=16)
 
@@ -293,220 +312,209 @@ class ConsTemperature:
 					transparent=True)
 
 	@staticmethod
-	def surface_coverages(sol, species, surfaces, adsorbates_by_surface, systems):
-		n_points = len(sol.t)
-		surface_values = []
-		for s_sym in surfaces:
-			s_name = str(s_sym)
-			coverage = np.ones(n_points)
-			for idx in adsorbates_by_surface[s_name]:  # idx is the position of the adsorbate in species
-				name = species[idx]  # name is the system, e.g, H2O
-				coverage -= np.abs(sol.y[idx, -1]) * systems[name]["nsites"]
-			if np.any(coverage < -1e-20) or np.any(coverage > 1 + 1e-20):  # the 1e-20 gives some wiggle
-				raise ValueError(f"ERROR! Coverage {s_sym} is beyon the [0,1] limit.")
-			surface_values.append(np.clip(coverage, 0.0, 1.))     # Enforce physical bounds on adsorbates
-			# np.maximum(coverage, 0.0))  # clipping the lower limit
-		return surface_values
-
-	@staticmethod
-	def degree_of_rate_control(rconditions, processes, systems, species, surfaces, adsorbates_by_surface, equations,
-							   equation_factors, sol_base):
+	def analytical_degree_of_rate_control(systems, processes, species, equation_factors, sol_base, surfaces,
+										  adsorbates_by_surface, gas_number):
 		''' The Degree of Rate Control (DRC), introduced by C. T. Campbell (J. Catal. 204, 520, 2001), quantifies how
 		   sensitive the overall reaction rate is to each elementary step’s rate constant. '''
-		k_list = [processes[process]['krate0'] for process in processes]    # the first process is "1"
-		temp_list = [float(i) for i in sol_base.keys()]
-		eps = 1e-6  # constant perturbation factor, small enough to retain linearity
-		''' Find the reactants and forming products to define the net rate '''
-		reactants = []
-		products = []
-		for name in systems:
-			if systems[name]['kind'] == 'molecule':
-				if systems[name]['pressure0'] > 0.0:
-					reactants.append(name)
-				elif systems[name]['pressure0'] == 0.0:
-					products.append(name)
-		rhs = []
-		for name in species:  # lists of names with the order of ics
+		''' DRC must be computed using a reaction rate, not a species balance.
+		Correct choices:	rate of product formation
+							rate of reactant consumption
+							sum of elementary fluxes forming product '''
+		# --- Symbols ---
+		species_syms = {s: sp.Symbol(s) for s in species}
+		k_list = list(processes.keys())
+		k_syms = {pr: sp.Symbol(f"k_{pr}") for pr in processes}
+		k_sym_list = [k_syms[k] for k in k_list]
+		concentrations_vec = sp.Matrix([species_syms[s] for s in species])
+		all_variables = (temp, *concentrations_vec, *k_sym_list)
+
+		# --- Reaction Step pairing ---
+		step_pairs = [(k_list[i], k_list[i + 1]) for i in range(0, len(k_list), 2)]
+		if not step_pairs:
+			raise ValueError("No forward/backward step pairs found")
+
+		data_heading = ["Temperature"] + [f"Step_{i}" for i in step_pairs]
+
+		# --- Rate constants ---
+		k_func = {k: sp.lambdify(temp, processes[k]['krate0'].subs(constants), 'numpy') for k in k_list}
+		def keq_func(temp_num):	# Equilibriuma constants : DRC and DSC per forward/backward
+			kf = np.array([k_func[j_f](temp_num) for j_f, _ in step_pairs])
+			kb = np.array([k_func[j_b](temp_num) for _, j_b in step_pairs])
+			return kf / kb
+
+		# --- Surface expressions ---
+		surface_expr = {}
+		for s_sym in surfaces:
+			s_name = str(s_sym)
+			coverage_expr = 1.0
+			for idx in adsorbates_by_surface[s_name]:
+				name = species[idx]
+				coverage_expr -= species_syms[name] * systems[str(name)]["nsites"]
+			surface_expr[s_sym] = coverage_expr
+
+		# --- Build RHS ---
+		f_list = []
+		for name in species:
 			dydt = 0
-			for i in range(len(equations[name])):
-				dydt += equation_factors[name][i] * equations[name][i]
-			rhs.append(dydt)  # rhs for SciPy
-		''' Convert symbolic into numerical --- ics is the initial concentrations in the same order than species'''
-		conditions = [t, temp]  # conditions required to lambdify
-		#f_ode = sp.lambdify((*conditions, *species, *surfaces), [i.subs(constants) for i in rhs], ["numpy",
-		# 'sympy'])  #
-
-		''' the selection of +i and -i could be improve but cheching reactants and products.'''
-		labels = [f"{i}/{i+1}" for i in range(1, len(processes), 2)]
-		data_i = {f'{name}': [[*list(rconditions.keys())[:-1], *labels]] for name in reactants+products} # at steady-state
-		for temp_num in [temp_list[0] ]: #, temp_list[-1]]: # initial and final temperatures
-			data_row = {f'{name}': [temp_num] for name in reactants+products}
-			sol = sol_base[str(temp_num)]
-			ics_local = sol.y[:, -1]
-			''' Find the species concentrations and surface converages at temp_num using sol_base'''
-			coverages = {f"{species[i]}": np.abs(sol.y[i, -1]) for i in range(len(species))}
-			surface_values = ConsTemperature.surface_coverages(sol, species, surfaces, adsorbates_by_surface, systems)
-			surfaces_num = {f"{surfaces[i]}": np.abs(surface_values[i][-1]) for i in range(len(surfaces))}
-			''' DRC must be computed using a reaction rate, not a species balance.
-			Correct choices:	rate of product formation
-								rate of reactant consumption
-								sum of elementary fluxes forming product  '''
-			net_rate0 = {}
-			for name in products:
-				r_i = 0
-				for i in range(len(equations[name])):
-					r_i += equations[name][i]
-				rate_equation = r_i.subs(constants)
-				net_rate0[name] = np.float64(sp.lambdify((*conditions[1:], *species, *surfaces),
-			                                    rate_equation, "numpy")(temp_num, **coverages, **surfaces_num))
-
-				if net_rate0[name] <= 0.:
-					print(name, rate_equation)
-					print("temp", temp_num)
-					print("coverages", coverages)
-					print("surfaces", surfaces_num)
-					exit()
-
-			for i in range(1, len(processes), 2):
-				''' The partial derivative is taken holding constant the rate constants, k_j, for all 
-				other steps j ≠ i and the equilibrium constant, K_i, for step i (and all other steps too, 
-				since their forward and reverse rate constants are held fixed). Note that keeping K_i constant
-				means that the forward and reverse rate constants for step i, k_i and k_–i, both must be 
-				varied by equal factors so that their ratio remains constant. 
-				Campbel, ACS Catal. 2017, 7, 4, 2770–2779 https://doi.org/10.1021/acscatal.7b00115 '''
-
-				processes[str(i)]['krate0'] *= (1 + eps)    # the forward constant (1) + the perturbation
-				processes[str(i+1)]['krate0'] *= (1 + eps)    # the forward constant (1) + the perturbation
-				''' get the perturbed rhs: 
-				because rhs derives from the ConsTemperature REquations (in Kinetics.py), processes[process][krate0]
-				has to be modified and REquations recalled to generate the perturbed rhs '''
-				sol, _, _ = ode_solver(systems, rconditions['time'], species, surfaces, adsorbates_by_surface, rhs,
-				                       ics_local, (temp_num,))
-				ics_local = sol.y[:, -1]
-				''' Find the coverages, surface coverage and net rates at temp_num using previous sol '''
-				local_coverages = {f"{species[s]}": np.abs(sol.y[s, -1]) for s in range(len(species))}
-				surface_values = ConsTemperature.surface_coverages(sol, species, surfaces, adsorbates_by_surface,
-				                                                   systems)
-				local_surfaces_num = {f"{surfaces[s]}": np.abs(surface_values[s][-1]) for s in range(len(surfaces))}
-				for name in products:
-					r_i = 0
-					for e in range(len(equations[name])):
-						r_i += equations[name][e]
-					rate_equation = r_i.subs(constants)
-
-					net_rate1 = (sp.lambdify((*conditions[1:], *species, *surfaces), rate_equation, "numpy")
-								 (temp_num, **local_coverages, **local_surfaces_num))
-
-					if net_rate0[name] <= 0 or net_rate1 <= 0:
-						a = np.nan
+			for j, pr in enumerate(k_list):
+				expr = k_syms[pr]
+				for i, r in enumerate(processes[pr]['reactants']):
+					if r in species_syms:
+						expr *= species_syms[r] ** processes[pr]['rstoichio'][i]
 					else:
-						a = float(np.log(net_rate1/net_rate0[name]) / np.log(1. + eps))
+						expr *= surface_expr[r] ** processes[pr]['rstoichio'][i]
+				dydt += equation_factors[name][j] * expr
+			f_list.append(dydt)
+		f_vec = sp.Matrix(f_list)
+		f_func = sp.lambdify(all_variables, f_vec, "numpy")
 
-					print("RATES for ", name, net_rate1, net_rate0[name], f"process {i}/{i + 1} at {temp_num} K =", a)
+		# --- Jacobian ---
+		j_sym = f_vec.jacobian(concentrations_vec)
+		j_func = sp.lambdify(all_variables, j_sym, "numpy")
 
-					data_row[name].append(a)
+		# --- Products ---
+		products = [name for name in systems if systems[name]['kind'] == 'molecule' and systems[name]['pressure0'] == 0]
+		rate_exprs = {p: f_vec[species.index(p)] for p in products}
+		r_funcs = {p: sp.lambdify(all_variables, rate_exprs[p], "numpy") for p in products}
 
-				''' reset the reaction constants to the original form'''
-				processes[str(i)]['krate0'] = k_list[i-1]   # k_list starts from 0 but processes from 1
-				processes[str(i+1)]['krate0'] = k_list[i]   # k_list starts from 0 but processes from 1
-			for name in products:
-				data_i[name].append(data_row[name])
+		# --- ∂r/∂θ : Matrix (Np × Ns) ---
+		dr_dtheta_sym = sp.Matrix([[sp.diff(rate_exprs[p], s) for s in concentrations_vec] for p in products])
+		dr_dtheta_func = sp.lambdify(all_variables, dr_dtheta_sym, "numpy")
+
+		# --- ∂f/∂k : Matrix (Ns × Nk) with thermodynamic constraint ---
+		df_dkf_cols = []
+		df_dkb_cols = []
+		for pr_f, pr_b in step_pairs:
+			kf = k_syms[pr_f]
+			kb = k_syms[pr_b]	# it is dependent of kf and link through keq
+			term_f = kf * f_vec.diff(kf)
+			term_b = kb * f_vec.diff(kb)
+			df_dkf_cols.append(term_f)
+			df_dkb_cols.append(term_b)
+		df_dkf_sym = sp.Matrix.hstack(*df_dkf_cols)
+		df_dkb_sym = sp.Matrix.hstack(*df_dkb_cols)
+		df_dkf_func = sp.lambdify(all_variables, df_dkf_sym, "numpy")
+		df_dkb_func = sp.lambdify(all_variables, df_dkb_sym, "numpy")
+
+		# --- ∂r/∂k direct : Matrix (Np × Nk) ---
+		dr_dkf_cols = []
+		dr_dkb_cols = []
+		for pr_f, pr_b in step_pairs:
+			kf = k_syms[pr_f]
+			kb = k_syms[pr_b]
+			term_f = sp.Matrix([kf * sp.diff(rate_exprs[p], kf) for p in products])
+			term_b = sp.Matrix([kb * sp.diff(rate_exprs[p], kb) for p in products])
+			dr_dkf_cols.append(term_f)
+			dr_dkb_cols.append(term_b)
+		dr_dkf_direct_sym = sp.Matrix.hstack(*dr_dkf_cols)
+		dr_dkb_direct_sym = sp.Matrix.hstack(*dr_dkb_cols)
+		dr_dkf_direct_func = sp.lambdify(all_variables, dr_dkf_direct_sym, "numpy")
+		dr_dkb_direct_func = sp.lambdify(all_variables, dr_dkb_direct_sym, "numpy")
+
+		# --- Results ---
+		drc_results = {p: {} for p in products}
+		drc_data = {p: [] for p in products}
+		dsc_results = {p: {} for p in products}
+		dsc_data = {p: [] for p in products}
+
+		# --- Loop for Temperatures ---
+		temp_list = [float(t) for t in sol_base.keys()]
+		for temp_num in temp_list:
+			conc_guess = sol_base[str(temp_num)].y[:, -1]
+			# --- thermodynamic constraint: forward rates are independent & backward rates follow thermodynamics
+			keq_vals = keq_func(temp_num)
+			k_values = np.array([k_func[k](temp_num) for k in k_func])
+			for idx, (pr_f, pr_b) in enumerate(step_pairs):
+				j_f = k_list.index(pr_f)
+				j_b = k_list.index(pr_b)
+				k_values[j_b] = k_values[j_f] / keq_vals[idx]
+
+			# --- steady state ---
+			def steady(theta):
+				vals = (temp_num, *theta, *k_values)
+				return np.array(f_func(*vals), dtype=float).flatten()
+
+			sol = root(steady, conc_guess, method='lm')
+			concentrations = clip_species(surfaces, adsorbates_by_surface, gas_number, sol.x)
+			all_vals = (temp_num, *concentrations, *k_values)
+
+			# --- Evaluate matrices ---
+			jacobian = np.array(j_func(*all_vals), dtype=float)		# J
+			df_dkf = np.array(df_dkf_func(*all_vals), dtype=float)	# B forwards
+			df_dkb = np.array(df_dkb_func(*all_vals), dtype=float) 	# B backwards
+			df_dk = df_dkf + (1.0 / keq_vals) * df_dkb
+			dr_dkf = np.array(dr_dkf_direct_func(*all_vals), dtype=float)	# H forwards
+			dr_dkb = np.array(dr_dkb_direct_func(*all_vals), dtype=float)	# H backwards
+			dr_dk_direct = dr_dkf + (1.0 / keq_vals) * dr_dkb
+			dr_dconc = np.array(dr_dtheta_func(*all_vals), dtype=float)	# G
+
+			# --- Solve sensitivities ---
+			dtheta_dk = -np.linalg.solve(jacobian, df_dk)
+
+			# --- Rate vector ---
+			r_vec = np.array([r_funcs[p](*all_vals) for p in products], dtype=float)
+
+			# --- Total derivative ---
+			dr_dk_total = dr_dk_direct + dr_dconc @ dtheta_dk  # Matrix (Np × Nk)
+
+			# --- DRC ---
+			x = dr_dk_total / r_vec[:, None]
+
+			# --- diagnostic ---
+			print("sum DRC:", np.sum(X, axis=1))
+			print("r_vec:", r_vec)
+			print("cond(J):", np.linalg.cond(jacobian))
+			print("||df_dk||:", np.linalg.norm(df_dk))
+			print("||dtheta_dk||:", np.linalg.norm(dtheta_dk))
+
+			# --- Store DRC ---
+			for i, p in enumerate(products):
+				row = [temp_num]
+				for j, (pr_f, _) in enumerate(step_pairs):
+					drc_results[p][pr_f] = x[i, j]
+					row.append(float(x[i, j]))
+				drc_data[p].append(row)
+				print(drc_data[p])
+
+
+			# --- DSC ---
+			r_tot = np.sum(r_vec)
+			if abs(r_tot) < 1e-20:
+				continue
+
+			s_vec = r_vec / r_tot
+			kdr = dr_dk_total
+			kdr_sum = np.sum(kdr, axis=0)
+			dsc = (kdr - s_vec[:, None] * kdr_sum) / (s_vec[:, None] * r_tot)
+			for i, p in enumerate(products):
+				for j, (pr_f, _) in enumerate(step_pairs):
+					dsc_results[p][pr_f] = dsc[i, j]
 
 		for p in products:
-			printdata(p + "_Degree_of_Rate_Control", data_i[p])
-			ylabel = f"$DRC_{{i,\ {p} }}$"
-
-			print(f"DRC to barplot for {p}")
-
-			ConsTemperature.barplot("", "Process Reactions", ylabel, data_i[p], labels, 0.5)
-			for r in reactants:
-				if isinstance(data_i[p], float) and isinstance(data_i[r], float):
-					dsc = (np.array(data_i[p]) - np.array(data_i[r])).tolist()
-					printdata(f'{p}/{r}' + "_Degree_of_Selectivity_Control", dsc)
-					ylabel = f"$DSC_{{i,\ {p}/{r} }}$"
-					ConsTemperature.barplot("", f"Degree of Selectivity Control for {p}/{r}", ylabel, dsc, labels, 0.5)
-
-	@staticmethod
-	def degree_of_selectivity_control(rconditions, systems, processes, species, surfaces, dsc_data):
-		'''	From the previous definition of the degree of rate control, the degree of selectivity control for step i,
-		 whereby the net rate is replaced with the selectivity to the desired product P from the most
-		 valuable reactant R, S = rP/rR, where rP is the rate of production of P and rR is the rate of
-		 consumption of R (scaled by the stoichiometric ratio of P:R) --> DSC_i = DRC_i,P - DRC_i,R
-		Campbel, ACS Catal. 2017, 7, 4, 2770–2779 https://doi.org/10.1021/acscatal.7b00115 '''
-
-		# symbolic rate constants, one per reaction
-		k_symbols = {process: sp.symbols(f'k_{process}') for process in processes}
-		# Substitute actual expressions
-		k_exprs = {f'k_{process}': processes[process]['krate0'].subs(constants) for process in processes}
-
-		# products: molecules in systems without initial pressure
-		products = []
-		for name in systems:
-			if systems[name]['kind'] == 'molecule':
-				if systems[name]['pressure0'] == 0.0:
-					products.append(name)
-
-		# symbolic rates
-		r_symbolic = {}
-		r_sum = 0
-		for name in products:
-			r_symbolic[name] = sym_equation(processes, name)
-			r_sum += r_symbolic[name]
-		# Symbolic selectivity expression
-		s_expr = {}
-		for name in products:
-			s_expr[name] = r_symbolic[name] / r_sum
-
-		ds_dk = {name: {} for name in s_expr}  # nested dictionary of differentials of products and process
-		dsc = {name: {} for name in s_expr}    # nested dictionary of products and process
-		dsc_num = {name: {} for name in s_expr}    # nested dictionary with numeric dsc
-		dsc_func = {name: {} for name in s_expr}    # nested lambdify function
-		for name in products:
-			# Symbolic derivatives dS/dk for each product and each k
-			for process in processes:
-				ds_dk[name][process] = sp.diff(s_expr[name], k_symbols[process])
-				dsc[name][process] = ds_dk[name][process] * k_symbols[process] / s_expr[name]
-				dsc_num[name][process] = dsc[name][process].subs(k_exprs)
-				dsc_func[name][process] = sp.lambdify((temp, *species, *surfaces), dsc_num[name][process], "numpy")
-
-
-
-
-				#print("DSC_TYPE\n", type(dsc_func[name][process](450.0)))
-				free_syms = dsc_num[name][process].free_symbols
-				print("DSC SYMBOLS - ", f"NAME: {name} ||| PROCESS: {process}:", free_syms)
-
-
-
-		labels = [f"{i}" for i in range(1, len(processes)+1)]
-		for name in products:
-			data = [[*list(rconditions.keys())[:-1], *labels]]    # no time because it is at steady-state
-			temp_list = [float(i) for i in dsc_data.keys()]
-			for temp_num in [temp_list[0], temp_list[-1]]:  # initial and final temperatures
-				print(f"\t\tDSC of {name} at {temp_num} K")
-				row = [temp_num]
-				row.extend([dsc_func[name][process](temp_num, *dsc_data[temp_num]) for process in processes])
-				data.append(row)
-
-			# print("SELECTIVITY: name", name, "data", data)
-
-			printdata(name + "_Degree_of_Selectivity_Control", data)
-			ylabel = "$DSC_{i}$"
-			ConsTemperature.barplot(labels, name +" Degree of Rate Control", ylabel, data, labels, 0.5)
+			printdata(f"{p}_Degree_of_Rate_Control", data_heading + drc_data[p])
+			ylabel = f"$DRC_{p}$)"
+			ConsTemperature.barplot(f"{p}_DRC", "Reaction Step", ylabel, drc_results[p], species, 0.5)
+			printdata(f"{p}_Degree_of_Selectivity_Control", dsc_results[p])
+			ylabel = f"$DSC_{p}$)"
+			ConsTemperature.barplot(f"{p}_DSC", "Reaction Step", ylabel, drc_results[p], species, 0.5)
 
 
 class TPR:
 	def __init__(self, rconditions, systems, processes, equations, equation_factors):
-		species, surfaces, adsorbates_by_surface = self.initial_species(processes, systems)     # list of species in the order on systems
+		species, surfaces, adsorbates_by_surface, gas_number = self.initial_species(processes, systems)     # list of
+		# species in the order on systems
+
+
+
 		start = time.time()
 		print("\t ... Generating TPR ...")
 		rhs = []
 		for name in species:        # lists of names with the order of ics
-			if name in equations.keys():
-				dydt = 0
-				for i in range(len(equations)):
-					dydt += equation_factors[name][i]*equations[name][i]
-				rhs.append(dydt)     # rhs for SciPy
+			dydt = 0
+			for i in range(len(equations[name])):
+				dydt += equation_factors[name][i] * equations[name][i]
+			rhs.append(dydt)     # rhs for SciPy
+		rhs = [i.subs(constants) for i in rhs]
 		''' In Temperature Desorption experiments, the initial conditions consider only adsorbed molecules.
 		Therefore for Reaction type A, the coverage of the product will be 1.
 		There will be a TPD/TPR for each of the molecules in process[kind]=A'''
@@ -532,6 +540,9 @@ class TPR:
 						t_eval = [0, 10/t_num+t_step, t_step]       # temperature rate in k/s --- from 0 to 10/t_num
 						data = [*rconditions.keys(), *species]  # basic: Temp, time, species
 						for temp_num in np.arange(50, 1010, 10): # integrate at different temperatures
+							sol, _, sol_T = ode_solver(systems, t_eval, species, surfaces, adsorbates_by_surface,
+							                                  gas_number, rhs, ics, (temp_num,))
+
 							sol, _, sol_T = ode_solver(systems, t_eval, species, surfaces, adsorbates_by_surface, rhs, ics, (temp_num,))
 							data += sol_T[-n_elements:]  # transposed solution: (time x species)
 							''' the initial concentration for the next temperature is the same as the last time 
@@ -565,4 +576,5 @@ class TPR:
 			adsorbates_by_surface[str(s)] = [i for i, name in enumerate(species) if
 												 systems[name]["kind"] == "adsorbate"
 												 and systems[name]["sites"] == systems[str(s)]["sites"]]
-		return species, sorted(surfaces), adsorbates_by_surface
+		gas_number = [i for i, name in enumerate(gases)]
+		return species, sorted(surfaces), adsorbates_by_surface, gas_number
