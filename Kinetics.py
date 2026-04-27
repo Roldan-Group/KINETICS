@@ -11,7 +11,7 @@ from math import gcd
 from functools import reduce
 from itertools import product
 import matplotlib as mpl
-mpl.use('TkAgg')
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.interpolate import splrep, splev
 from collections import defaultdict
@@ -299,9 +299,9 @@ class RConstants:
 		#ax1.plot(x_limit, [1e-20, 1e-20], "k-", lw=1.5)
 		ax1.set_xlim(x_limit)
 		ax1.set_xlabel(x_label, fontsize=18)
-		ax1.set_xticks(x)
+		ax1.set_xticks(x+1)
 		ax1.tick_params(axis='x', rotation=0, labelsize=14)
-		ax1.set_xticklabels(labels, rotation=90, ha="right")
+		ax1.set_xticklabels(labels, rotation=45, ha="right")
 
 		#ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
 		ax1.set_ylabel(y_label, fontsize=18)
