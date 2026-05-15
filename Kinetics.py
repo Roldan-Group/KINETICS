@@ -21,8 +21,7 @@ from collections import defaultdict
 class RConstants:
 	def __init__(self, rconditions, systems, processes, restricted_arg):
 		''' Reaction conditions are set as symbols using SYMPY '''
-		ramp = [float(i) for i in rconditions["temperature"]]
-		constants_data = [[temp_num for temp_num in np.arange(ramp[0], ramp[1], ramp[2])]]
+		rconstants = []
 		for process in processes:
 			processes[process]["activation"] = self.activation(processes[process], systems)
 			if processes[process]['kind'] == 'A':
@@ -43,11 +42,13 @@ class RConstants:
 				datalabel = ["activation", "arrhenius", 'ktunneling', "krate0"]
 			data = self.getdata(rconditions, processes[process], datalabel)
 			self.printdata(rconditions, processes[process], "Process"+str(process), data)
-			constants_data.append([row[-1] for row in data[1:]])
-		stack = np.column_stack([i for i in constants_data])
-		constants_data = [["# Temperature", *list(processes.keys())]]
-		constants_data.append(stack)
-		self.barplot("Elementary Steps", "Reaction Constants $(M^{ \dagger } \cdot s^{-1})$", constants_data, 0.5)
+			rconstants.append([row[-1] for row in data[1:]])    # gets krate0
+			temps = [row[0] for row in data[1:]]    # gets the temperatures of the last data (same than others)
+		stack = np.column_stack((temps, *rconstants)).tolist()
+		constants_data = [["# Temperature", *list(processes.keys())]] + [i for i in stack]
+		self.log_barplot(['./KINETICS/PROCESSES/',"Rate Constants"], "Elementary Steps", ("Reaction Constants $(M^{ "
+																						 "\\dagger } \\cdot s^{"
+																 "-1})$"), constants_data, '',0.5)
 		self.processes = processes
 
 	@staticmethod
@@ -276,17 +277,23 @@ class RConstants:
 		return data
 
 	@staticmethod
-	def barplot(experiment, y_label, data, bar_width):
+	def log_barplot(experiment, x_label, y_label, data, xticklabels, bar_width):
 		icolour = ["b", "r", "c", "g", "m", "y", "grey", "olive", "brown", "pink", "darkgreen", "seagreen", "khaki",
 		   "teal"]
 		ipatterns = ["///", "...", "xx", "**", "\\", "|", "--", "++", "oo", "OO"]
 		gap = 0.7   # gap between group of columns, e.g. processes
-		labels = data[0][1:].copy()
-		x_label = experiment
-		x = np.arange(0, len(labels)) * (1 + gap)
-		temps = [float(data[1][0][0]), float(data[1][-1][0])]  # temperatures; first row is for labels
-		y = np.array([data[1][0][1:], data[1][-1][1:]], dtype=float)		# elements after 1 but only T0 and T-1
-		y[y <= 0] = 1e-20  # to prevent log crash
+		data = np.asarray(data)
+		data = np.vstack([data[0], data[1:][data[1:, 0].argsort()]])  # sort remaining rows by Temperatures
+		if isinstance(xticklabels, list):
+			labels = xticklabels
+		else:
+			labels = data[0][1:].copy()
+
+		x = np.arange(len(labels)) * (1 + gap)
+
+		temps = data[[1, -1], 0]	# temperatures from first and last data rows (skipping header row at index 0)
+		y = data[[1, -1], 1:len(labels) + 1].astype(float)	# values from first and last data rows (skip temperature)
+		y = np.maximum(y, 1e-20)		# prevent log crash
 
 		fig, ax1 = plt.subplots(figsize=(10, 6), clear=True)
 		ax1.set_ylim(bottom=np.min(y) * 0.5, top=np.max(y) * 5)  # Prevents from hitting zero during autoscaling
@@ -296,21 +303,23 @@ class RConstants:
 					width=bar_width, hatch=ipatterns[n], color=icolour[n], label=f"{temps[n]} K", alpha=0.7)
 
 		x_limit = [ax1.get_xlim()[0], ax1.get_xlim()[1]]
-		#ax1.plot(x_limit, [1e-20, 1e-20], "k-", lw=1.5)
+		ax1.plot(x_limit, [0, 0], "k-", lw=1.5)
 		ax1.set_xlim(x_limit)
 		ax1.set_xlabel(x_label, fontsize=18)
-		ax1.set_xticks(x+1)
-		ax1.tick_params(axis='x', rotation=0, labelsize=14)
-		ax1.set_xticklabels(labels, rotation=45, ha="right")
-
-		#ax1.set_ylim([1e-10, ax1.get_ylim()[1]])
+		ax1.set_xticks(x)
+		ax1.tick_params(axis='x', labelrotation=45, labelsize=14, labelright=True, pad=-2.5)
+		ax1.set_xticklabels([f"${i}$" for i in labels], rotation=45, ha="right", va="top")
+		for label in ax1.get_xticklabels():
+			label.set_horizontalalignment('center')
+			#labe	l.set_x(label.get_position()[0] + 0.1)
 		ax1.set_ylabel(y_label, fontsize=18)
 		ax1.tick_params(axis='y', rotation=0, labelsize=16)
 		leg_lines, leg_labels = ax1.get_legend_handles_labels()
 		legend = ax1.legend(leg_lines[0:len(temps)], leg_labels[0:len(temps)], loc='best', fontsize=16)
+		plt.title(experiment[-1])
 		fig.tight_layout()
 		plt.ion()
-		plt.savefig('./KINETICS/PROCESSES/' + "_".join(experiment.split()) + ".svg", dpi=300, orientation='landscape',
+		plt.savefig( experiment[0]+ "_".join(experiment[-1].split()) + ".svg", dpi=300, orientation='landscape',
 					transparent=True)
 
 
