@@ -511,12 +511,12 @@ class Diagnostics:
 			data_drc = np.vstack([data_heading, drc_data[p]])
 			Diagnostics.printdata(['./KINETICS/ISOTHERMAL/', f"{p}_Degree_of_Rate_Control"], data_drc)
 			ylabel = f"$DRC_{{{p}}}$"
-			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{chem_label(p)} DRC"], "Reaction Step", ylabel,
+			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{p} DRC"], "Reaction Step", ylabel,
 			                    data_drc, step_labels, 0.5)
 			data_dsc = np.vstack([data_heading, dsc_data[p]])
 			Diagnostics.printdata(['./KINETICS/ISOTHERMAL/', f"{p}_Degree_of_Selectivity_Control"], data_dsc)
 			ylabel = f"$DSC_{{{p}}}$"
-			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{chem_label(p)} DSC"], "Reaction Step", ylabel,
+			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{p} DSC"], "Reaction Step", ylabel,
 			                    data_dsc, step_labels, 0.5)
 
 	@staticmethod

@@ -243,6 +243,11 @@ class TPR:
 				expr += f * e
 			rhs.append(expr.subs(surface_expr).subs(constants))
 		rhs_func = sp.lambdify((*conditions, *adsorbates), rhs,  [{"exp": safe_exp}, "numpy"])
+
+
+		print("SYMBLS", [expre.free_symbols for expre in rhs])
+
+
 		gas_rate_expr = {}  # ONLY gases
 		for idx in gas_number:
 			name = species[idx]
@@ -334,7 +339,7 @@ class TPR:
 		raise ValueError(f"No desorption reaction found for gas '{name}'")
 
 	@staticmethod
-	def semi_implicit_temp(rhs_func, gas_rate_func, adsorbates, ics, temp_i, temp_f, dtemp, beta, n_corrector=5,  nsub=1):
+	def semi_implicit_temp(rhs_func, gas_rate_func, adsorbates, ics, temp_i, temp_f, dtemp, beta, n_corrector=2,  nsub=1):
 		''' For TPD/TPR, a semi-implicit (backward Euler / predictor-corrector) scheme is often much more stable
 		than explicit Euler while remaining far simpler than a stiff global ODE solver.
 		This approach avoids:
@@ -359,6 +364,7 @@ class TPR:
 		for i in range(len(temps) - 1):
 			temp_old = temps[i]
 			y_old = concentrations[i].copy()
+
 			for m in range(nsub):	# Internal substepping
 				temp_sub = temp_old + m * dtemp_sub
 				temp_new = temp_sub + dtemp_sub
@@ -375,6 +381,7 @@ class TPR:
 				y_trial = y_old + dtemp_sub * dydtemp_old
 				y_trial = np.clip(y_trial, 0.0, 1.0)
 				y_trial = np.nan_to_num(y_trial, nan=0.0, posinf=1.0, neginf=0.0)
+
 				for k in range(n_corrector):	# Corrector iterations
 					try:
 						dydtemp_new = np.asarray(rhs_func(temp_new, *y_trial), dtype=float) / beta
@@ -430,7 +437,7 @@ class TPR:
 		ax1.set_xlim([min(x), max(x)])
 		ax1.tick_params(axis='x', rotation=0, labelsize=16)
 		ax1.set_ylim([-0.01, 1.1])   # Normalised
-		ax1.set_ylabel(f"$\\frac{{\\delta P_{{{chem_label(gas_name)}}}}}{{\\delta T}}$ (a.u.)", fontsize=18)
+		ax1.set_ylabel(f"$\\frac{{\\delta P_{{{gas_name}}}}}{{\\delta T}}$ (a.u.)", fontsize=18)
 		ax1.tick_params(axis='y', rotation=0, labelsize=16)
 		legend = ax1.legend(loc="best", fontsize=14)
 		plt.title(f"TPD ({int(heating_rate)} $K \\cdot min^{{{-1}}}$)")
