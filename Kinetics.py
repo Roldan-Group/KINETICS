@@ -328,13 +328,6 @@ class REquations:
 		constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
 		equation_factors = {}	# dictionary with the factors for rate eqations, i.e. 2 * k_1[A][B]
 		print_constemperature = {}
-		tpd = {}  # dictionary of equations WITHOUT adsorptions
-		tpd_factors = {}
-		print_tpd = {}
-		'''surfequations = {}
-		for name in systems.keys():
-			if systems[name]['kind'] == 'surface':
-				surfequations[name] = 1'''
 		no_ts = []
 		for process in processes:
 			no_ts.extend(processes[process]['reactants'])
@@ -344,24 +337,16 @@ class REquations:
 				constemperature[name] = []
 				equation_factors[name] = []
 				print_constemperature[name] = []
-				tpd[name] = []
-				tpd_factors[name] = []
-				print_tpd[name] = []
 				for process in processes:
 					eq, rfactor, peq = self.equation(processes[process], name, str(process))
 					constemperature[name].append(eq) #if rfactor != 0 else 0
 					equation_factors[name].append(rfactor) #if rfactor != 0 else None
 					print_constemperature[name] += peq
-					if processes[process]["kind"] != "A":
-						tpd[name].append(eq)
-						tpd_factors[name].append(rfactor)
-						print_tpd[name] += peq
 				if sum(equation_factors[name]) != 0:
 					raise ValueError(f"The species {name} does not considers equilibrium")
 
-		self.all_equations = (constemperature, equation_factors, tpd, tpd_factors)
+		self.all_equations = (constemperature, equation_factors)
 		self.printdata(print_constemperature, 'Cons_Temperature')
-		self.printdata(print_tpd, 'TPD')
 		self.overall_stoichiometry(systems, equation_factors)
 
 	@staticmethod

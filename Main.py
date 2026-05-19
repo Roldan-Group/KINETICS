@@ -432,9 +432,9 @@ processes = RConstants(dict(rconditions), dict(systems), dict(processes), list(r
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 start = time.time()
 print("\t... Generating Rate Equations ...")
-cons_temperature, equation_factors, tpd, tpd_factors = REquations(dict(processes), dict(systems)).all_equations
+cons_temperature, equation_factors = REquations(dict(processes), dict(systems)).all_equations
 print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
 Isothermal(dict(rconditions), dict(systems), dict(processes), dict(cons_temperature), dict(equation_factors))
-TPR(dict(systems), dict(processes), dict(tpd), dict(tpd_factors))
+TPR(dict(systems), dict(processes), dict(cons_temperature), dict(equation_factors))
 print("... Microkinetics Completed ...")
 print("\t\t\t\tTotal time:", round((time.time()-start0)/60, 3), " minutes")

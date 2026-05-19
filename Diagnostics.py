@@ -7,7 +7,7 @@ import pathlib
 import sympy as sp
 import numpy as np
 from scipy.optimize import least_squares
-from Symbols_def import temp, constants
+from Symbols_def import temp, constants, chem_label
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -19,10 +19,6 @@ from Kinetics import RConstants
 
 
 '''
-
-
-
-SEPARATE SPECIES NAMES LETERS AND NUMBERS TO MAKE THE NUMBERS SUBSCRIPT IN PLOTS
 
 
 
@@ -352,7 +348,7 @@ class Diagnostics:
 
 		# Plot: equilibrium proximity
 		title = "DRC Assessment"
-		xlabel = "Reaction step"
+		xlabel = "Reaction Step"
 		ylabel = "Distance from equilibrium"
 
 		RConstants.log_barplot(["KINETICS/ISOTHERMAL/", title], xlabel, ylabel, data_eq, step_labels,0.5)
@@ -395,15 +391,25 @@ class Diagnostics:
 				print("No significant fluxes → empty pathway graph")
 				return
 
-			pos = nx.spring_layout(g, seed=0)
+			labels = {n: chem_label(n) for n in g.nodes()}
+
+			#pos = nx.spring_layout(g, seed=0, k=1.5)
+			pos = nx.kamada_kawai_layout(g)
 			edges = list(g.edges())
 			weights = [g[u][v]['weight'] for u, v in edges]
 			max_w = max(weights)
 			fig = plt.figure(figsize=(10, 6), clear=True)
-			nx.draw(g, pos, with_labels=True)
-			nx.draw_networkx_edges(g, pos, width=[(w / max_w) * 5 for w in weights])
-			plt.savefig(f"KINETICS/ISOTHERMAL/Reaction_Pathway_{temp_num}.svg", dpi=300, orientation='landscape',
-			            transparent=True)
+			#nx.draw(g, pos, with_labels=False)
+			#nx.draw_networkx_labels(g, pos,	labels=labels, font_size=16)
+			#nx.draw_networkx_edges(g, pos, width=[(w / max_w) * 5 for w in weights])
+			# --- nodes
+			nx.draw_networkx_nodes(g, pos, node_size=2000, node_color='lightblue')
+			nx.draw_networkx_labels(g, pos,	labels=labels, font_size=16)
+			# --- edges
+			nx.draw_networkx_edges(g, pos, width=[(w / max_w) * 5 for w in weights],
+			                       arrows=True, arrowstyle='->',arrowsize=20)
+			plt.axis('off')
+			plt.savefig(f"KINETICS/ISOTHERMAL/Reaction_Pathway_{temp_num}.svg", dpi=300, transparent=True)
 			plt.close(fig)
 
 			# --- Extract numerical pathway table
@@ -505,12 +511,12 @@ class Diagnostics:
 			data_drc = np.vstack([data_heading, drc_data[p]])
 			Diagnostics.printdata(['./KINETICS/ISOTHERMAL/', f"{p}_Degree_of_Rate_Control"], data_drc)
 			ylabel = f"$DRC_{{{p}}}$"
-			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{p}_DRC"], "Reaction Step", ylabel,
+			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{chem_label(p)} DRC"], "Reaction Step", ylabel,
 			                    data_drc, step_labels, 0.5)
 			data_dsc = np.vstack([data_heading, dsc_data[p]])
 			Diagnostics.printdata(['./KINETICS/ISOTHERMAL/', f"{p}_Degree_of_Selectivity_Control"], data_dsc)
 			ylabel = f"$DSC_{{{p}}}$"
-			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{p}_DSC"], "Reaction Step", ylabel,
+			Diagnostics.barplot(["KINETICS/ISOTHERMAL/", f"{chem_label(p)} DSC"], "Reaction Step", ylabel,
 			                    data_dsc, step_labels, 0.5)
 
 	@staticmethod

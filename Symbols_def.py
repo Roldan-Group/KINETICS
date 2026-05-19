@@ -1,5 +1,6 @@
 
 import sympy as sp
+import re
 
 
 t, temp, cov = sp.symbols('time temperature coverage', positive=True, real=True)
@@ -19,3 +20,8 @@ constants = {
 	JtoeV: sp.Float(6.24150974e18)  # 1 J = 6.24..e18 eV
 	}
 
+def chem_label(s):	 # Turn digits into LaTeX subscripts
+	s = re.sub(r'(\d+)', r'_{\1}', s)
+	# Optional: make "ads" appear as text subscript
+	#s = s.replace("ads", r"^{#}")
+	return f"${s}$"
