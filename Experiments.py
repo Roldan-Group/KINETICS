@@ -8,7 +8,7 @@ import time
 import sympy as sp
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, savgol_filter
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -40,7 +40,7 @@ def printdata(experiment, data):
 	output.close()
 
 def safe_exp(x):
-	return np.exp(np.clip(x, -700, 700))
+	return np.exp(np.clip(x, -200, 200))
 
 def ode_solver(systems, t_span, t_eval, species, clipping, ics, rhs_func, jac_func, arguments):
 	''' time: tuple or list, e.g. (0, 10, 0.1)
@@ -211,98 +211,175 @@ class Isothermal:
 		return ics_gases + ics_ads, species, sorted(surfaces), gas_number, adsorbates_by_surface
 
 
+
 class TPR:
+	"""
+	Temperature Programmed Desorption / Reaction simulator.
+
+	IMPORTANT DESIGN CHOICES
+	------------------------
+	1) Integrate ONLY adsorbates dynamically
+	2) Surface sites reconstructed algebraically
+	3) Gas production reconstructed from desorption rates
+	4) Temperature ramp:
+		:contentReference[oaicite:0]{index=0}
+	5) Uses existing ODE solver infrastructure
+	6) Preserves numerical stability and site conservation
+	"""
 	def __init__(self, systems, processes, equations, equation_factors):
-		''' In Temperature Desorption experiments, the initial conditions consider only adsorbed molecules.
-		Therefore for Reaction type A, the coverage of the product will be 1.
-		There will be a TPD/TPR for each of the molecules in process[kind]=A
-		> Integrate in TIME, not temperature
-		 T(t) = T0 + beta*t
-		 dtheta/dt = R(theta, T(t)) '''
 		start = time.time()
 		print("\t ... Generating TPR ...")
 
-		conditions = [temp]  # conditions required to lambdify: no time
+		# --- Species bookkeeping
+		conditions = [t, temp]
 		species, surfaces, adsorbates_by_surface, gas_number = self.initial_species(processes, systems)
-		adsorbates = [name for idx, name in enumerate(species) if idx not in gas_number]
+		gas_species = [species[i] for i in gas_number]
+		adsorbates = [s for s in species if systems[s]["kind"] == "adsorbate"]
+		ads_symbols = [sp.symbols(a) for a in adsorbates]
 
-		''' reconstruct algebraic expression to define Surface sites and RHS'''
-		surface_expr = {}	 ## no worthy to pass it through the subroutine, too many patches.
+		# --- Algebraic surface balances
+		surface_expr = {}
+		eps = 1e-30
 		for s_sym in surfaces:
 			s_name = str(s_sym)
-			coverage_expr = 1.0    # Start with one full site
-			for idx in adsorbates_by_surface[s_name]:	# Subtract adsorbates occupying this surface
-				name = species[idx]     # idx is the position of the adsorbate in species
-				coverage_expr -=  sp.symbols(name) * systems[str(name)]["nsites"]	#	symbolic
-			surface_expr[s_sym] = coverage_expr
-		# --- RHS generation
-		rhs = []
-		for name in adsorbates:     # ONLY adsorbates, no gaseous species
+			coverage_raw = 1.0
+			for idx in adsorbates_by_surface[s_name]:
+				name = species[idx]
+				coverage_raw -= (sp.symbols(name) * systems[name]["nsites"])
+			surface_expr[s_sym] = (coverage_raw + sp.sqrt(coverage_raw**2 + eps**2)) / 2 # like: max(A, 0) but smoothly
+
+		# --- Build RHS ONLY for adsorbates
+		rhs_ads = []
+		for name in adsorbates:
 			expr = sp.Integer(0)
-			for f, e in zip(equation_factors[name], equations[name]):
-				expr += f * e
-			rhs.append(expr.subs(surface_expr).subs(constants))
-		rhs_func = sp.lambdify((*conditions, *adsorbates), rhs,  [{"exp": safe_exp}, "numpy"])
+			for f, e in zip(equation_factors[name],	equations[name]):
+				#expr += f * e
+				max_rate = 1e7   # Rate Regularisation
+				expr += f * max_rate * sp.tanh(e / max_rate)    # no clipping, smoothening
+			expr = expr.subs(surface_expr).subs(constants)
+			rhs_ads.append(expr)
+		rhs_func = sp.lambdify((*conditions, *ads_symbols), rhs_ads, [{"exp": safe_exp}, "numpy"])
 
+		# --- Jacobian
+		#jac_expr = sp.Matrix(rhs_ads).jacobian(ads_symbols)
+		#jac_func = sp.lambdify((*conditions, *ads_symbols), jac_expr, [{"exp": safe_exp}, "numpy"])
 
-		print("SYMBLS", [expre.free_symbols for expre in rhs])
-
-
-		gas_rate_expr = {}  # ONLY gases
-		for idx in gas_number:
-			name = species[idx]
+		# --- Gas desorption rates
+		gas_rate_expr = {}
+		for gas in gas_species:
 			expr = sp.Integer(0)
-			for f, e in zip(equation_factors[name], equations[name]):
+			for f, e in zip(equation_factors[gas], equations[gas]):
 				if f > 0:
 					expr += f * e
-			gas_rate_expr[name] = expr.subs(surface_expr).subs(constants)
-		gas_rate_func = {gas: sp.lambdify((*conditions, *adsorbates), gas_rate_expr[gas], [{"exp": safe_exp}, "numpy"])
-		                 for gas in gas_rate_expr}
+			expr = expr.subs(surface_expr).subs(constants)
+			gas_rate_expr[gas] = expr
+		gas_rate_func = {g: sp.lambdify((*conditions, *ads_symbols), gas_rate_expr[g], [{"exp": safe_exp},
+																						"numpy"]) for g in gas_rate_expr}
+		# --- TPR Conditions
+		temp_i = 10.0
+		temp_f = 1273.0
+		dtemp = 1.0 	# K temperature accuracy
 
-		temp_i = 100.0
-		temp_f = 1000.0
-		dtemp = 1  # K resolution
-		heating_rates = [1.0, 10.0]  # Already in K/min
+		heating_rates = [1.0] #[1.0, 10.0]  # K/min
+		# --- Generate one TPD per desorbing gas
+		for gas_name in gas_species:
+			ads_name, ads_idx_global = self.desorbing_gas(processes, species, gas_name)
+			ads_idx = adsorbates.index(ads_name)		# local adsorbate index
 
-		for gas_idx in gas_number:
-			gas_name = species[gas_idx]
-			ads_name, ads_idx = TPR.desorbing_gas(processes, adsorbates, gas_name)
+			# --- Initial conditions (ADSORBATES ONLY)
 			ics = np.zeros(len(adsorbates), dtype=float)
-			ics[ads_idx] = 0.99 / float(systems[gas_name]['nmolsite'])	# initial for the adsorbate at 1 ML
-			for beta_min in heating_rates:		# Heating rates 1 & 10 (K/min)
-				beta = beta_min / 60       # heating rate in K/s
+			ics[ads_idx] = (0.95 / float(systems[gas_name]["nmolsite"]))    # <1 ML for stability
 
-				temps, concentrations, rate = TPR.semi_implicit_temp(rhs_func, gas_rate_func, adsorbates, ics, temp_i,
-				                                                     temp_f, dtemp, beta)
-				data_conc = np.column_stack([temps, concentrations])
-				conc_header = (["Temperature(K)"] + list(adsorbates))
-				data_conc = np.vstack([conc_header, data_conc])
-				printdata(['./KINETICS/TPR/', f"TPD_{gas_name}_concentrations_{int(beta_min)}K_min"], data_conc)
+			for beta_min in heating_rates:
 
-				tpd_data = np.column_stack([temps] + [rate[g] for g in gas_rate_expr.keys()])
-				tpd_header = (["Temperature(K)"] + [g for g in gas_rate_expr.keys()])
-				tpd_data = np.vstack([tpd_header, tpd_data])
-				printdata(['./KINETICS/TPR/', f"TPD_{gas_name}_{int(beta_min)}K_min"], tpd_data)
+				print(f"\t TPD {gas_name} @ ",f"{beta_min} K/min")
 
-				TPR.tpd_plot(gas_name, tpd_data, beta_min)
+				beta = beta_min / 60.0  # K/s
+
+				# --- Time grid from temperature ramp
+				temps = np.arange(temp_i, temp_f + dtemp, dtemp)
+				t_final = (temp_f - temp_i) / beta
+				t_eval = (temps - temp_i) / beta
+				t_span = (0.0, t_final)
+
+
+				def rhs_time(t_num, temp_num, *y):		# --- ODE wrappers
+					return np.asarray(rhs_func(t_num, temp_num,	*y), dtype=float)
+				#def jac_time(t_num, temp_num, *y):
+				#	return np.asarray(jac_func(t_num, temp_num,	*y), dtype=float)
+				def temperature_profile(t):		# --- Temperature argument
+					return temp_i + beta * t
+				def ode_rhs(t_num, y):		# --- solve_ivp wrappers
+					temp_num = temperature_profile(t_num)
+					dydt = rhs_time(t_num, temp_num, *y)
+					if not np.all(np.isfinite(dydt)):
+						print("NON-FINITE RHS")
+						print("T =", temp_num)
+						print("y =", y)
+						print("dydt =", dydt)
+						raise FloatingPointError
+					return dydt
+				#def ode_jac(t_num, y):
+				#	temp_num = temperature_profile(t_num)
+				#	return jac_time(t_num, temp_num, *y)
+
+				try:
+					sol = solve_ivp(ode_rhs, t_span, ics, t_eval=t_eval, method="BDF", rtol=1e-3, atol=1e-8) # dense_output=True, jac=ode_jac,
+					if not sol.success:
+						print(f"WARNING: solver stopped early for {gas_name}")
+						print(sol.message)
+
+					temps = np.asarray(temps) #temp_i + beta * sol.t)		# Recover temperatures grid
+					concentrations = np.zeros((len(temps), len(adsorbates)))		# allocate full concentration matrix
+					if len(sol.t) > 0:
+						concentrations[:len(sol.t), :] = sol.y.T  # --- Build concentration matrix
+					concentrations[concentrations < 0.0] = 0.0		# --- Tiny negative cleanup ONLY
+
+					for row in concentrations:		# --- Surface conservation correction
+						total = 0.0
+						for i, ads in enumerate(adsorbates):
+							total += (row[i]* systems[ads]["nsites"])
+						if total > 1.0:
+							row[:] /= total
+
+					tpd = {}		# --- Reconstruct gas production
+					for gas in gas_species:
+						rates = np.zeros(len(temps))
+						for itemp, (t_num, temp_num) in enumerate(zip(sol.t, temps)):
+							rates[itemp] = gas_rate_func[gas](t_num, temp_num, *concentrations[itemp])
+						rates = np.maximum(rates, 0.0)
+						tpd[gas] = rates
+
+					# --- Save concentrations
+					data_conc = np.column_stack([temps, concentrations])
+					conc_header = (["Temperature(K)"] + adsorbates)
+					data_conc = np.vstack([conc_header,	data_conc])
+					printdata(['./KINETICS/TPR/', f"TPD_{gas_name}_concentrations_", f"{int(beta_min)}K_min"],	data_conc)
+
+					# --- Save TPD spectra
+					tpd_matrix = np.column_stack([temps] + [tpd[g] for g in gas_species])
+					tpd_header = (["Temperature(K)"] + gas_species)
+					tpd_data = np.vstack([tpd_header, tpd_matrix])
+					printdata(['./KINETICS/TPR/', f"TPD_{gas_name}_{int(beta_min)}K_min"], tpd_data)
+					self.tpd_plot(gas_name,	tpd_data, beta_min)
+
+				except Exception as err:
+					print(f"TPR solver failed for {gas_name}: e{err}\n")
 
 		elapsed = (time.time() - start) / 60
 		print("\t\t\t\t", round(elapsed, 3), "minutes")
 
 	@staticmethod
 	def initial_species(processes, systems):
-		"""
-		Collect species preserving order and excluding transition states.
-		"""
 		seen = []
 		for process in processes.values():
 			seen.extend(process["reactants"])
 			seen.extend(process["products"])
-		ordered_species = list(dict.fromkeys(seen))		# preserve order
-
+		ordered_species = list( dict.fromkeys(seen))
 		gases = []
 		ads = []
 		surfaces = []
+
 		for name in ordered_species:
 			kind = systems[name]["kind"]
 			if kind == "molecule":
@@ -311,102 +388,25 @@ class TPR:
 				ads.append(name)
 			elif kind == "surface":
 				surfaces.append(name)
-		species = sorted(gases) + sorted(ads)
-		adsorbates_by_surface = {s: [i for i, name in enumerate(species)
-									 if systems[name]["kind"] == "adsorbate" and
-									 systems[name]["sites"] == systems[s]["sites"]]	for s in sorted(surfaces)}
-		# Correct indexing in species array
-		gas_number = [i for i, name in enumerate(species) if systems[name]["kind"] == "molecule"]
 
-		return species, sorted(surfaces), adsorbates_by_surface, gas_number
+		species = sorted(gases) + sorted(ads)
+		adsorbates_by_surface = {s: [i for i, name in enumerate(species) if systems[name]["kind"] == "adsorbate"
+									 and systems[name]["sites"]	== systems[s]["sites"]]	for s in sorted(surfaces)}
+		gas_number = [i for i, name in enumerate(species) if systems[name]["kind"] == "molecule"]
+		return (species, sorted(surfaces), adsorbates_by_surface, gas_number)
 
 	@staticmethod
-	def desorbing_gas(processes, adsorbates, name):
-		''' Find the adsorbate species that desorbs into gas species `name`.
-		Returns: 	ads_name : Adsorbate species name.
-					ads_idx : Index of adsorbate in species list.'''
-		for kind, proc in processes.items():
-			if proc.get("kind") != "D":			# reaction type must be desorption
+	def desorbing_gas(processes, species, gas_name):
+		for _, proc in processes.items():
+			if proc.get("kind") != "D":
 				continue
 			reacts = proc.get("reactants", [])
 			prods = proc.get("products", [])
-			if name not in prods:			# check whether target gas is produced
-					continue
-			for r in reacts:		# find adsorbate in reactants
-				ads_name = r
-				ads_idx = adsorbates.index(r)
-				return ads_name, ads_idx
-		raise ValueError(f"No desorption reaction found for gas '{name}'")
-
-	@staticmethod
-	def semi_implicit_temp(rhs_func, gas_rate_func, adsorbates, ics, temp_i, temp_f, dtemp, beta, n_corrector=2,  nsub=1):
-		''' For TPD/TPR, a semi-implicit (backward Euler / predictor-corrector) scheme is often much more stable
-		than explicit Euler while remaining far simpler than a stiff global ODE solver.
-		This approach avoids:
-			- BDF instability
-			- Jacobian singularities
-			- LSODA internal failures
-			- symbolic stiffness catastrophes
-		gives:
-			- deterministic behavior
-			- fixed temperature spacing
-			- easier debugging
-			- physical clipping
-			- robust TPD spectra '''
-		temps = np.arange(temp_i, temp_f + dtemp, dtemp)
-		rate = {g: np.zeros(len(temps), dtype=float) for g in gas_rate_func}
-		nadsorbates = len(adsorbates)
-		concentrations = np.zeros((len(temps), nadsorbates), dtype=float)
-		concentrations[0] = np.asarray(ics, dtype=float)
-
-		np.seterr(over='raise', invalid='raise')
-		dtemp_sub = dtemp / nsub    # Internal temperature substep
-		for i in range(len(temps) - 1):
-			temp_old = temps[i]
-			y_old = concentrations[i].copy()
-
-			for m in range(nsub):	# Internal substepping
-				temp_sub = temp_old + m * dtemp_sub
-				temp_new = temp_sub + dtemp_sub
-				y_old = np.clip(y_old, 0.0, 1.0)
-				y_old = np.nan_to_num(y_old, nan=0.0, posinf=1.0, neginf=0.0)
-				try:
-					dydtemp_old = np.asarray(rhs_func(temp_sub, *y_old), dtype=float) / beta # ---- RHS in temperature space
-				except FloatingPointError:
-					print("Overflow at:")
-					print("T =", temp_sub)
-					for s, v in zip(adsorbates, y_old):
-						print(f"{s:20s} {v: .5e}")
-					raise
-				y_trial = y_old + dtemp_sub * dydtemp_old
-				y_trial = np.clip(y_trial, 0.0, 1.0)
-				y_trial = np.nan_to_num(y_trial, nan=0.0, posinf=1.0, neginf=0.0)
-
-				for k in range(n_corrector):	# Corrector iterations
-					try:
-						dydtemp_new = np.asarray(rhs_func(temp_new, *y_trial), dtype=float) / beta
-					except FloatingPointError:
-						print("Overflow at NEW:")
-						print("T =", temp_sub)
-						for s, v in zip(adsorbates, y_old):
-							print(f"{s:20s} {v: .5e}")
-						raise
-					y_next = y_old + 0.5 * dtemp_sub * (dydtemp_old + dydtemp_new)	# Trapezoidal semi-implicit update
-					y_next = np.clip(y_next, 0.0, 1.0)
-					err = np.max(np.abs(y_next - y_trial))
-					y_trial = 0.5 * y_trial + 0.5 * y_next		# damping
-					if err < 1e-8:
-						break
-				y_old = y_trial.copy()
-			concentrations[i + 1] = y_old
-
-			for gas in gas_rate_func:# ---- TPD spectra
-				rate[gas][i] = gas_rate_func[gas](temp_old, *y_old)
-
-			if not np.all(np.isfinite(y_old)):
-				raise RuntimeError(f"Non-finite solution at T={temps[i+1]}")
-
-		return temps, concentrations, rate
+			if gas_name not in prods:
+				continue
+			for r in reacts:
+				return r, species.index(r)
+		raise ValueError(f"No desorption process ", f"for gas '{gas_name}'")
 
 	@staticmethod
 	def tpd_plot(gas_name, data, heating_rate):
@@ -437,7 +437,7 @@ class TPR:
 		ax1.set_xlim([min(x), max(x)])
 		ax1.tick_params(axis='x', rotation=0, labelsize=16)
 		ax1.set_ylim([-0.01, 1.1])   # Normalised
-		ax1.set_ylabel(f"$\\frac{{\\delta P_{{{gas_name}}}}}{{\\delta T}}$ (a.u.)", fontsize=18)
+		ax1.set_ylabel("$\\frac{{\\delta P_{i}}}{{\\delta T}}$ (a.u.)", fontsize=18)
 		ax1.tick_params(axis='y', rotation=0, labelsize=16)
 		legend = ax1.legend(loc="best", fontsize=14)
 		plt.title(f"TPD ({int(heating_rate)} $K \\cdot min^{{{-1}}}$)")
@@ -445,7 +445,5 @@ class TPR:
 		plt.ion()
 		plt.savefig(f"KINETICS/TPR/TPD_{gas_name}_{int(heating_rate)}K_min.svg", dpi=300, orientation='landscape',
 					transparent=True)
-
-
 
 
