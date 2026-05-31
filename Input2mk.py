@@ -107,7 +107,6 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 	if software == "VASP":
 		lines = ff.readlines()
 		nline = 0
-		frequencies_2D = []
 		while nline <= len(lines)-1:
 			words = [i.strip() for i in lines[nline].split() if i]
 			nline += 1
@@ -154,6 +153,13 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 						frequencies_2D += [frequencies[-1]]'''  # Alberto 29/05/2025
 					if np.abs(shift[2]) < 0.1:
 						frequencies_2D += [frequencies[-1]]  # Alberto 29/05/2025
+
+		matches = re.findall(r"dipolmoment=\s+([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)", ff.reard())
+		dipole = np.array(matches[-1], dtype=float)
+
+
+
+
 	elif software == "FHI-aims":
 		word = [i.strip() for i in ff.readline().split(" ") if i][-1]
 		try:
@@ -204,6 +210,18 @@ def Frequencies(inputfile, system_type, chemical_symbols, software):
 #                               system.get_dipole_moment()
 #                               ir = Infrared(system)
 #                               print (ir.summary())
+
+	import numpy as np
+	import re
+	def extract_dipole(outcar):
+		with open(outcar) as f:
+			text = f.read()
+		matches = re.findall(
+			r"dipolmoment=\s+([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)", text)
+		dipole = np.array(matches[-1], dtype=float)
+		return dipole
+
+
 
 
 # Frequencies
