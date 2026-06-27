@@ -1,640 +1,449 @@
 """
-	This script builds on the perl version by A.Roldan.
+Side-effect-free kinetics module for the object-based microkinetic workflow.
 
+This module is designed to work with Main.py, where each stage is called as Routine(model).
+
+Expected model structure:
+    model.species[name]      -> Species object
+    model.processes[id]     -> Process object
+    species.thermo          -> ThermodynamicProperties object
+
+Main outputs kept in memory:
+    RConstants(model).results
+    REquations(model).all_equations
+    Profile(model).data
 """
-import os, pathlib
-import sympy as sp
-import numpy as np
-from Symbols_def import t, temp, h, kb, hc, JtoeV, constants
-#from sympy import Max, Piecewise
-from math import gcd
-from functools import reduce
-from itertools import product
-import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
-from scipy.interpolate import splrep, splev
-from collections import defaultdict
 
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from functools import reduce
+from math import gcd
+from typing import Iterable
+import numpy as np
+import sympy as sp
+from Symbols_def import temp, h, kb, hc, JtoeV, constants
+
+
+@dataclass(slots=True)
+class KineticProperties:
+    activation: sp.Expr | float = 0.0
+    sticky: sp.Expr | float = 1.0
+    arrhenius: sp.Expr | float = 1.0
+    ktunneling: sp.Expr | float = 1.0
+    krate0: sp.Expr | float = 0.0
+    reaction_energy: sp.Expr | float = 0.0
+
+@dataclass(slots=True)
+class KineticsResults:
+    by_process: dict[str, KineticProperties] = field(default_factory=dict)
+
+# --- DEFINITIONS
+def _model_key(model) -> int:
+    return id(model)
+
+def kinetic_results(model) -> KineticsResults:
+    """Return the in-memory kinetic results associated with a model."""
+    key = _model_key(model)
+    return model.kinetics
+
+def process_key(process) -> str:
+    return str(process.id)
+
+def process_kinetics(model, process) -> KineticProperties:
+    results = kinetic_results(model)
+    key = process_key(process)
+    if key not in results.by_process:
+        results.by_process[key] = KineticProperties()
+    kin = results.by_process[key]
+    if hasattr(process, "kinetics"):
+        try:
+            if process.kinetics is None:
+                process.kinetics = kin
+            else:
+                process.kinetics.activation = kin.activation
+                process.kinetics.sticky = kin.sticky
+                process.kinetics.arrhenius = kin.arrhenius
+                process.kinetics.ktunneling = kin.ktunneling
+                process.kinetics.krate0 = kin.krate0
+        except (AttributeError, TypeError):
+            pass
+    return kin
+
+def get_thermo(species):
+    if not hasattr(species, "thermo"):
+        raise AttributeError(f"{species.name}: missing `thermo`; run Thermodynamics before Kinetics.")
+    return species.thermo
+
+def species_kind(species) -> str:
+    return str(species.kind).lower()
+
+def is_molecule(species) -> bool:
+    return species_kind(species) == "molecule"
+
+def is_surface(species) -> bool:
+    return species_kind(species) == "surface"
+
+def is_adsorbed_like(species) -> bool:
+    return species_kind(species) in {"adsorbate", "transitionstate", "ts"}
+
+def first_existing_attr(obj, names: Iterable[str], default=None):
+    for name in names:
+        if hasattr(obj, name):
+            value = getattr(obj, name)
+            if value is not None:
+                return value
+    return default
 
 
 class RConstants:
-	def __init__(self, rconditions, systems, processes, restricted_arg):
-		''' Reaction conditions are set as symbols using SYMPY '''
-		rconstants = []
-		for process in processes:
-			processes[process]["activation"] = self.activation(processes[process], systems)
-			if processes[process]['kind'] == 'A':
-				processes[process]["sticky"] = self.sticky(processes[process], systems)
-				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, restricted_arg)
-				processes[process]["ktunneling"] = self.tunneling(processes[process], systems)
-				processes[process]['krate0'] = (processes[process]["sticky"] * processes[process]["arrhenius"] *
-												processes[process]["ktunneling"])
-				# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
-				datalabel = ["activation", "sticky", "arrhenius", 'ktunneling', "krate0"]
-				#self.printdata(rconditions, processes[process], datalabel, "Process"+str(process))
-			else:
-				processes[process]["arrhenius"] = self.arrhenius(processes[process], systems, restricted_arg)
-				processes[process]["ktunneling"] = self.tunneling(processes[process], systems, )   # NO units
-				processes[process]['krate0'] = (processes[process]["arrhenius"] *
-												sp.exp(-processes[process]['activation']/ (kb*temp*JtoeV)) *
-												processes[process]["ktunneling"])   # units s^-1
-				datalabel = ["activation", "arrhenius", 'ktunneling', "krate0"]
-			data = self.getdata(rconditions, processes[process], datalabel)
-			self.printdata(rconditions, processes[process], "Process"+str(process), data)
-			rconstants.append([row[-1] for row in data[1:]])    # gets krate0
-			temps = [row[0] for row in data[1:]]    # gets the temperatures of the last data (same than others)
-		stack = np.column_stack((temps, *rconstants)).tolist()
-		constants_data = [["# Temperature", *list(processes.keys())]] + [i for i in stack]
-		self.log_barplot(['./KINETICS/PROCESSES/',"Rate Constants"], "Elementary Steps", ("Reaction Constants $(M^{ "
-																						 "\\dagger } \\cdot s^{"
-																 "-1})$"), constants_data, '',0.5)
-		self.processes = processes
+    def __init__(self, model):
+        self.model = model
+        self.build()
 
-	@staticmethod
-	def activation(process, systems):
-		''' the activation energy in adsorption and desorption processes is considered as the difference between
-		a state in which the molecule has only two degrees of freedom (being the third degree the reaction coordinate)
-		and the reactants '''
-		if len(process['ts']) > 0:
-			ets = 0  # total energy for transition states
-			for i in range(len(process['ts'])):
-				ets += process['tsstoichio'][i] * systems[process['ts'][i]]['energy3d']
-		elif 'molecule' in [systems[i]['kind'] for i in process['reactants']]:  # for adsorption processes
-			''' This elif considers molecules in reactants as in adsorption processes '''
-			ets = 0  # total energy for transition states
-			for i in range(len(process['reactants'])):
-				if 'energy2d' in systems[process['reactants'][i]]:
-					ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy2d']
-				else:
-					ets += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
-		elif 'molecule' in [systems[i]['kind'] for i in process['products']]:   # for desorption processes
-			''' This elif considers molecules in products as in desorption processes '''
-			ets = 0  # total energy for transition states
-			for i in range(len(process['products'])):
-				if 'energy2d' in systems[process['products'][i]]:
-					ets += process['pstoichio'][i] * systems[process['products'][i]]['energy2d']
-				else:
-					ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
-		else:
-			''' In the rare case that there is two transtion states and none of the reactants is a molecule the 
-			energy of the transition states will be the energy of the final state.'''
-			ets = 0  # total energy for transition states
-			for i in range(len(process['products'])):
-				ets += process['pstoichio'][i] * systems[process['products'][i]]['energy3d']
+    def build(self):
+        for pid, process in self.model.processes.items():
+            kinetics = KineticProperties()
+            kinetics.activation = self.activation(process)
+            kinetics.reaction_energy = self.reaction_energy(process)
+            kinetics.arrhenius = self.arrhenius(process)
+            kinetics.ktunneling = self.tunneling(process)
+            if process.kind.upper() == "A":
+                kinetics.sticky = self.sticky(process, kinetics.activation,)
+                kinetics.krate0 = sp.simplify(kinetics.sticky * kinetics.arrhenius * kinetics.ktunneling)
+            else:
+                kinetics.sticky = sp.Integer(1)
+                kinetics.krate0 = sp.simplify(kinetics.arrhenius * sp.exp(-kinetics.activation / (kb * temp * JtoeV))
+                                                * kinetics.ktunneling)
+            self.model.kinetics.by_process[pid] = kinetics
+        return self.model
 
-		er = 0      # total energy for reactants
-		for i in range(len(process['reactants'])):
-			er += process['rstoichio'][i] * systems[process['reactants'][i]]['energy3d']
-		e_activation = sp.Max(ets - er, 0.0)    # ensures that the activation energy is never below 0
-		return e_activation
+    def species(self, name):
+        return self.model.species[name]
 
-	@staticmethod
-	def sticky(process, systems):
-		''' the sticky coefficient is evaluate as the reduction of degrees of freedom, i.e. from a 3D free molecule
-		to a 2D trapped molecule moving parallel to the surface (being the third degree the reaction coordinate) '''
-		''' Reaction conditions are set as symbols using SYMPY '''
-		qr = 1     # total partition function for reactants
-		for i in range(len(process['reactants'])):
-			qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
+    @staticmethod
+    def is_molecule(species):
+        return species.kind.lower() == "molecule"
 
-		def build_qts(name, q_list):	# to calculate the qts of molecular Adsorptions
-			expr = 1
-			for q in q_list:
-				expr *= systems[name][q] ** process['rstoichio'][i]
-			return expr
+    def gibbs3d(self, name):
+        return self.species(name).thermo.gibbs3d
 
-		def smooth_step(x, x0, w):
-			return 1 / (1 + sp.exp(-(x - x0) / w))
+    def gibbs2d(self, name):
+        return self.species(name).thermo.gibbs2d
 
-		qts = 1     # total partition function for transition states
-		if len(process['ts']) > 0:
-			for i in range(len(process['ts'])):
-				qts *= systems[process['ts'][i]]['q3d']**process['tsstoichio'][i]
-			for i in range(len(process['reactants'])):
-				qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
-		else:
-			for i in range(len(process['reactants'])):
-				name = process['reactants'][i]
-				if systems[name]["kind"] == "molecule":
-					''' TS can be mobile or immobile (Chorkendorff, I. & Niemantsverdriet, 
-					J. W. "Concepts of Modern Catalysis and Kinetics." doi:10.1002/3527602658. page 119-121 '''
-					e_a = process['activation']
-					expr1 = build_qts(name, ["q3d"])	# minimal distortion
-					expr2 = build_qts(name, ["qrot", "qelec", "qtrans3d", "qvib2d"])	# mobile TS
-					expr3 = build_qts(name, ["qrot", "qelec", "qtrans2d", "qvib2d"])	# mobile TS in 2D
-					expr4 = build_qts(name, ["qrot", "qelec", "qvib2d"])	# partially immobile TS (Direct adsorption)
-					expr5 = build_qts(name, ["qelec", "qvib2d"])	# immobile TS
-					w1 = 1 - smooth_step(e_a, 0.01, 0.01)
-					w2 = smooth_step(e_a, 0.01, 0.01) * (1 - smooth_step(e_a, 0.25, 0.02))
-					w3 = smooth_step(e_a, 0.25, 0.02) * (1 - smooth_step(e_a, 0.7, 0.05))
-					w4 = smooth_step(e_a, 0.7, 0.05) * (1 - smooth_step(e_a, 1.0, 0.05))
-					w5 = smooth_step(e_a, 1.0, 0.05)
-					# qts *= Piecewise((expr1, (e_a <= 0.01)), (expr2, (0.01 < e_a) & (e_a <= 0.25)),
-					#				(expr3, (0.25 < e_a) & (e_a <= 0.7)), (expr4, (0.7 < e_a) & (e_a <= 1.)),
-					#				(expr5 * sp.exp(-e_a / (kb * temp * JtoeV)), (e_a > 1.)))
-					qts *= (w1 * expr1 + w2 * expr2 + w3 * expr3 + w4 * expr4 +
-							w5 * expr5 * sp.exp(-e_a / (kb * temp * JtoeV)))
-				else:
-					qts *= systems[name]['q3d']**process['rstoichio'][i]
-		return qts/qr
+    def q3d(self, name):
+        return self.species(name).thermo.q3d
 
-	@staticmethod
-	def arrhenius(process, systems, restricted_arg):
-		''' Reaction conditions are set as symbols using SYMPY '''
-		if process['kind'] == 'A':
-			area = 0    # molecular area (marea)
-			mass = 0    # Molecular mass
-			for i in process['reactants']:
-				if systems[i]['kind'] == 'molecule':
-					''' In principle, the area of a molecule will be practically the same independently of 
-					the working coverages (mean-field is not applicable at high coverages), for that reason it takes
-					the area of the first nadsorbate. '''
-					area = float([systems[i][j]['marea'] for j in systems[i].keys() if j not in restricted_arg][0])
-					''' Same reasoning is applied for the molecular mass'''
-					mass = float([systems[i][j]['mass'] for j in systems[i].keys() if j not in restricted_arg][0])
-			arrhenius = area * 1/sp.sqrt(2*sp.pi*mass*kb*temp)	# units of m*kg^-1*s^-1 |when multiplied by Pa = s^-1
-		else:
-			qts = 1  # total partition function for transition states
-			qr = 1  # total partition function for reactants
-			if len(process['ts']) > 0:
-				for i in range(len(process['ts'])):
-					qts *= systems[process['ts'][i]]['q3d'] ** process['tsstoichio'][i]
-				for i in range(len(process['reactants'])):
-					qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
-			else:   # e.g. for desorption processes
-				for i in range(len(process['products'])):
-					if 'q2d' in systems[process['products'][i]]:
-						qts *= systems[process['products'][i]]['q2d'] ** process['pstoichio'][i]
-					elif 'q3d' in systems[process['products'][i]]:
-						qts *= systems[process['products'][i]]['q3d'] ** process['pstoichio'][i]
-				for i in range(len(process['reactants'])):
-					qr *= systems[process['reactants'][i]]['q3d'] ** process['rstoichio'][i]
-			arrhenius = kb*temp/h * qts/qr    # units of s^-1
-		return arrhenius
+    def state_gibbs3d(self, items):
+        total = sp.Integer(0)
+        for item in items:
+            total += item.coefficient * self.gibbs3d(item.species)
+        return sp.simplify(total)
 
-	@staticmethod
-	def tunneling(process, systems, ):
-		''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
-		vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
-		''' Reaction conditions are set as symbols using SYMPY '''
-		k = 1
-		for i in range(len(process['ts'])):     # systems[process['ts'][i] is the system's name
-			try:
-				k = 1 + 1/24 * (hc * systems[process['ts'][i]]['ifreq'] /(2*sp.pi * kb*temp))**2
-			except:
-				pass
-		return k
+    def reaction_energy(self, process):
+        return sp.simplify(self.state_gibbs3d(process.products) - self.state_gibbs3d(process.reactants))
 
-	@staticmethod
-	def ext_pressure(process, systems, ):
-		''' Reaction conditions are set as symbols using SYMPY '''
-		k = 1
-		return k
+    def activation(self, process):
+        ''' the activation energy in adsorption and desorption processes is considered as the difference between
+        a state in which the molecule has only two degrees of freedom (being the third degree the reaction coordinate)
+        and the reactants '''
+        reactants_g = self.state_gibbs3d(process.reactants)
+        if process.ts:
+            ts_g = self.state_gibbs3d(process.ts)
+        elif any(self.is_molecule(self.species(item.species)) for item in process.reactants):
+            ts_g = self.adsorption_like_ts_gibbs(process.reactants)
+        elif any(self.is_molecule(self.species(item.species)) for item in process.products):
+            ts_g = self.adsorption_like_ts_gibbs(process.products)
+        else:
+            ts_g = self.state_gibbs3d(process.products)
+        return sp.Max(sp.simplify(ts_g - reactants_g), sp.Integer(0),)
 
-	@staticmethod
-	def electric(process, systems, ):
-		''' Phys. Rev. Lett. 2007, 99, 126101                             DOI:https://doi.org/10.1103/PhysRevLett.99.126101
-			J. Phys. Chem. C, 2010, 114 (42), pp 18182–18197              DOI: 10.1021/jp1048887
-			The hydrogen coverage will be dependent on the potential via the reaction:
-								H+ + e- + *  --> H*
-			At standard conditions (298 K, pH 0, 1 bar H2) and U = 0 V vs NHE,
-			the left-hand side is in equilibrium with hydrogen gas.
-			At finite bias, U, the chemical potential of the electron will be linearly dependent on the bias.
-			The reaction free energy can be written as:
-								ΔGH* = AG + AG(U)= AG + −eU
-			defines the chemical potential of H*.'''
-		''' Reaction conditions are set as symbols using SYMPY '''
-		k = 1
-		return k
+    def adsorption_like_ts_gibbs(self, items):
+        ''' the activation energy in adsorption and desorption processes is considered as the difference between
+        a state in which the molecule has only two degrees of freedom (being the third degree the reaction coordinate)
+        and the reactants '''
+        total = sp.Integer(0)
+        for item in items:
+            species = self.species(item.species)
+            if self.is_molecule(species):
+                total += item.coefficient * species.thermo.gibbs2d
+            else:
+                total += item.coefficient * species.thermo.gibbs3d
+        return sp.simplify(total)
 
-	@staticmethod
-	def ph(process, systems, ):
-		''' J. Phys. Chem. B, 2004, 108 (46), pp 17886–17892    DOI: 10.1021/jp047349j
-			At a pH different from 0, we can correct the free energy of H+ ions by the concentration dependence of the entropy:
-						G = H -TS + kT ln(Products/Reactants)   ;    pH = -log[H3O+]
-					   G(pH) = −kT ln[H+]= kT ln (10) × pH.
-		'''
-		''' Reaction conditions are set as symbols using SYMPY '''
-		k = 1
-		return k
+    def state_q3d(self, items):
+        total = sp.Integer(1)
+        for item in items:
+            species = self.species(item.species)
+            total *= species.thermo.q3d ** item.coefficient
+        return sp.simplify(total)
 
-	@staticmethod
-	def printdata(rconditions, process, dataname, data):
-		maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
-		folder = './KINETICS/PROCESSES'
-		outputfile = folder + "/" + str(dataname) + ".dat"
-		if not pathlib.Path(folder).exists():
-			pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-		''' details on conditrions and raction for such process '''
-		output = open(outputfile, "w")
-		output.write("#")
-		for i in rconditions.keys():
-			output.write("\t {val:>{wid}s}:".format(wid=len(i), val=i))
-			for value in rconditions[i]:
-				output.write(" {val:>5.3f}".format(val=value))
-		output.write("\n# {:}\t".format(process['kind']))
-		species = process['reactants'] + ['>'] + process['ts'] + ['>'] + process['products']
-		stoi = process['rstoichio'] + [' '] + process['tsstoichio'] + [' '] + process['pstoichio']
-		for i in range(len(species)):
-			output.write(" {stoi:}{val:>{wid}s}".format(stoi=stoi[i], wid=len(species[i]) + 1, val=species[i]))
-		output.write("\n")
-		for row in data:
-			for i in range(len(row)):
-				if isinstance(row[i], (float, int)):
-					output.write("{val:>{wid}.3{c}}".format(val=row[i], wid=maxlen[i],
-														c='f' if 1e-5 < np.abs(row[i]) < 1e3 or row[i] == 0. else 'e'))
-				else:
-					output.write("{val:>{wid}}".format(val=row[i], wid=maxlen[i]))
-			output.write("\n")
-		output.close()
+    def sticky(self, process, activation):
+        ''' the sticky coefficient is evaluate as the reduction of degrees of freedom, i.e. from a 3D free molecule
+        to a 2D trapped molecule moving parallel to the surface (being the third degree the reaction coordinate) '''
+        qr = self.state_q3d(process.reactants)
+        if process.ts:
+            qts = self.state_q3d(process.ts)
+            return sp.simplify(qts / qr)
+        qts = sp.Integer(1)
+        for item in process.reactants:
+            species = self.species(item.species)
+            if self.is_molecule(species):
+                qts *= self.adsorption_qts(species, item.coefficient, activation,)
+            else:
+                qts *= species.thermo.q3d ** item.coefficient
+        return sp.simplify(qts / qr)
 
-	@staticmethod
-	def getdata(rconditions, process,  datalabel):
-		''' substitute the symbolic constants, e.g. h, kb, hc, ... by numeric values'''
-		equations = []
-		for i in datalabel:
-			if not isinstance(process[str(i)], (int, float)):
-				equations.append(process[str(i)].subs(constants))
-			else:
-				equations.append(float(process[str(i)]))
-		''' lambdify the equation and substitute rconditions'''
-		data = [["# Temperature[K]", *datalabel]]
-		if isinstance(rconditions["temperature"], float):
-			row = [rconditions["temperature"]]
-			for eq in equations:
-				row.append(float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(rconditions["temperature"])))
-			data.append(row)
-		else:
-			ramp = [float(i) for i in rconditions["temperature"]]
-			for temp_num in np.arange(ramp[0], ramp[1], ramp[2]):
-				row = [temp_num]
-				for eq in equations:
-					a = float(sp.lambdify(temp, eq, ['numpy', 'sympy'])(temp_num))
-					value = "{val:>.3{c}}".format(val=a, c='f' if 1e-3 < np.abs(a) < 1e3 or np.abs(a) == 0. else 'e')
-					row.append(value)
-				data.append(row)
-		return data
+    def adsorption_qts(self, species, coefficient, activation):
+        thermo = species.thermo
+        expr1 = thermo.q3d ** coefficient
+        expr2 = (thermo.qrot * thermo.qelec * thermo.qtrans3d * thermo.qvib2d) ** coefficient
+        expr3 = (thermo.qrot * thermo.qelec * thermo.qtrans2d * thermo.qvib2d) ** coefficient
+        expr4 = (thermo.qrot * thermo.qelec * thermo.qvib2d) ** coefficient
+        expr5 = (thermo.qelec * thermo.qvib2d) ** coefficient
+        w1 = 1 - self.smooth_step(activation, 0.01, 0.01)
+        w2 = self.smooth_step(activation, 0.01, 0.01) * (1 - self.smooth_step(activation, 0.25, 0.02))
+        w3 = self.smooth_step(activation, 0.25, 0.02) * (1 - self.smooth_step(activation, 0.70, 0.05))
+        w4 = self.smooth_step(activation, 0.70, 0.05) * (1 - self.smooth_step(activation, 1.00, 0.05))
+        w5 = self.smooth_step(activation, 1.00, 0.05)
+        return sp.simplify(w1 * expr1 + w2 * expr2 + w3 * expr3 + w4 * expr4 + w5 * expr5 *
+                           sp.exp(-activation / (kb * temp * JtoeV)))
 
-	@staticmethod
-	def log_barplot(experiment, x_label, y_label, data, xticklabels, bar_width):
-		icolour = ["b", "r", "c", "g", "m", "y", "grey", "olive", "brown", "pink", "darkgreen", "seagreen", "khaki",
-		   "teal"]
-		ipatterns = ["///", "...", "xx", "**", "\\", "|", "--", "++", "oo", "OO"]
-		gap = 0.7   # gap between group of columns, e.g. processes
-		data = np.asarray(data)
-		data = np.vstack([data[0], data[1:][data[1:, 0].argsort()]])  # sort remaining rows by Temperatures
-		if isinstance(xticklabels, list):
-			labels = xticklabels
-		else:
-			labels = data[0][1:].copy()
+    @staticmethod
+    def smooth_step(x, x0, width):
+        return 1 / (1 + sp.exp(-(x - x0) / width))
 
-		x = np.arange(len(labels)) * (1 + gap)
+    def arrhenius(self, process):
+        if process.kind.upper() == "A":
+            molecule = self.adsorbing_molecule(process)
+            mass = molecule.mass
+            area = self.adsorption_area(molecule)
+            if mass is None:
+                raise ValueError(f"{molecule.name}: molecular mass is required for adsorption.")
+            if area is None:
+                raise ValueError(f"{molecule.name}: adsorption area could not be resolved from the surface site information.")
+            return sp.simplify(area / sp.sqrt(2 * sp.pi * mass * kb * temp))
+        qts = self.transition_state_partition_function(process)
+        qr = self.state_q3d(process.reactants)
+        return sp.simplify(kb * temp / h * qts / qr)
 
-		temps = data[[1, -1], 0]	# temperatures from first and last data rows (skipping header row at index 0)
-		y = data[[1, -1], 1:len(labels) + 1].astype(float)	# values from first and last data rows (skip temperature)
-		y = np.maximum(y, 1e-20)		# prevent log crash
+    def transition_state_partition_function(self, process):
+        if process.ts:
+            return self.state_q3d(process.ts)
+        qts = sp.Integer(1)
+        for item in process.products:
+            species = self.species(item.species)
+            if self.is_molecule(species):
+                qts *= species.thermo.q2d ** item.coefficient
+            else:
+                qts *= species.thermo.q3d ** item.coefficient
+        return sp.simplify(qts)
 
-		fig, ax1 = plt.subplots(figsize=(10, 6), clear=True)
-		ax1.set_ylim(bottom=np.min(y) * 0.5, top=np.max(y) * 5)  # Prevents from hitting zero during autoscaling
-		for n in range(len(y)):    # processes | the first column is temperature
-			offset = (n - len(temps)/2) * bar_width + bar_width/2
-			ax1.bar(x + offset, y[n], log=True,
-					width=bar_width, hatch=ipatterns[n], color=icolour[n], label=f"{temps[n]} K", alpha=0.7)
+    def adsorbing_molecule(self, process):
+        for item in process.reactants:
+            species = self.species(item.species)
+            if self.is_molecule(species):
+                return species
+        raise ValueError(f"Process {process.id}: adsorption process has no molecular reactant.")
 
-		x_limit = [ax1.get_xlim()[0], ax1.get_xlim()[1]]
-		ax1.plot(x_limit, [0, 0], "k-", lw=1.5)
-		ax1.set_xlim(x_limit)
-		ax1.set_xlabel(x_label, fontsize=18)
-		ax1.set_xticks(x)
-		ax1.tick_params(axis='x', labelrotation=45, labelsize=14, labelright=True, pad=-2.5)
-		ax1.set_xticklabels([f"${i}$" for i in labels], rotation=45, ha="right", va="top")
-		for label in ax1.get_xticklabels():
-			label.set_horizontalalignment('center')
-			#labe	l.set_x(label.get_position()[0] + 0.1)
-		ax1.set_ylabel(y_label, fontsize=18)
-		ax1.tick_params(axis='y', rotation=0, labelsize=16)
-		leg_lines, leg_labels = ax1.get_legend_handles_labels()
-		legend = ax1.legend(leg_lines[0:len(temps)], leg_labels[0:len(temps)], loc='best', fontsize=16)
-		plt.title(experiment[-1])
-		fig.tight_layout()
-		plt.ion()
-		plt.savefig( experiment[0]+ "_".join(experiment[-1].split()) + ".svg", dpi=300, orientation='landscape',
-					transparent=True)
+    def adsorption_area(self, molecule):
+        if molecule.area is not None:
+            return molecule.area
+        molsite = molecule.molsite
+        if isinstance(molsite, list):
+            molsite = molsite[0] if molsite else None
+        if molsite is None:
+            return None
+        for species in self.model.species.values():
+            if species.kind.lower() != "surface":
+                continue
+            if species.sites == molsite:
+                return species.area
+        return None
+
+    def tunneling(self, process):
+        ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for
+        vast numbers of reaction including surface-catalysed --> DOI: 10.1039/C4CP03235G '''
+        correction = sp.Integer(1)
+        for item in process.ts:
+            species = self.species(item.species)
+            if hasattr(species, "ifreq") and species.ifreq is not None:
+                correction *= (1 + sp.Rational(1, 24) * (hc * species.ifreq / (2 * sp.pi * kb * temp)) ** 2)
+        return sp.simplify(correction)
 
 
 class REquations:
-	def __init__(self, processes, systems):
-		constemperature = {}  # dictionary of equations, e.g. equation[A] = - K1[A][B] + K2[C]
-		equation_factors = {}	# dictionary with the factors for rate eqations, i.e. 2 * k_1[A][B]
-		print_constemperature = {}
-		tpd = {}  # dictionary of equations WITHOUT adsorptions
-		tpd_factors = {}
-		print_tpd = {}
-		'''surfequations = {}
-		for name in systems.keys():
-			if systems[name]['kind'] == 'surface':
-				surfequations[name] = 1'''
-		no_ts = []
-		for process in processes:
-			no_ts.extend(processes[process]['reactants'])
-			no_ts.extend(processes[process]['products'])
-		for name in no_ts:  # species without TSs
-			if systems[name]['kind'] != "surface": # excluding surfaces to avoid DAE
-				constemperature[name] = []
-				equation_factors[name] = []
-				print_constemperature[name] = []
-				tpd[name] = []
-				tpd_factors[name] = []
-				print_tpd[name] = []
-				for process in processes:
-					eq, rfactor, peq = self.equation(processes[process], name, str(process))
-					constemperature[name].append(eq) #if rfactor != 0 else 0
-					equation_factors[name].append(rfactor) #if rfactor != 0 else None
-					print_constemperature[name] += peq
-					if processes[process]["kind"] != "A":
-						tpd[name].append(eq)
-						tpd_factors[name].append(rfactor)
-						print_tpd[name] += peq
-				if sum(equation_factors[name]) != 0:
-					raise ValueError(f"The species {name} does not considers equilibrium")
+    def __init__(self, model):
+        self.model = model
+        self.build()
 
-		self.all_equations = (constemperature, equation_factors, tpd, tpd_factors)
-		self.printdata(print_constemperature, 'Cons_Temperature')
-		self.printdata(print_tpd, 'TPD')
-		self.overall_stoichiometry(systems, equation_factors)
+    def build(self):
+        constant_temperature: dict[str, list[sp.Expr]] = {}
+        equation_factors: dict[str, list[float]] = {}
+        tpd: dict[str, list[sp.Expr]] = {}
+        tpd_factors: dict[str, list[float]] = {}
+        for name in self.dynamic_species_names():
+            constant_temperature[name] = []
+            equation_factors[name] = []
+            tpd[name] = []
+            tpd_factors[name] = []
+            for process in self.model.processes.values():
+                equation, factor = self.equation(process, name)
+                constant_temperature[name].append(equation)
+                equation_factors[name].append(factor)
+                if process.kind.upper() != "A":
+                    tpd[name].append(equation)
+                    tpd_factors[name].append(factor)
+        eq = self.model.equations
+        eq.isothermal = constant_temperature
+        eq.equation_factors = equation_factors
+        eq.tpd = tpd
+        eq.tpd_factors = tpd_factors
+        eq.overall_stoichiometry = self.overall_stoichiometry()
+        return self.model
 
-	@staticmethod
-	def equation(process, name, i):  # process is processes[process]; i indicates the process number
-		rfactor = 0
-		requation = 0
-		pequation = []      # list of equations to print
-		if name in process['products']:
-			for r in range(len(process['products'])):
-				if name == process['products'][r]:
-					rfactor = float(process['pstoichio'][r])
-			requation = process['krate0']
-			pequation.append("+" + str(rfactor) + "*K_" + str(i))
-			for r in range(len(process['reactants'])):
-				requation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
-				pequation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
-		elif name in process['reactants']:
-			for r in range(len(process['reactants'])):
-				if name == process['reactants'][r]:
-					rfactor = -1*float(process['rstoichio'][r])	# positive number as the "-" is in equation
-			requation = process['krate0']
-			pequation.append(str(rfactor) + "*K_" + str(i))
-			for r in range(len(process['reactants'])):
-				requation *= sp.symbols(f"{process['reactants'][r]}") ** process['rstoichio'][r]
-				pequation.append("[" + process['reactants'][r] + "]^" + str(process['rstoichio'][r]))
-		return requation, rfactor, pequation
+    def dynamic_species_names(self) -> list[str]:
+        names = set()
+        for process in self.model.processes.values():
+            names.update(item.species for item in process.reactants)
+            names.update(item.species for item in process.products)
+        return sorted(name for name in names if not is_surface(self.model.species[name]))
 
-	@staticmethod
-	def overall_stoichiometry(systems, factors):
-		coeff_range = range(1, 2)  # range for vectors combination. Grows very fast so keep the range small.
-		names = list(factors.keys())
-		stoich_matrix = np.array([factors[name] for name in names])
-		ads_matrix = sp.Matrix([factors[name] for name in names if systems[name]['kind'] == 'adsorbate'])
+    @staticmethod
+    def coefficient_for(items, name: str) -> float:
+        return sum(float(item.coefficient) for item in items if item.species == name)
 
-		def lcm(a, b):
-			return abs(int(a) * int(b)) // gcd(int(a), int(b))
-		def lcm_list(lst):
-			return reduce(lcm, lst)
-		def normalize_integer_vector(v):
-			v = [sp.nsimplify(x) for x in v]	# Convert to rationals
-			denoms = [x.as_numer_denom()[1] for x in v]    # Get denominators
-			lcm_denom = lcm_list(denoms)
-			v_int = [int(x * lcm_denom) for x in v]    # Scale to integers
-			nonzero = [abs(x) for x in v_int if x != 0]    # Remove common gcd
-			if nonzero:
-				g = reduce(gcd, nonzero)
-				v_int = [x // g for x in v_int]
-			return sp.Matrix(v_int)
-		def is_nonzero_reaction(overall_reaction):
-			return any(x != 0 for x in overall_reaction)
+    def equation(self, process, name: str) -> tuple[sp.Expr, float]:
+        product_coeff = self.coefficient_for(process.products, name)
+        reactant_coeff = self.coefficient_for(process.reactants, name)
+        net_factor = product_coeff - reactant_coeff
+        if net_factor == 0.0:
+            return sp.Integer(0), 0.0
+        kin = process_kinetics(self.model, process)
+        if kin.krate0 == 0.0:
+            raise ValueError(f"Process {process.id}: missing krate0. Run RConstants(model) before REquations(model).")
+        rate = kin.krate0
+        for item in process.reactants:
+            rate *= sp.Symbol(item.species) ** item.coefficient
+        return sp.simplify(net_factor * rate), net_factor
 
-		ns = ads_matrix.nullspace()    # Nullspace: eliminate surface species
-		if not ns:
-			raise ValueError("No solution eliminating adsorbate species")
-		solutions = []
-		for i, vec in enumerate(ns):
-			v_int = normalize_integer_vector(vec)
-			if any(x < 0 for x in v_int):    # Optional: enforce positive direction
-				v_int = -v_int
-		overall_reaction = stoich_matrix * v_int
-		solutions.append((v_int, overall_reaction))
-		filtered = [sol for sol in solutions if is_nonzero_reaction(sol[1])]
-		react = []
-		prod = []
-		for i, name in enumerate(names):
-			f =  filtered[0][1][i]
-			if f != 0 and systems[name]["kind"] == 'molecule' and systems[name]["pressure0"] > 0:
-				react.append(f"{int(f) * -1}.{name}")
-			elif f !=0 and systems[name]["kind"] == 'molecule' and systems[name]["pressure0"] == 0:
-				prod.append(f"{int(f)}.{name}")
-		folder = './KINETICS/EQUATIONS'
-		outputfile = folder + "/Overall_Reaction.dat"
-		output = open(outputfile, "w")
-		output.write("\n\t")
-		for i in range(len(react)-1):
-			output.write("{val} + ".format(val=react[i]))
-		output.write("{val} --> ".format(val=react[-1]))
-		for i in range(len(prod)-1):
-			output.write("{val} + ".format(val=prod[i]))
-		output.write("{val}\n\n".format(val=prod[-1]))
-		return list(filtered[0][1])
+    def overall_stoichiometry(self) -> list[sp.Expr]:
+        """ Return one overall stoichiometric vector that eliminates adsorbed species.
 
-	@staticmethod
-	def printdata(equations, experiment):
-		folder = './KINETICS/EQUATIONS'
-		outputfile = folder + "/" + experiment + ".dat"
-		if not pathlib.Path(folder).exists():
-			pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-			os.chmod(folder, 0o755)
-		output = open(outputfile, "w")
-		output.write("# species/dt\t reactions\n")
-		for name in equations.keys():
-			output.write(" [{val:>{wid}s}]\dt = ".format(wid=len(name), val=name))
-			output.write("{val:>s}".format(val=str.join(" ", equations[name])))
-			output.write("\n")
-		'''
-		for name in surf_equations.keys():
-			output.write(" [{val:>{wid}s}] = ".format(wid=len(name), val=name))
-			output.write("{val:>s}".format(val=str.join(" ", surf_equations[name])))
-			output.write("\n")
-		'''
-		output.close()
+        No files are written. The returned vector follows the order of the dynamic
+        species names used in the rate equations. """
+        names = self.dynamic_species_names()
+        if not names:
+            return []
+        factors = self.model.equations.equation_factors
+        stoich_matrix = sp.Matrix([factors[name] for name in names])
+        ads_matrix = sp.Matrix([factors[name] for name in names if is_adsorbed_like(self.model.species[name])])
+        if ads_matrix.rows == 0:
+            return [sp.Integer(0) for _ in names]
+        nullspace = ads_matrix.nullspace()
+        if not nullspace:
+            return []
+        v_int = self.normalise_integer_vector(nullspace[0])
+        if any(value < 0 for value in v_int):
+            v_int = -v_int
+        return list(stoich_matrix * v_int)
+
+    @staticmethod
+    def normalise_integer_vector(vector):
+        values = [sp.nsimplify(value) for value in vector]
+        denominators = [value.as_numer_denom()[1] for value in values]
+        def lcm(a, b):
+            return abs(int(a) * int(b)) // gcd(int(a), int(b))
+        lcm_denominator = reduce(lcm, denominators, 1)
+        integers = [int(value * lcm_denominator) for value in values]
+        nonzero = [abs(value) for value in integers if value != 0]
+        if nonzero:
+            common = reduce(gcd, nonzero)
+            integers = [value // common for value in integers]
+        return sp.Matrix(integers)
 
 
 class Profile:
-	''' generates a Processes.txt with all the reactions and energies.
-		generates a Profile.svg image ONLY with the ODD reaction steps simulating a forward process. '''
-	def __init__(self, processes, systems, temp_num=300.0):
-		''' Generate an energy Profile from the species in processes '''
-		graph = self.build_graph(processes)  # graph_forward only includes ODD steps in processes
-		p0 = list(processes.values())[0]
-		reference = self.state_key(p0["reactants"], p0["rstoichio"])
-		cache = {}
-		self.printprofile(processes, systems, temp_num, cache)
-		''' there are many REQUISITES to generate a sensible profile 
-		self.plot_shared_reactant(graph, reference, systems, temp_num, cache) '''
+    """Build an in-memory free-energy profile table."""
+    def __init__(self, model, temp_num: float = 300.0):
+        self.model = model
+        self.temp_num = temp_num
+        self.cache: dict[tuple, float] = {}
+        self.data = self.build()
+        self.model.profile = self.data
 
-	@staticmethod
-	def build_graph(processes):
-		graph = defaultdict(list)        # ALL the steps, i.e. back and forwards.
-		for pr in processes.values():
-			r = Profile.state_key(pr["reactants"], pr["rstoichio"])
-			p = Profile.state_key(pr["products"], pr["pstoichio"])
-			ts = None
-			if pr["ts"]:
-				ts = Profile.state_key(pr["ts"], pr["tsstoichio"])
-			graph[r].append({"ts": ts, "products": p})
-		return graph
+    def build(self) -> list[list[str]]:
+        data: list[list[str]] = [["Process", "Kind", "Reaction", f"G(T={self.temp_num} K) [eV]", "Ea [eV]", "Er [eV]"]]
+        for process in self.model.processes.values():
+            react_state = self.state_key(process.reactants)
+            product_state = self.state_key(process.products)
+            g_react = self.state_energy(react_state)
+            g_product = self.state_energy(product_state)
+            if process.ts:
+                ts_state = self.state_key(process.ts)
+                ts_label = self.state_label(ts_state)
+                g_ts = self.state_energy(ts_state)
+            else:
+                ts_label = ""
+                if process.kind.upper() == "A":
+                    g_ts = self.state_energy_adsorption_ts(react_state)
+                elif process.kind.upper() == "D":
+                    g_ts = self.state_energy_adsorption_ts(product_state)
+                else:
+                    g_ts = None
+            ea = g_ts - g_react if g_ts is not None else None
+            er = g_product - g_react
+            reaction = " > ".join([self.state_label(react_state), ts_label, self.state_label(product_state),])
+            energy_path = " > ".join([f"{g_react:.2f}", f"{g_ts:.2f}" if g_ts is not None else "", f"{g_product:.2f}",])
+            data.append([str(process.id), process.kind, reaction, energy_path,
+                         f"{ea:.2f}" if ea is not None else "---", f"{er:.2f}",])
+        return data
 
-	@staticmethod
-	def printprofile(processes, systems, temp_num, cache):
-		data = [["#Process", "Kind", "Reaction", f"G(T={temp_num} K)[eV]", "Ea[eV]", "Er[eV]"]]
-		for n, pr in enumerate(processes.values()):
-			react = Profile.state_key(pr['reactants'], pr['rstoichio'])
-			r = Profile.state_label(react)
-			e0 = Profile.state_energy(react, systems, temp_num, cache)
-			if pr['ts']:
-				ts = Profile.state_key(pr['ts'], pr["tsstoichio"])
-				t = Profile.state_label(ts)
-				ets = Profile.state_energy(ts, systems, temp_num, cache)
-				ea = ets - e0
-			else:
-				t = ''
-				if pr['kind'] == "A":
-					ts = Profile.state_key(pr['reactants'], pr['rstoichio'])
-					ets = Profile.state_energy_ts(ts, systems, temp_num)
-					ea = ets - e0
-				elif pr['kind'] == "D":
-					ts = Profile.state_key(pr['products'], pr['pstoichio'])
-					ets = Profile.state_energy_ts(ts, systems, temp_num)
-					ea = ets - e0
-				else:
-					ets = None
-			pro = Profile.state_key(pr["products"], pr["pstoichio"])
-			p = Profile.state_label(pro)
-			ep = Profile.state_energy(pro, systems, temp_num, cache)
-			er = ep - e0
-			reaction = " > ".join([r, t, p])
-			ereaction = " > ".join([f"{e0:.2f}", f"{ets:.2f}" if ets is not None else "", f"{ep:.2f}"])
-			data.append([f"{n+1}", f"{pr['kind']}", f"{reaction}", f"{ereaction}",
-						 f"{ea:5.2f}" if ets is not None else "  ---", f"{er:.2f}"])
-		maxlen = [max([len(f"{data[r][c]}")+1 for r in range(len(data))]) for c in range(len(data[0]))] # max length per column
-		outputfile = "Processes.txt"
-		output = open(outputfile, "w")
-		for i in range(len(data)):
-			for j in range(len(data[i])):
-				output.write("{val:{wid}s} ".format(wid=maxlen[j], val=data[i][j]))
-			output.write("\n")
-		output.close()
+    def species_gibbs(self, name: str):
+        species = self.model.species[name]
+        thermo = get_thermo(species)
+        if is_molecule(species):
+            return thermo.gibbs3d
+        return first_existing_attr(thermo, ["gibbs_theta", "gibbs3d"])
 
-	@staticmethod
-	def state_key(names, stoich):
-		return tuple(sorted(zip(names, stoich)))
+    def species_gibbs_adsorption_ts(self, name: str):
+        species = self.model.species[name]
+        thermo = get_thermo(species)
+        if is_molecule(species):
+            return thermo.gibbs2d
+        return first_existing_attr(thermo, ["gibbs_theta", "gibbs3d"])
 
-	@staticmethod
-	def state_energy(state, systems, temp_num, cache):
-		if state in cache:
-			return cache[state]
-		e = 0.0
-		if state:
-			for name, stoi in state:
-				expr = systems[name]["energy3d"].subs(constants)
-				f = sp.lambdify(temp, expr, ("numpy", "sympy"))
-				e += stoi * float(f(temp_num))
-		cache[state] = e
-		return e
+    def state_energy(self, state) -> float:
+        if state in self.cache:
+            return self.cache[state]
+        value = 0.0
+        for name, coefficient in state:
+            expr = self.species_gibbs(name).subs(constants)
+            value += coefficient * self.evaluate_at_temperature(expr)
+        self.cache[state] = value
+        return value
 
-	@staticmethod
-	def state_energy_ts(state, systems, temp_num):
-		e = 0.0
-		if state:
-			for name, stoi in state:
-				if systems[name]['kind'] == "molecule":
-					expr = systems[name]["energy2d"].subs(constants)
-				else:
-					expr = systems[name]["energy3d"].subs(constants)
-				f = sp.lambdify(temp, expr, ("numpy", "sympy"))
-				e += stoi * float(f(temp_num))
-		return e
+    def state_energy_adsorption_ts(self, state) -> float:
+        value = 0.0
+        for name, coefficient in state:
+            expr = self.species_gibbs_adsorption_ts(name).subs(constants)
+            value += coefficient * self.evaluate_at_temperature(expr)
+        return value
 
-	@staticmethod
-	def state_label(state):
-		item = []
-		for name, stoi in state:
-			try:
-				stoi = int(stoi)
-			except:
-				pass
-			item.append(f"{stoi}.{name}")
-		return " + ".join(item)
+    def evaluate_at_temperature(self, expr) -> float:
+        func = sp.lambdify(temp, expr, ("numpy", "sympy"))
+        return float(func(self.temp_num))
 
-	@staticmethod
-	def plot_shared_reactant(graph, reference, systems, temp_num, cache):
-		def note(text, xy):
-			ax.annotate(f"{text}", xy=(xy[0], xy[1]), xytext=(0, -5),  # 15 points below
-						textcoords="offset points", ha="center", fontsize=12, rotation=90, va='top',
-						bbox=dict(boxstyle="round, pad=0.1", fc="white", ec="white", lw=1, alpha=0.8))
+    @staticmethod
+    def state_key(items):
+        return tuple(sorted((item.species, float(item.coefficient)) for item in items))
 
-		e0 = Profile.state_energy(reference, systems, temp_num, cache)
-		xtick = 0.0
-		xticks = [xtick]
-		xlabels = [Profile.state_label(reference)]
-		step_length = 1.0/2 #    length of every minima
+    @staticmethod
+    def state_label(state) -> str:
+        pieces = []
+        for name, coefficient in state:
+            if float(coefficient).is_integer():
+                coefficient = int(coefficient)
+            pieces.append(f"{coefficient}.{name}")
+        return " + ".join(pieces)
 
-		fig, ax = plt.subplots(figsize=(10, 6), clear=True)  # prepares a figure
-
-		ax.plot([xtick - step_length, xtick + step_length], [0.0, 0.0], linestyle='-', lw=5, color="k", alpha=1)
-		#ax.text(xtick, -0.2, Profile.state_label(reference), ha="center", va="top", fontsize=14)
-		note(Profile.state_label(reference), [xtick, 0.0])
-
-		for key in graph.keys():
-			branches = graph[key]
-			n = len(branches)
-			offsets = [0.0] #np.linspace(-0.8, 0.8, n) if n > 1 else [0.0]     # horizontal spacing for branches
-
-			x_react = xtick  # x positions
-			x_ts = xtick + 1
-			x_prod = xtick + 2
-			y_react = Profile.state_energy(key, systems, temp_num, cache) - e0
-
-			for offset, step in zip(offsets, branches):
-				prod = step["products"]
-				y_prod = Profile.state_energy(prod, systems, temp_num, cache) - e0
-				ax.plot([x_prod - step_length, x_prod + step_length], [y_prod, y_prod], lw=2.5, color="k")
-				# ax.text(x_prod, y_prod - 0.2, Profile.state_label(prod), ha="center", va="top", fontsize=14)
-				note(Profile.state_label(prod), [x_prod, y_prod])
-				xticks.append(x_prod)
-				xlabels.append(Profile.state_label(prod))
-
-				if step["ts"]:
-					ts = step["ts"]
-					y_ts = Profile.state_energy(ts, systems, temp_num, cache) - e0
-					ea = y_ts - y_react
-					# spline through TS
-					x0 = [x_react +step_length, x_ts, x_prod -step_length]
-					y0 = [y_react, y_ts, y_prod]
-					spl = splrep(x0, y0, k=2)
-					xt = np.linspace(min(x0), max(x0), 60)
-					ax.plot(xt, splev(xt, spl), linestyle='--', lw=1.0, color="k", alpha=1)
-					#ax.text(x_ts, y_ts + 0.2, f"$E_A$ = {ea:.2f} eV", ha="center", fontsize=14)
-					ax.annotate(f"$E_{{A}}$ = {ea:.2f} eV", xy=(x_ts, y_ts), xytext=(0, 15),  # 15 points below
-								textcoords="offset points", ha="center", fontsize=12)
-				else:   # linking reactants and products
-					ax.plot([x_react +step_length, x_prod -step_length], [y_react, y_prod], linestyle='--',
-							lw=1.0, color="k", alpha=1)
-			xtick += 2  # connecting with the previous process
-
-		ax.axhline(0, lw=1, ls=":", color="k")
-		ax.tick_params(labelsize=14)
-		ax.set_xticks([])
-		#ax.set_xticks(xticks)
-		#ax.set_xticklabels(xlabels, rotation=25, ha="right")  # rotation=0, ha="center")
-		ax.set_ylabel(f"$\Delta G_{{T={temp_num}\,K}}$ (eV)", fontsize=16)
-		fig.tight_layout()
-		plt.ion()
-		plt.savefig("Profile.svg", dpi=300, orientation='landscape', transparent=True)

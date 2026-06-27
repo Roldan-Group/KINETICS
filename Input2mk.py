@@ -16,12 +16,14 @@ from __future__ import annotations
 import sys
 import re
 import numpy as np
+import sympy as sp
 from dataclasses import dataclass, field
 from collections import defaultdict, Counter
 from pathlib import Path
 from ase import Atoms
 from ase.io import read
 from ase.io import vasp
+from Symbols_def import kb, temp
 
 
 # --- Dataclasses
@@ -32,49 +34,62 @@ class GlobalSettings:
     ph: float | None = None
     electrochemical: float | None = None
 
+@dataclass
+class SpeciesCoefficient:
+    species: str
+    coefficient: float = 1.0
 
 @dataclass
-class Reaction:
-    process_type: str      # A, D, R
-    expression: str
-
+class Process:
+    id: int
+    kind: str
+    reactants: list[SpeciesCoefficient]
+    ts: list[SpeciesCoefficient] | None
+    products: list[SpeciesCoefficient]
 
 @dataclass
 class SystemDefinition:
     name: str
+    system_type: str | None = None
     syspath: str | None = None
     freqpath: str | None = None
+    energy: float | None = None   # thermochemistry
+    frequencies: list[float] = field(default_factory=list)    # vibrational data
+    frequencies_2d: list[float] = field(default_factory=list)
+    ir_intensities: list[float] = field(default_factory=list)    # IR data
+    degeneracy: int = 1
     symfactor: float | None = None
+    linear: str | None = None
+    inertia: list[float] = field(default_factory=list)
+    masses: list[float] = field(default_factory=list)
+    natoms_per_mass: list[int] = field(default_factory=list)
+    mass: float | None = None
+    volume: sp.Expr | Nonen = None
+    pressure: sp.Symbol| None = None
+    area: float | None = None    # surface properties
     molsite: tuple[float, str] | None = None
     ipressure: list[float] | None = None
     icoverage: list[float] | None = None
     nsites: float | None = None
     sites: str | None = None
-    system_type: str | None = None    # classification
+    model_coverage: list[CoveragePoint] = field(default_factory=list)
 
+@dataclass
+class CoveragePoint:
+    model_coverage: float
+    energy: float | None = None
+    frequencies: list[float] = field(default_factory=list)    # vibrational data
+
+@dataclass
+class CoverageModel:
+    species: str
+    points: list[CoveragePoint]
 
 @dataclass
 class InputModel:
     globals: GlobalSettings
-    reactions: list[Reaction]
+    processes: list[Process]
     systems: list[SystemDefinition]
-
-
-@dataclass
-class ParsedSystem:
-    energy: float    # thermochemistry
-    frequencies: list[float] = field(default_factory=list)    # vibrational data
-    frequencies_2d: list[float] = field(default_factory=list)
-    ir_intensities: list[float] = field(default_factory=list)    # IR data
-    degeneracy: int = 1
-    symfactor: int | None = None
-    linear: str | None = None
-    inertia: list[float] = field(default_factory=list)
-    masses: list[float] = field(default_factory=list)
-    natoms_per_mass: list[int] = field(default_factory=list)
-    area: float | None = None    # surface properties
-    system_type: str | None = None
-
 
 @dataclass
 class DisplacedGeometry:
@@ -85,8 +100,7 @@ class DisplacedGeometry:
 
 # --- Parser
 def parse_global(line, globals_):
-    key, value = [x.strip() for x in line.split("=",1)]
-    value = remove_comment(value)
+    key, value = remove_comment(line)
     values = [float(v) for v in value.split()]
     if key == "TEMPERATURE":
         globals_.temperature = values
@@ -97,23 +111,56 @@ def parse_global(line, globals_):
     elif key == "ELECTROCHEMICAL":
         globals_.electrochemical = values
 
-def parse_process(line):
-    rhs = line.split("=",1)[1].strip()
-    process_type = rhs.split()[0]
-    expression = rhs[len(process_type):].strip()
-    return Reaction(process_type=process_type, expression=expression)
+def parse_process(line, next_pid):
+    left, value = remove_comment(line)
+    tokens = left.split()
+    if tokens[0].upper() != "PROCESS":
+        raise ValueError(f"Not a PROCESS line:\n{line}" )
+    if len(tokens) > 1:
+        pid = int(tokens[1])
+    else:
+        pid = next_pid
+        next_pid += 1
+    tokens = value.strip().split(maxsplit=1)
+    kind = tokens[0]
+    reaction = tokens[1]
+    parts = reaction.split(">")
+    if len(parts) == 2:
+        reactants = parse_species_process(parts[0])
+        transition_states = []
+        products = parse_species_process(parts[1])
+    elif len(parts) == 3:
+        reactants = parse_species_process(parts[0])
+        transition_states = parse_species_process(parts[1])
+        products = parse_species_process(parts[2])
+    else:
+        raise ValueError(f"PROCESS {pid}: cannot parse reaction\n{reaction}")
+    return Process(id=pid, kind=kind, reactants=reactants, ts=transition_states, products=products,), next_pid
 
-def parse_system_keyword(system, line):
-    line = remove_comment(line)
-    if "=" not in line:
-        return
-    key, value = [x.strip() for x in line.split("=", 1)]
+def parse_species_process(text):
+    species = []
+    for term in text.split("+"):
+        term = term.strip()
+        m = re.match(r'^([0-9]*\.?[0-9]+)\s+(.+)$', term)
+        if m:
+            coeff = float(m.group(1))
+            name = m.group(2).strip()
+        else:
+            coeff = 1.0
+            name = term
+        species.append(SpeciesCoefficient(species=name, coefficient=coeff))
+    return species
+
+def parse_system(system, line):
+    key, value = remove_comment(line)
     if key == "SYSPATH":
         system.syspath = value
     elif key == "FREQPATH":
         system.freqpath = value
     elif key == "SYMFACTOR":
         system.symfactor = float(value)
+    elif key == "VOLUME":
+        system.volume = float(value)
     elif key == "MOLSITE":
         words = value.split()
         if len(words) == 1:
@@ -134,18 +181,15 @@ def parse_system_keyword(system, line):
         system.ipressure = [float(v) for v in value.split()]
     elif key == "ICOVERAGE":
         system.icoverage = [float(v) for v in value.split()]
-
-    if system.nsites is None and system.molsite is None:
-        system.system_type = "Surface"
-    elif isinstance(system.nsites, (float, int)):
-        system.system_type = "Catalyst"
-    else:
-        system.system_type = "Molecule"
+    elif key == "MODEL_COVERAGE":
+        system.model_coverage = value.split()
 
 def parse_input(path):
     globals_ = GlobalSettings()
-    reactions = []
+    process = []
     systems = []
+    coverage_points = []
+    next_pid = 1    # count of processes
     current = None
     with open(path) as f:
         for raw in f:
@@ -164,16 +208,21 @@ def parse_input(path):
             elif line.startswith("ELECTROCHEMICAL"):
                 parse_global(line, globals_)
             elif line.startswith("PROCESS"):
-                reactions.append(parse_process(line))
+                new_process, next_pid = parse_process(line, next_pid)
+                process.append(new_process)
             elif line.startswith("SYSTEM"):
                 name = line.split("=",1)[1].strip()
                 current = SystemDefinition(name=name)
             elif line.upper() == "END":
+                current.system_type = determine_system_type(current)
                 systems.append(current)
                 current = None
             elif current is not None:
-                parse_system_keyword(current,line)
-    return InputModel(globals=globals_, reactions=reactions, systems=systems)
+                parse_system(current,line)
+
+    system_lookup = {system.name: system for system in systems}
+
+    return InputModel(globals=globals_, processes=process, systems=systems)
 
 
 # --- Readers
@@ -338,58 +387,55 @@ def write_globals(fh, globals_):
         fh.write("PH = " + " ".join(map(str, globals_.ph)) + "\n")
     fh.write("\n")
 
-def write_reactions(fh, reactions):
+def write_processes(fh, reactions):
     fh.write("# Reaction processes\n")
     for r in reactions:
-        fh.write(f"PROCESS = {r.process_type} {r.expression}\n")
+        fh.write(f"PROCESS = {r.kind} {process_expression(r)}\n")
     fh.write("\n")
 
-def write_system(fh, system: SystemDefinition, parsed: ParsedSystem):
+def write_system(fh, system: SystemDefinition):
     fh.write(f"SYSTEM = {system.name}\n")
     fh.write(f" TYPE = {system.system_type}\n")
     fh.write(f" SYSPATH = {system.syspath}\n")
     if system.freqpath:
         fh.write(f" FREQPATH = {system.freqpath}\n")
-    if parsed.energy is not None:
-        fh.write(f" E0 = {parsed.energy:.6f}\t# eV\n")
-    if parsed.frequencies:
+    if system.energy is not None:
+        fh.write(f" E0 = {system.energy:.6f}\t# eV\n")
+    if system.frequencies:
         fh.write(" FREQ =")
-        for freq in parsed.frequencies:
+        for freq in system.frequencies:
             fh.write(f" {freq:.1f}")
         fh.write("\t# cm^-1\n")
-    if parsed.ir_intensities:
+    if system.ir_intensities:
         fh.write(" IRINTENSITY =")
-        for i in parsed.ir_intensities:
+        for i in system.ir_intensities:
             fh.write(f" {i:.5f}")
         fh.write("\n")
-    if parsed.degeneracy is not None:
-        fh.write(f" DEGENERATION = {parsed.degeneracy}\n")
-    if system.system_type == "Molecule":    # ONLY for Moleccules
-        if len(parsed.frequencies_2d) > 0:
+    if system.degeneracy is not None:
+        fh.write(f" DEGENERATION = {system.degeneracy}\n")
+    if system.system_type == "Molecule":    # ONLY for Molecules
+        if len(system.frequencies_2d) > 0:
             fh.write(" FREQ2D =")
-            for freq in parsed.frequencies_2d:
+            for freq in system.frequencies_2d:
                 fh.write(f" {freq:.1f}")
             fh.write("\t# cm^-1\n")
         else:
             fh.write(" FREQ2D = 0.0\t# no 2D freqs\n")
         if system.symfactor:
             fh.write(f" SYMFACTOR = {system.symfactor:g}\n")
-        if parsed.masses:
-            fh.write(" IMASS =")
-            for m in parsed.masses:
-                fh.write(f" {m:.3f}")
-            fh.write("\n")
-        if parsed.natoms_per_mass:
-            fh.write(" INATOMS =")
-            for n in parsed.natoms_per_mass:
-                fh.write(f" {n}")
-            fh.write("\n")
-        if parsed.linear:
-            fh.write(f" LINEAR = {parsed.linear}\n")
-        if parsed.inertia:
+        if system.mass:
+            fh.write(f" MASS = {system.mass}\t # in Kg\n")
+        if system.volume is not None:
+            fh.write(f" VOLUME = {system.volume}\t# m^3 per molecule\n")
+        if system.linear:
+            fh.write(f" LINEAR = {system.linear}\n")
+        if system.inertia:
             fh.write(" INERTIA =")
-            for i in parsed.inertia:
-                fh.write(f" {i:.5e}")
+            if system.linear == "yes":
+                fh.write(f" {np.max(system.inertia):.5e}")
+            else:
+                for i in system.inertia:
+                    fh.write(f" {i:.5e}")
             fh.write("\t# kg m^2\n")
         if system.molsite:
             nsites, site = system.molsite
@@ -398,31 +444,68 @@ def write_system(fh, system: SystemDefinition, parsed: ParsedSystem):
             fh.write(" IPRESSURE = " + " ".join(map(str, system.ipressure)) + "\t# Pa\n")
         else:
             fh.write(" IPRESSURE = 0.0\t# Pa\n")
-    elif system.system_type == "Surface":   # ONLY for Surfaces
-        if system.sites:
-            fh.write(f" ISITES = {system.sites}\n")
-        if parsed.area is not None:
-            fh.write(f" IACAT = {parsed.area:.6e}\t# m^2\n")
-    elif system.system_type == "Catalyst":  # ONLY for Catalysts
-        if system.nsites:
-            fh.write(f" ISITES = {system.nsites} {system.sites}\n")
+    if system.sites:
+        if system.nsites is not None:
+            fh.write(f" ISITES = {system.nsites:g} {system.sites}\n")   # Adsorbates
+        else:
+            fh.write(f" ISITES = {system.sites}\n") # Surfaces
+    if system.system_type == "Surface":
+        if system.area is not None:
+            fh.write(f" IACAT = {system.area:.6e}\t# m^2\n")
+    if system.system_type == "Adsorbate":
         if system.icoverage is not None:
             fh.write(" ICOVERAGE = " + " ".join(map(str, system.icoverage)) + "\t# ML\n")
         else:
             fh.write(" ICOVERAGE = 0.0\t# ML\n")
+    if system.model_coverage:
+        fh.write(" MODEL_COVERAGE\t# cov(ML)   E0   Frequencies(cm^-1)\n")
+        for cov_name in system.model_coverage:
+            cov_system = system_lookup[cov_name]
+            nsites = cov_system.nsites
+            coverage = 1.0 - 1.0/nsites
+            fh.write(f"  POINT = {coverage:.6f} {cov_system.energy:.8f}")
+            if cov_system.frequencies:
+                fh.write(" ".join(f"{f:.3f}" for f in cov_system.frequencies) + "\n")
+        fh.write(" END_MODEL_COVERAGE\n")
     fh.write("END\n\n")
 
-def write_mk(outfile, model, results):
+def write_mk(outfile, model):
     with open(outfile, "w") as fh:
         write_globals(fh, model.globals)
-        write_reactions(fh, model.reactions)
+        write_processes(fh, model.processes)
         for system in model.systems:
-            parsed = results[system.name]
-            write_system(fh, system, parsed)
+            write_system(fh, system)
 
 # --- Frequencies and Others
-def remove_comment(line: str) -> str:
-    return line.split("#", 1)[0].strip()
+def remove_comment(line):
+    line = line.split("#", 1)[0].strip()
+    if "=" not in line:
+        raise ValueError(f"Expected KEY = VALUE, got:\n{line}")
+    key, value = line.split("=", 1)
+    return key.strip().upper(), value.strip()
+
+def determine_system_type(system):
+    if system.molsite is not None:
+        return "Molecule"
+    if system.sites is not None:
+        if system.nsites is None:
+            return "Surface"
+        return "Adsorbate"
+    return "Surface"
+
+def species_side(species_list):
+    terms = []
+    for s in species_list:
+        terms.append(f"{s.coefficient:g}{s.species}")
+    return "+".join(terms)
+
+def process_expression(process):
+    reactants = species_side(process.reactants)
+    products = species_side(process.products)
+    if process.ts:
+        ts = species_side(process.ts)
+        return (f"{reactants} > {ts} > {products}")
+    return (f"{reactants} > {products}")
 
 def molecular_data(atoms, tol=1e-3):
     symbols = atoms.get_chemical_symbols()
@@ -447,7 +530,7 @@ def molecular_data(atoms, tol=1e-3):
 def surface_area(atoms):
     cell = atoms.get_cell()
     area_ang2 = np.linalg.norm(np.cross(cell[0], cell[1]))
-    area_m2 = area_ang2 * 1.0e-20
+    area_m2 = area_ang2 * 1.0e-20   # A^2 --> m^2
     return area_m2
 
 def find_equilibrium(displacements):
@@ -545,48 +628,35 @@ def get_frequencies_2d(frequencies, eigenvectors, threshold=0.25):
 # --- Main
 def main(inputfile):
     model = parse_input(inputfile)
-    results = {}
     for system in model.systems:
         if system.syspath is None:
             continue
         reader = get_reader(system.syspath)
         atoms = reader.read_system(system.syspath)
+        system.energy = atoms.get_total_energy()
         freqfile = system.freqpath or system.syspath
         frequencies = reader.read_frequencies(freqfile)
         eigenvectors = reader.read_eigenvectors(freqfile)
         ir_intensities = compute_ir_intensities(freqfile, reader, eigenvectors)
 
         if system.system_type == "Molecule":
-            masses, natoms, linear, inertia = molecular_data(atoms)
-            if linear == 'yes':
+            masses, natoms, system.linear, system.inertia = molecular_data(atoms)
+            system.mass = sum([masses[i] * natoms[i] for i in range(len(natoms))]) * 1.6605e-27   # kg}
+            if system.linear == 'yes':
                 nfreq = 3 * sum(natoms) - 5
             else:
                 nfreq = 3 * sum(natoms) - 6
-            frequencies = frequencies[:nfreq]
-            ir_intensities = normalize_ir(ir_intensities[:nfreq])
-            frequencies_2d = get_frequencies_2d(frequencies, eigenvectors[:nfreq])
-
-            results[system.name] = ParsedSystem(energy=atoms.get_total_energy(),
-                                                frequencies=frequencies,
-                                                frequencies_2d=frequencies_2d,
-                                                ir_intensities=ir_intensities,
-                                                masses=masses,
-                                                natoms_per_mass=natoms,
-                                                linear=linear,
-                                                inertia=inertia,
-                                                )
+            system.frequencies = frequencies[:nfreq]
+            system.ir_intensities = normalize_ir(ir_intensities[:nfreq])
+            system.frequencies_2d = get_frequencies_2d(frequencies, eigenvectors[:nfreq])
         else:
-            area = None
             if system.system_type == "Surface":
-                area = surface_area(atoms)
-            ir_intensities = normalize_ir(ir_intensities)
-            results[system.name] = ParsedSystem(energy=atoms.get_total_energy(),
-                                                frequencies=frequencies,
-                                                ir_intensities=ir_intensities,
-                                                area=area,
-                                                )
+                system.area = surface_area(atoms)
+            system.frequencies = frequencies
+            system.ir_intensities = normalize_ir(ir_intensities)
+
     output = inputfile + ".mk.in"
-    write_mk(output, model, results)
+    write_mk(output, model)
     print(f"Wrote {output}")
 
 if __name__ == "__main__":

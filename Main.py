@@ -1,440 +1,387 @@
 """
+Main driver for the microkinetic workflow.
 
-make first Input2mk.py
+Workflow:
+    Atomistic outputs -> Input2mk.py -> file.mk.in -> Main_refactored.py
+    -> Thermodynamics.py -> Kinetics.py -> Experiments.py
 
-
-	This script reads and executes the packages for KINETICS
-
-		by Alberto Roldan
+by Alberto Roldan
 """
-import sys, re
+
+from __future__ import annotations
+import argparse
+import re
 import time
-import numpy as np
+from dataclasses import dataclass, field
+from enum import Enum
 import sympy as sp
-from Thermodynamics import PartitionFunctions, Energy
-from Kinetics import RConstants, REquations, Profile
+
+from Thermodynamics import Energy, PartitionFunctions
+from Kinetics import Profile, RConstants, REquations
 from Experiments import Isothermal, TPR
-from Symbols_def import temp, kb
+from Kinetics import KineticsResults
+from Experiments import ExperimentResults
+from Diagnostics import DiagnosticResults, Diagnostics
+from PrintModel import ThermodynamicsReporter, KineticsReporter, ExperimentReporter, DiagnosticsReporter
 
 
+class SpeciesType(str, Enum):
+    molecule = "Molecule"
+    surface = "Surface"
+    adsrobate = "Adsorbate"
+    ts = "TransitionState"
+    unknown = "Unknown"
 
+@dataclass
+class CoveragePoint:    # defines the coverage
+    coverage: float
+    energy0: float = 0.0
+    frequencies: list[float] = field(default_factory=list)
 
-''' Read input file with the systems and kinetic simulation conditions'''
-def mkread(inputfile, restricted_arg):
-	rconditions = {}    # reaction conditions
-	processes = {}      # reaction processes
-	process = 0         # process number, key of processes starting from 1
-	systems = {}        # species
-	print(inputfile)
-	for line in open(inputfile, 'r'):
-		if not re.match(r'^\s*$', line) and line.startswith("#") is False:
-			line = line.split("=")
-			head = line[0].strip()
-			tail = []
-			for i in line[1].split():
-				if i != "#" :
-					tail.append(i)
-				else:
-					break
-			''' Reaction conditions are stored in a dictionary (rconditions), including:
-			to include the last point dx should be include, e.g. 100, 200, 10 -> 100, 210, 10
-				- External potential (vext): constant or ramp (initial, final, step)
-				- pH (ph): constant or ramp (initial, final, step) 
-				- Temperature (temperature): constant or ramp (initial, final, step)
-				- time (time): from 0 to time in a timestep
-				*** conditions to be added
-			'''
-			if head == "ELECTRO" or head == "ELECTROPOTENTIAL":
-				if len(tail) == 1:
-					rconditions["vext"] = float(tail[0])    # constant
-				else:
-					rconditions["vext"] = [float(i) for i in tail] # ramp
-					rconditions["vext"][1] = rconditions['vext'][1] + rconditions['vext'][2]
-			if head == "PH" or head == "pH":
-				if len(tail) == 1:
-					rconditions["ph"] = float(tail[0])    # constant
-				else:
-					rconditions["ph"] = [float(i) for i in tail[:-1]] + [int(tail[-1])] # ramp
-					rconditions["ph"][1] = rconditions['phvext'][1] + rconditions['ph'][2]
-			if head == "TEMP" or head == "TEMPERATURE":
-				if len(tail) == 1:
-					rconditions["temperature"] = float(tail[0])     # constant
-				else:
-					rconditions["temperature"] = [float(i) for i in tail[:-1]] + [int(tail[-1])]   # ramp
-					rconditions["temperature"][1] = rconditions['temperature'][1] + rconditions['temperature'][2]
+@dataclass
+class Species:      # SYSTEMS in the reaction (not in coverage)
+    name: str
+    energy0: float = 0.0
+    kind: str = SpeciesType.unknown.value
+    frequencies: list[float] = field(default_factory=list)
+    ir_intensities: list[float] = field(default_factory=list)
+    frequencies_2d: list[float] = field(default_factory=list)
+    degeneracy: int = 1
+    mass: float | None = None
+    symmetry_factor: float = 1.0
+    pressure0: float = 0.0
+    coverage0: float = 0.0
+    linear: bool = False
+    inertia: list[float] = field(default_factory=list)
+    nmolsites: float = 1.0
+    molsite: str | None = None
+    volume: sp.Expr | None = None
+    pressure: sp.Symbol | None = None
+    area: float | None = None  # surface properties
+    sites: str | None = None
+    nsites: int | None = None
+    coverage_model: list[CoveragePoint] = field(default_factory=list)
 
-			if head == "TIME" or head == "Time":
-				t_step = float(tail[0]) / 100
-				if float(tail[-1]) > t_step:
-					tail[-1] = t_step
-					print (f"   NOTE: Time step updated to {t_step}.")
-				rconditions["time"] = [0, float(tail[0])+float(tail[-1]), float(tail[-1])]  # initial time is 0
+@dataclass
+class SpeciesCoefficient:   # reaction stoichiometry
+    species: str
+    coefficient: float = 1.0
 
-			''' Processes (Adsorption, Reaction, Desorption) in a dictionary (processes)
-			with key = number of the process, including:
-				- kind of process (kind = a, r, d)
-				- [reactant species] ('reactants')
-				- [transition states] ('ts')
-				- [product species] ('products')
-				- [reactants stoichiometry] ('rstoichio')
-				- [products stoichiometry] ('pstoichio')
-				*** conditions to be added
-			'''
-			if head == "PROCESS":
-				process += 1
-				processes[str(process)] = {}    # dictionary of items for process
-				processes[str(process)]["kind"] = str(tail[0][0])  # kind of process
-				reaction = ''.join(tail[1:]).split(">")
-				for i in range(3):      # [reactants, TSs, products]
-					species = []
-					stoichio = []
-					for j in reaction[i].split("+"):    # ERROR if a '>' is missing
-						k = j[0:len(j.rsplit(r'[0-9]'))]
-						try:
-							stoichio.append(float(k))
-							species.append(str(j[len(j.rsplit(r'[0-9]')):]))
-						except ValueError:
-							if len(j) > 0:
-								stoichio.append(1.0)
-								species.append(str(j))
-					if i == 0:
-						processes[str(process)]["reactants"] = species  # reactants
-						processes[str(process)]["rstoichio"] = stoichio
-					elif i == 1:
-						processes[str(process)]["ts"] = species
-						processes[str(process)]["tsstoichio"] = stoichio
-					else:
-						processes[str(process)]["products"] = species  # products
-						processes[str(process)]["pstoichio"] = stoichio
-			''' Systems, i.e. the species involved, in a nested dictionary (systems) with key = name,
-			including:
-				- number of adsorbates (nadsorbates), accounting for the systems' coverage.
-				- kind (surface, molecule, adsorbed)
-				- path the input, i.e. QM data, (syspath)
-				- path to frequencies (freqpath)
-				- DFT energy (energy0)
-				- frequencies (freq3d & freq2d) either 3D or only along the plane x and y axis (2D)
-				- different adsorption sites (site), only for naked systems, e.g. surface
-				- different areas related to the sites (area) in m^2, only for naked systems, e.g. surface
-				- molecule's mass in kg (mass)
-				- number of atoms in the molecule (natoms)
-				- molecule's symmetry factor (symfactor)
-				- molecule's inertia moment(s) in Kg.m^-2 (inertia)
-				- molecule's adsorption sites (molsite), which must be in sites
-				- electronic multiplicity (degeneration)
-				- initial molecular partial pressure in Pa, constant or ramp (initial, final, step)
-				- initial molecular coverage in ML, constant or ramp (initial, final, step)
-				
-				?? species = e from electrons when  "vext" in rconditions
-				*** conditions to be added
-			'''
-			if head == "SYSTEM":
-				name = str(tail[0])         # species name
-				systems[name] = {}
-				try:
-					nadsorbates = str(tail[1])    # number of adsorbates in system
-				except:
-					nadsorbates = str(1)  # number of adsorbates in system by default
-					pass
-				systems[name][nadsorbates] = {}
-			if head == "SYSPATH":
-				systems[name][nadsorbates]["syspath"] = tail[0]
-			if head == "FREQPATH":
-				systems[name][nadsorbates]["freqpath"] = str(tail[0])
-			if head == "E0":             # species energy
-				systems[name][nadsorbates]["energy0"] = float(tail[0])
-			if head == "ISITES":
-				nsites = []
-				sites = []                  # catalyst adsorption sites
-				for i in range(int(np.ceil(len(tail)/2))):
-					try:
-						nsites.append(float(tail[i]))
-					except ValueError:
-						nsites.append(1.0)
-						sites.append(str(tail[i]))
-					else:
-						sites.append(str(tail[i+1]))
-				systems[name][nadsorbates]["nsites"] = nsites   # number of sites occupied by adsorbate
-				systems[name][nadsorbates]["sites"] = sites   # catalyst adsorption sites
-				systems[name]["sites"] = sites
-			if head == "IACAT":
-				areas = []                   # adsorption areas
-				for i in tail:
-					try:
-						areas.append(float(i))
-					except ValueError:
-						pass
-				systems[name][nadsorbates]["area"] = areas   # adsorption areas
-			if head == "FREQ":
-				freq = []                   # species frequencies 3D
-				for i in tail:
-					try:
-						freq.append(float(i))
-					except ValueError:
-						pass
-				systems[name][nadsorbates]["freq3d"] = sorted(freq, reverse=True)   # species frequencies 3D
-			if head == "FREQ2D":            # species frequencies only considering x and y displacements
-				freq2d = []                 # i.e. displacement of their center of mass < 0.1 on the Z-axis.
-				for i in tail:
-					try:
-						freq2d.append(float(i))
-					except ValueError:
-						pass
-				systems[name][nadsorbates]["freq2d"] = sorted(freq2d, reverse=True)   # species frequencies only considering x and y displacements
-			if head == "IMASS":
-				systems[name][nadsorbates]["imass"] = list([float(i) for i in tail])
-			if head == "INATOMS":
-				systems[name][nadsorbates]["natoms"] = list([int(i) for i in tail])
-			if head == "SYMFACTOR":
-				systems[name][nadsorbates]["symfactor"] = int(tail[0])
-			if head == "INERTIA":
-				inertia = []          # molecular inertia moment(s)
-				for i in tail:
-					try:
-						inertia.append(np.abs(float(i)))
-					except ValueError:
-						pass
-				if len(inertia) == 1:
-					systems[name][nadsorbates]["inertia"] = inertia[0]   # molecule's inertia moment(s) in Kg/m^2
-				else:
-					systems[name][nadsorbates]["inertia"] = inertia   # molecule's inertia moment(s) in Kg/m^2
-				if isinstance(inertia, float):      # molecular linearity
-					systems[name][nadsorbates]["linear"] = "yes"
-				elif inertia[0] == inertia[1] or inertia[0] == inertia[2] or inertia[1] == inertia[2]:
-					systems[name][nadsorbates]["linear"] = "yes"
-				else:
-					systems[name][nadsorbates]["linear"] = "no"
-			'''A molecule will adsorb on one a site with a particular area (marea). If the molecules has more than 
-			site to adsorbed, differente systems needs to be described'''
-			if head == "MOLSITE":
-				equivalent = None
-				for i in tail:
-					try:
-						equivalent = float(i)   # molecular area equivalent of molsite
-					except ValueError:
-						molsite = str(i)   # molecular adsorption site)
-				''' It may be the case equivalent = 1 is neglected.
-				Then, it is check that the len(equivalents) is the same than
-				the number of molsites or 1 is added to equivalent.'''
-				if equivalent == None:
-					equivalent = float(1)
-				systems[name][nadsorbates]["molsite"] = molsite   # molecular adsorption site
-				systems[name][nadsorbates]["nmolsite"] = equivalent   # molecular area equivalent of molsite
-			if head == "DEGENERATION":
-				systems[name][nadsorbates]["degeneration"] = int(tail[0])
-			if head == "IPRESSURE":
-				if len(tail) == 1:
-					systems[name]["pressure0"] = float(tail[0])     # constant
-				else:
-					systems[name]["pressure0"] = [float(i) for i in tail]   # ramp
-			if head == "ICOVERAGE":
-				if len(tail) == 1:
-					systems[name]["coverage0"] = float(tail[0])     # constant
-				else:
-					systems[name]["coverage0"] = [float(i) for i in tail]   # ramp
-	''' Checks in systems to assign the kind of system and check:
-		- the kind, 
-		- the path for the frequencies,
-		- the sites,
-		- the degeneration,
-		- the initial pressures/coverages,
-		- The number of adsorbates in an adsorbed system. '''
-	surf = []
-	for name in systems.keys():
-		if "area" in systems[name][list(systems[name].keys())[0]].keys():
-			systems[name]["kind"] = "surface"
-			surf.append(name)       # temporal list to later remove the surfaces name from systems
-		elif "imass" in systems[name][list(systems[name].keys())[0]].keys():
-			systems[name]["kind"] = "molecule"
-		else:
-			systems[name]["kind"] = "adsorbate"
+@dataclass(slots=True)
+class KineticProperties:
+    activation: sp.Expr | float = 0.0
+    sticky: sp.Expr | float = 1.0
+    arrhenius: sp.Expr | float = 1.0
+    ktunneling: sp.Expr | float = 1.0
+    krate0: sp.Expr | float = 0.0
 
-	''' Swaping the surfaces from dict(systems) for the site '''
-	'''def replace_value(dictionary, old_value, new_value):
-		for k, v in dictionary.items():
-			if isinstance(v, dict):
-				replace_value(v, old_value, new_value)  # recursive call
-			elif v == old_value:
-				d[k] = new_value
-	for name in surf:
-		for site in systems[name][list(systems[name].keys())[0]]['sites']:
-			systems[site] = systems[name]
-			replace_value(processes, name, site)
-		del systems[name]'''
+@dataclass(slots=True)
+class Process:
+    id: int
+    kind: str
+    reactants: list[SpeciesCoefficient]
+    products: list[SpeciesCoefficient]
+    ts: list[SpeciesCoefficient] = field(default_factory=list)
+    kinetics: KineticProperties = field(default_factory=KineticProperties)
+    @property
+    def reactant_names(self) -> list[str]:
+        return [item.species for item in self.reactants]
+    @property
+    def product_names(self) -> list[str]:
+        return [item.species for item in self.products]
+    @property
+    def ts_names(self) -> list[str]:
+        return [item.species for item in self.ts]
+    @property
+    def reactant_stoich(self) -> list[float]:
+        return [item.coefficient for item in self.reactants]
+    @property
+    def product_stoich(self) -> list[float]:
+        return [item.coefficient for item in self.products]
 
-	for name in systems.keys():
-		if systems[name]["kind"] == "surface":
-			for key in systems[name].keys():
-				if key not in restricted_arg:       # only for nadsorbates
-					if len(systems[name][str(key)]['area']) != len(systems[name][str(key)]["sites"]):
-						print("   ERROR: the number of sites and areas in {}{} is not the same.".format(name,key))
-						exit()
-					if ("freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0):
-						print("   NOTE: frequencies for {}{} are not provided".format(name, key))
-		if systems[name]["kind"] == "molecule":
-			if "pressure0" not in systems[name].keys():
-				systems[name]["pressure0"] = 0.
-			for key in systems[name].keys():
-				if key not in restricted_arg:       # only for nadsorbates
-					mass = 0
-					for i in range(len(systems[name][key]["imass"])):
-						mass += systems[name][key]['imass'][i] * systems[name][key]['natoms'][i]
-					systems[name][key]["mass"] = mass / (6.02214076e23 * 1000)    # in kg
-					if "freqpath" not in systems[name][key].keys():
-						systems[name][key]["freqpath"] = systems[name][key]["syspath"]
-					if "degeneration" not in systems[name][key].keys():
-						systems[name][key]["degeneration"] = 1
-					if "freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0:
-						print("   ERROR: frequencies for {}{} are not provided".format(name, key))
-						exit()
-					if "freq2d" not in systems[name][key].keys() or len(systems[name][key]["freq2d"]) == 0:
-						print("   ERROR: 2D frequencies for {}{} are not provided".format(name, key))
-						exit()
-		if systems[name]["kind"] == "adsorbate":
-			if "coverage0" not in systems[name].keys():
-				systems[name]["coverage0"] = 0.
-			for key in systems[name].keys():
-				if key not in restricted_arg and isinstance(systems[name][key], dict):       # only for nadsorbates
-					if ("freq3d" not in systems[name][key].keys() or len(systems[name][key]["freq3d"]) == 0):
-						print("   NOTE: frequencies for {}{} are not provided".format(name, key))
-						exit()
+@dataclass(slots=True)
+class Scan:
+    start: float
+    stop: float | None = None
+    step: float | None = None
+    def values(self) -> list[float]:
+        if self.stop is None:
+            return [self.start]
+        if self.step is None or self.step == 0:
+            raise ValueError("Scan requires a non-zero step when stop is provided.")
+        values: list[float] = []
+        x = self.start
+        if self.step > 0:
+            while x <= self.stop + 1e-12:
+                values.append(x)
+                x += self.step
+        else:
+            while x >= self.stop - 1e-12:
+                values.append(x)
+                x += self.step
+        return values
 
-	''' Once the systems has defined as molecule or surface, 
-	looking for the area occupied for each molecule (marea)'''
-	sites = {}
-	for name in systems.keys():
-		if systems[name]["kind"] == "surface":
-			for key in systems[name].keys():
-				if key not in restricted_arg:       # only for nadsorbates
-					for i in range(len(systems[name][key]["sites"])):
-						sites[str(systems[name][key]["sites"][i])] = float(systems[name][key]["area"][i])
-	'''A molecule will adsorb on one site with a particular area (marea). If the molecules has more than one site to 
-	adsorbed, differente systems needs to be described'''
-	for name in systems.keys():
-		if systems[name]["kind"] == "molecule":
-			for key in systems[name].keys():
-				if key not in restricted_arg:       # only for nadsorbates
-					if systems[name][key]["molsite"] in sites:
-						molsite = systems[name][key]["molsite"]
-						systems[name][key]["marea"] = (sites[str(systems[name][key]["molsite"])] /
-										 systems[name][key]["nmolsite"])    # should be the same as the stoichiometry in processes
-						nmolsite = systems[name][key]["nmolsite"]
-					pressure = 101325       # Pa == kg⋅m^−1⋅s^−2
-					systems[name][key]["volume"] = kb*temp/pressure        # Assuming ideal behaviour of gases
-			systems[name]['molsite'] = molsite
-			systems[name]['nmolsite'] = nmolsite
-		elif systems[name]["kind"] == "adsorbate":
-			adsorbate_site = []     # there is ONLY one kind of site per adsorbate-name
-			for key in systems[name].keys():
-				if key not in restricted_arg:       # only for nadsorbates
-					if systems[name][key]["sites"][0] in sites: # there in ONLY one kind of site per adsorbade-name
-						adsorbate_site.append(systems[name][key]['nsites'][0] / float(key))
-			systems[name]["nsites"] = sum(adsorbate_site) / len(adsorbate_site)     # nsites per single adsorbate
+@dataclass(slots=True)
+class TPRConditions:
+    temperature_initial: float = 50.0
+    temperature_final: float = 1273.0
+    temperature_step: float = 1.0
+    heating_rate: float = 5.0      # K/min
 
-	for name in systems.keys():
-		freq = []
-		ts = [i for n in processes.keys() for i in processes[n]["ts"]]
-		for key in systems[name].keys():
-			if key not in restricted_arg and "freq3d" in systems[name][key].keys(): # only for adsorbates
-				if name in ts:
-					for f in range(len(systems[name][key]["freq3d"])-1):
-						i = systems[name][key]['freq3d'][f]
-						if i < -100:
-							print("   ALERT: {}_{} has more than one significant imaginary frequency (abs({}))".
-								  format(name, key, i))
-							freq.append(np.abs(i))
-						else:
-							freq.append(i)
-					systems[name][key]["ifreq"] = systems[name][key]["freq3d"][-1]
-				elif name not in ts:  # only for nadsorbates
-					for i in systems[name][key]["freq3d"]:
-						if i < -100:
-							print("   ALERT: {}_{} has a significant imaginary frequency (abs({}))".format(name, key, i))
-							freq.append(np.abs(i))
-						else:
-							freq.append(i)
-				systems[name][key]["freq3d"] = freq
+@dataclass(slots=True)
+class Conditions:
+    temperature: Scan | None = None
+    time: Scan | None = None
+    potential: Scan | None = None
+    ph: Scan | None = None
+    tpr: TPRConditions = field(default_factory=TPRConditions)
 
-	''' Check the species in processes and convert the "surfaces" in kind of sites with the corresponding 
-	stoichiometry'''
-	'''def take_molecule(name, systems):
-		molsite = systems[name]['molsite']
-		site_stoi = systems[name]['nmolsite']
-		return molsite, site_stoi
-	def find_mol(names):
-		site = None
-		i = 0
-		while site == None:
-			if names[i] in systems:
-				if systems[names[i]]['kind'] == 'molecule':
-					site = systems[names[i]]['molsite']
-					print(".......................", names[i], i, site)
-			i += 1
-		update = []
-		for i in names:
-			if i not in systems:
-				update.append(site)
-			else:
-				update.append(i)
-		return names
+@dataclass(slots=True)
+class EquationResults:
+    isothermal: dict[str, list[sp.Expr]] = field(default_factory=dict)
+    equation_factors: dict[str, list[float]] = field(default_factory=dict)
 
-	species = []
-	for pr in processes.keys():
-		if processes[str(pr)]['kind'] == "A":
-			#processes[str(pr)]['reactants'] = find_mol(processes[str(pr)]['reactants'])
-			for i, name in enumerate(processes[str(pr)]['reactants']):
-				if systems[name]['kind'] != 'surface':
-					molsite, site_stoi = take_molecule(name, systems)
-					processes[str(pr)]['reactants'][i] = molsite   # in case the Surf name is changed by the site
-					processes[str(pr)]['rstoichio'][i] = site_stoi
-		elif processes[str(pr)]['kind'] == "D":
-			#processes[str(pr)]['products'] = find_mol(processes[str(pr)]['products'])
-			for i, name in enumerate(processes[str(pr)]['products']):
-				if systems[name]['kind'] != 'surface':
-					molsite, site_stoi = take_molecule(name, systems)
-					processes[str(pr)]['products'][i] = molsite   # in case the Surf name is changed by the site
-					processes[str(pr)]['pstoichio'][i] = site_stoi
-	'''
-	species = []
-	for pr in processes.keys():
-		species.extend(processes[str(pr)]['reactants'])
-		species.extend(processes[str(pr)]['ts'])
-		species.extend(processes[str(pr)]['products'])
-	species = list(set(species))
-	for i in species:
-		if i not in systems.keys():
-				print("   ERROR: {} is not defined in dict(systems).".format(str(i)))
-				exit()
+    tpd: dict[str, list[sp.Expr]] = field(default_factory=dict)
+    tpd_factors: dict[str, list[float]] = field(default_factory=dict)
 
-	return rconditions, processes, systems
+    overall_stoichiometry: list[sp.Expr] = field(default_factory=list)
 
-''' list of restricted argunments in systems[name] containing the interpolated functions'''
-restricted_arg = ["kind", "pressure0", "coverage0", "sites", "nsites", 'molsite', 'nmolsite',
-				  'q3d', 'q2d', "qrot", "qelec", "qtrans3d", "qtrans2d", "qvib3d", "qvib2d", 'energy3d',
-				  'energy2d', 'ifreq']
+@dataclass(slots=True)
+class MKModel:
+    conditions: Conditions = field(default_factory=Conditions)
+    species: dict[str, Species] = field(default_factory=dict)
+    processes: dict[str, Process] = field(default_factory=dict)
+    equations: EquationResults = field(default_factory=EquationResults)
+    kinetics: KineticsResults = field(default_factory=KineticsResults)
+    experiments: ExperimentResults = field(default_factory=ExperimentResults)
+    diagnostics: DiagnosticResults | None = None
 
-start0 = time.time()
-rconditions, processes, systems = mkread(str(sys.argv[1]), list(restricted_arg))
-print("... Reading ...\t\t\t", round(time.time()-start0, 3), " seconds")
-start = time.time()
-print("... Generating Partition Functions ...")
-systems = PartitionFunctions(dict(rconditions), dict(systems), list(restricted_arg), start).systems
-print("... Generating Thermodynamics ...")
-systems = Energy(dict(rconditions), dict(processes), dict(systems), list(restricted_arg)).systems
-start = time.time()
-print("\t... Generating Energy Profile ...")
-Profile(dict(processes), dict(systems))
-print("\t\t\t\t", round(time.time()-start, 3), " seconds")
-start = time.time()
-print("... Computing Microkinetics ...")
-print("\t... Generating Reaction Constants ...")
-processes = RConstants(dict(rconditions), dict(systems), dict(processes), list(restricted_arg)).processes
-print("\t\t\t\t", round((time.time()-start)/60, 3), " minutes")
-start = time.time()
-print("\t... Generating Rate Equations ...")
-cons_temperature, equation_factors, tpd, tpd_factors = REquations(dict(processes), dict(systems)).all_equations
-print("\t\t\t\t", round((time.time()-start), 3), " seconds")
-Isothermal(dict(rconditions), dict(systems), dict(processes), dict(cons_temperature), dict(equation_factors))
-TPR(dict(systems), dict(processes), dict(tpd), dict(tpd_factors))
-print("... Microkinetics Completed ...")
-print("\t\t\t\tTotal time:", round((time.time()-start0)/60, 3), " minutes")
+# --- PARSERS
+def strip_comment(line: str) -> str:
+    return line.split("#", 1)[0].strip()
+
+def split_keyword(line: str) -> tuple[str, str]:
+    clean = strip_comment(line)
+    if "=" not in clean:
+        raise ValueError(f"Expected KEY = VALUE, got: {line!r}")
+    key, value = clean.split("=", 1)
+    return key.strip().upper(), value.strip()
+
+def parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"true", "t", "yes", "y", "1", ".true."}
+
+def parse_scan(value: str) -> Scan:
+    values = [float(x) for x in value.split()]
+    if len(values) == 1:
+        return Scan(start=values[0])
+    elif len(values) == 2:
+        return Scan(start=0.0, stop=values[0], step=values[1])
+    elif len(values) == 3:
+        return Scan(start=values[0], stop=values[1], step=values[2])
+    raise ValueError( f"Scan expects 1, 2, or 3 values, got {len(values)}: {value}")
+
+def parse_species_process(text: str) -> list[SpeciesCoefficient]:
+    items: list[SpeciesCoefficient] = []
+    stoich_re = re.compile(r"^([0-9]*\.?[0-9]+)\s*([A-Za-z_][A-Za-z0-9_]*)$")
+    for raw_term in text.split("+"):
+        term = raw_term.strip()
+        if not term:
+            continue
+        match = stoich_re.match(term)
+        if match:
+            coeff = float(match.group(1))
+            name = match.group(2)
+        else:
+            coeff = 1.0
+            name = term
+        items.append(SpeciesCoefficient(species=name, coefficient=coeff,))
+    return items
+
+def parse_process(line: str, number: int) -> Process:
+    _, right = line.split("=", 1)
+    fields = right.strip().split(maxsplit=1)
+    if len(fields) != 2:
+        raise ValueError(f"Invalid PROCESS line: {line}")
+    kind = fields[0]
+    reaction = fields[1]
+    pieces = [piece.strip() for piece in reaction.split(">")]
+    if len(pieces) == 2:
+        reactants = parse_species_process(pieces[0])
+        ts = []
+        products = parse_species_process(pieces[1])
+    elif len(pieces) == 3:
+        reactants = parse_species_process(pieces[0])
+        if pieces[1] in {"", "1", "none", "None"}:
+            ts = []
+        else:
+            ts = parse_species_process(pieces[1])
+        products = parse_species_process(pieces[2])
+    else:
+        raise ValueError(f"Cannot parse process:\n{line}")
+    return Process(id=number, kind=kind, reactants=reactants, ts=ts, products=products,)
+
+def parse_system(lines, i):
+    name = lines[i].split("=", 1)[1].strip()
+    species = Species(name=name)
+    i += 1
+    while not lines[i].startswith("END"):
+        line = lines[i].strip()
+        if not line or line.startswith("#"):
+            i += 1
+            continue
+        if line.startswith("MODEL_COVERAGE"):
+            i += 1
+            while not lines[i].startswith("END_MODEL_COVERAGE"):
+                key, value = split_keyword(lines[i])
+                if key == "POINT":
+                    fields = value.split()
+                    coverage = float(fields[0])
+                    energy0 = float(fields[1])
+                    frequencies = []
+                    if len(fields) > 2:
+                        frequencies = [float(x) for x in fields[2:]]
+                    species.coverage_model.append(CoveragePoint(coverage=coverage, energy0=energy0,
+                                                                frequencies=frequencies,))
+                i += 1
+        else:
+            key, value = split_keyword(line)
+            if key == "TYPE":
+                species.kind = value
+            elif key in {"E0", "ENERGY", "ENERGY0"}:
+                species.energy0 = float(value)
+            elif key in {"DEGENERATION", "DEGENERACY"}:
+                species.degeneracy = int(float(value))
+            elif key == "DEGENERACY":
+                species.degeneracy = int(value)
+            elif key == "FREQ":
+                species.frequencies = [float(x) for x in value.split()]
+            elif key == "IRINTENSITY":
+                species.ir_intensities = [float(x) for x in value.split()]
+            elif key == "FREQ2D":
+                species.frequencies_2d = [float(x) for x in value.split()]
+            elif key == "MASS":
+                species.mass = float(value)
+            elif key == "SYMFACTOR":
+                species.symmetry_factor = float(value)
+            elif key == "LINEAR":
+                species.linear = parse_bool(value)
+            elif key == "INERTIA":
+                species.inertia = [float(x) for x in value.split()]
+            elif key == "IPRESSURE":
+                species.pressure0 = float(value)
+            elif key == "ICOVERAGE":
+                species.coverage0 = float(value)
+            elif key == "MOLSITE":
+                fields = value.split()
+                if len(fields) == 1:
+                    species.nmolsites = 1.0
+                    species.molsite = fields[0]
+                elif len(fields) == 2:
+                    species.nmolsites = float(fields[0])
+                    species.molsite = fields[1]
+                else:
+                    raise ValueError(f"{species.name}: invalid MOLSITE definition: {value}")
+            elif key == "IACAT":
+                species.area = float(value)
+            elif key == "ISITES":
+                fields = value.split()
+                if len(fields) == 1:
+                    species.nsites = 1
+                    species.sites = fields[0]
+                elif len(fields) == 2:
+                    species.nsites = int(float(fields[0]))
+                    species.sites = fields[1]
+                else:
+                    raise ValueError(f"{species.name}: invalid ISITES definition: {value}")
+
+        i += 1
+    return species, i + 1
+
+def read_input(filename: str) -> MKModel:
+    model = MKModel()
+    with open(filename) as fh:
+        lines = [line.strip() for line in fh]
+    i = 0
+    while i < len(lines):
+        line = strip_comment(lines[i])
+        if not line:
+            i += 1
+            continue
+        if line.startswith("TEMPERATURE"):
+            _, value = split_keyword(line)
+            model.conditions.temperature = parse_scan(value)
+        elif line.startswith("TIME"):
+            _, value = split_keyword(line)
+            model.conditions.time = parse_scan(value)
+        elif line.startswith("PH"):
+            _, value = split_keyword(line)
+            model.conditions.ph = parse_scan(value)
+        elif line.startswith("POTENTIAL") or line.startswith("ELECTROCHEMICAL"):
+            _, value = split_keyword(line)
+            model.conditions.potential = parse_scan(value)
+        elif line.startswith("TPR_TEMPERATURE"):
+            _, value = split_keyword(line)
+            values = [float(x) for x in value.split()]
+            model.conditions.tpr.temperature_initial = values[0]
+            model.conditions.tpr.temperature_final = values[1]
+            model.conditions.tpr.temperature_step = values[2]
+        elif line.startswith("TPR_HEATING_RATE"):
+            _, value = split_keyword(line)
+            model.conditions.tpr.heating_rate = float(value)
+        elif line.startswith("PROCESS"):
+            process_id = len(model.processes) + 1
+            process = parse_process(line, process_id)
+            model.processes[str(process.id)] = process
+        elif line.startswith("SYSTEM"):
+            species, i = parse_system(lines, i)
+            model.species[species.name] = species
+            continue
+        else:
+            raise ValueError(f"Unknown top-level instruction: {line}")
+        i += 1
+    return model
+
+# --- OTHERS
+def run_stage(label, func, model):
+    start = time.time()
+    print(f"{label}\t...")
+    result = func(model)
+    elapsed = time.time() - start
+    if elapsed < 60:
+        print(f"\t{elapsed:.3f} seconds")
+    else:
+        print(f"\t{elapsed/60:.3f} minutes")
+    return result
+
+def main():
+    start_total = time.time()
+    print("Reading input\t...")
+    start = time.time()
+    model = read_input(args.input)
+    print(f"\t{time.time() - start:.3f} seconds")
+
+    run_stage("Building partition functions", PartitionFunctions, model)
+    run_stage("Building thermodynamics", Energy, model)
+    ThermodynamicsReporter(model, output_dir="./").write_and_plot()
+    run_stage("Building rate constants", RConstants, model)
+    KineticsReporter(model, output_dir="./").write_and_plot()
+    run_stage("Building rate equations", REquations, model)
+    run_stage("Building energy profile", Profile, model)
+    run_stage("Running microkinetics", Isothermal, model)
+    ExperimentReporter(model, output_dir="./").write()
+    run_stage("Running TPR/D", TPR, model)
+    ExperimentReporter(model, output_dir="./").write()
+    run_stage("Diagnosis", Diagnostics, model)
+    DiagnosticsReporter(model, output_dir="./").write_and_plot()
+
+    total = time.time() - start_total
+    if total < 60:
+        print(f"\nFinished in {total:.3f} seconds")
+    else:
+        print(f"\nFinished in {total/60:.3f} minutes")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input")
+    args = parser.parse_args()
+    main()

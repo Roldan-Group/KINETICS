@@ -3,7 +3,8 @@ import sympy as sp
 import re
 
 
-t, temp, cov = sp.symbols('time temperature coverage', positive=True, real=True)
+t, temp, ph, cov = sp.symbols('time temperature ph coverage', positive=True, real=True)
+vext = sp.symbols('potential',  real=True)
 h, kb, c, hc, R, Av, Fa, qelectron, JtoeV = sp.symbols(
 	"h kb c hc R Av Fa qelectron JtoeV", real=True, positive=True)
 qelectron = sp.symbols("qelectron", real=True)
