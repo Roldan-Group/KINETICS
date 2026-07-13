@@ -296,7 +296,7 @@ class Diagnostics:
                     expr *= sym ** item.coefficient
                 else:
                     expr *= context["surface_expr"][species_symbol(item.species)] ** item.coefficient
-            rate_exprs[pid] = sp.simplify(expr)
+            rate_exprs[pid] = expr
 
         f_list = []
         for name in species_names:
@@ -306,7 +306,7 @@ class Diagnostics:
                 j = process_index[pid]
                 factor = factors[j] if j < len(factors) else 0.0
                 expr += factor * rate_exprs[pid]
-            f_list.append(sp.simplify(expr))
+            f_list.append(expr)
         f_vec = sp.Matrix(f_list)
         f_func = sp.lambdify(all_variables, f_vec, "numpy")
         products = [name for name, species in self.model.species.items() if is_molecule(species)

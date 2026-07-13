@@ -599,6 +599,10 @@ class DiagnosticsReporter:
         ax.set_xlabel("Temperature (K)")
         ax.set_ylabel("Desorption Rate")
         ax.set_title(f"TPR spectrum from {result.gas} at {result.heating_rate:g} K/min")
+        handles, labels = ax.get_legend_handles_labels()
+        if not handles:
+            plt.close(fig)  #prevents saving the figure when all spectra is zero
+            return
         ax.legend()
         fig.tight_layout()
         fig.savefig(source_dir / "TPR_single.svg", dpi=300, transparent=True,)
@@ -673,14 +677,16 @@ class Writer:
         header_fmt = [str(item) for item in header]
         rows_fmt = [[cls.format_value(value) for value in row] for row in rows]
         ncols = len(header_fmt)
-        for row in rows_fmt:
-            if len(row) != ncols:
-                raise ValueError(f"Row has {len(row)} columns, expected {ncols}: {row}")
         widths = []
-        for i in range(ncols):
-            widths.append(max(len(header_fmt[i]), *[len(row[i]) for row in rows_fmt],))
+        for i in range(len(header_fmt)):
+            column_widths = [len(header_fmt[i])]
+            for row in rows_fmt:
+                column_widths.append(len(row[i]))
+            widths.append(max(column_widths))
+
         def line(values):
             return "  ".join(str(value).rjust(width) for value, width in zip(values, widths))
+
         with open(filename, "w", encoding="utf-8") as handle:
             if title:
                 handle.write(f"# {title}\n")

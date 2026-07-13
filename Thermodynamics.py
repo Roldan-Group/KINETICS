@@ -261,8 +261,8 @@ class Enthalpy:
 		thermo.zpe2d = self.zero_point_energy(species.frequencies_2d)
 		thermo.cp3d = self.heat_capacity_3d(species)
 		thermo.cp2d = self.heat_capacity_2d(species)
-		thermo.hthermal3d = sp.integrate(thermo.cp3d, temp,)
-		thermo.hthermal2d = sp.integrate(thermo.cp2d, temp,)
+		thermo.hthermal3d = self.hthermal3d(species)
+		thermo.hthermal2d = self.hthermal2d(species)
 		thermo.enthalpy3d = species.energy0 + thermo.zpe3d + thermo.hthermal3d
 		thermo.enthalpy2d = species.energy0 + thermo.zpe2d + thermo.hthermal2d
 
@@ -271,7 +271,44 @@ class Enthalpy:
 		positive_freqs = np.asarray([freq for freq in freqs if freq > 0.0], dtype=float,)
 		if positive_freqs.size == 0:
 			return sp.Integer(0)
-		return sp.simplify(sp.Rational(1, 2) * hc * np.sum(positive_freqs) * JtoeV)
+		return (sp.Rational(1, 2) * hc * np.sum(positive_freqs) * JtoeV)
+
+	def hthermal3d(self, species):
+		kind = species.kind.lower()
+		if kind == "molecule":
+			return (self.htrans3d()	+ self.hrot(species) + self.hvib(species.frequencies))
+		if kind in {"surface", "adsorbate"}:
+			return self.hvib(species.frequencies)
+		return sp.Integer(0)
+
+	def hthermal2d(self, species):
+		kind = species.kind.lower()
+		if kind == "molecule":
+			return (self.htrans2d()	+ self.hrot(species) + self.hvib(species.frequencies_2d))
+		return sp.Integer(0)
+
+	@staticmethod
+	def hvib(freqs):
+		total = sp.Integer(0)
+		for freq in freqs:
+			if freq > 0.0:
+				x = hc * freq / (kb * temp)
+				total += hc * freq * sp.exp(-x) / (1 - sp.exp(-x))
+		return total * JtoeV
+
+	@staticmethod
+	def htrans3d():
+		return sp.Rational(5, 2) * kb * temp * JtoeV
+
+	@staticmethod
+	def htrans2d():
+		return sp.Rational(3, 2) * kb * temp * JtoeV
+
+	@staticmethod
+	def hrot(species):
+		if species.linear:
+			return kb * temp * JtoeV
+		return sp.Rational(3, 2) * kb * temp * JtoeV
 
 	@staticmethod
 	def heat_capacity_3d(species):
@@ -290,7 +327,7 @@ class Enthalpy:
 			cp += Enthalpy.vibrational_cp(species.frequencies)
 		else:
 			raise ValueError(f"{species.name}: unknown species kind '{species.kind}'")
-		return sp.simplify(cp)
+		return cp
 
 	@staticmethod
 	def heat_capacity_2d(species):
@@ -309,7 +346,7 @@ class Enthalpy:
 			cp += Enthalpy.vibrational_cp(species.frequencies_2d)
 		else:
 			raise ValueError(f"{species.name}: unknown species kind '{species.kind}'" )
-		return sp.simplify(cp)
+		return cp
 
 	@staticmethod
 	def translational_cp_3d():
@@ -367,7 +404,7 @@ class Interpolation:
 		cpvib = Enthalpy.vibrational_cp(point.frequencies)
 		hvib = sp.integrate(cpvib, temp)
 		svib = Entropy.vibrational_entropy(point.frequencies)
-		q = sp.simplify(qvib)
+		q = qvib
 		enthalpy = point.energy0 + zpe + hvib
 		gibbs = enthalpy - temp * svib
 		return q, gibbs
@@ -375,5 +412,5 @@ class Interpolation:
 	@staticmethod
 	def interpolate(theta_values, values):
 		if len(theta_values) == 1:
-			return sp.simplify(values[0])
+			return values[0]
 		return sp.interpolate(list(zip(theta_values, values)), cov,)

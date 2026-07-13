@@ -147,6 +147,10 @@ class EquationResults:
     overall_stoichiometry: list[sp.Expr] = field(default_factory=list)
 
 @dataclass(slots=True)
+class ProfileResults:
+    data: list[list[str]] = field(default_factory=list)
+
+@dataclass(slots=True)
 class MKModel:
     conditions: Conditions = field(default_factory=Conditions)
     species: dict[str, Species] = field(default_factory=dict)
@@ -154,6 +158,7 @@ class MKModel:
     equations: EquationResults = field(default_factory=EquationResults)
     kinetics: KineticsResults = field(default_factory=KineticsResults)
     experiments: ExperimentResults = field(default_factory=ExperimentResults)
+    profile: ProfileResults = field(default_factory=ProfileResults)
     diagnostics: DiagnosticResults | None = None
 
 # --- PARSERS
@@ -344,10 +349,10 @@ def read_input(filename: str) -> MKModel:
 # --- OTHERS
 def run_stage(label, func, model):
     start = time.time()
-    print(f"{label}\t...")
+    print(f"{label}...")
     result = func(model)
     elapsed = time.time() - start
-    if elapsed < 60:
+    if elapsed < 30:
         print(f"\t{elapsed:.3f} seconds")
     else:
         print(f"\t{elapsed/60:.3f} minutes")
@@ -355,7 +360,7 @@ def run_stage(label, func, model):
 
 def main():
     start_total = time.time()
-    print("Reading input\t...")
+    print("Reading input...")
     start = time.time()
     model = read_input(args.input)
     print(f"\t{time.time() - start:.3f} seconds")

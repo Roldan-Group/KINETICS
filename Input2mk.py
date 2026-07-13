@@ -64,7 +64,7 @@ class SystemDefinition:
     masses: list[float] = field(default_factory=list)
     natoms_per_mass: list[int] = field(default_factory=list)
     mass: float | None = None
-    volume: sp.Expr | Nonen = None
+    volume: sp.Expr | None = None
     pressure: sp.Symbol| None = None
     area: float | None = None    # surface properties
     molsite: tuple[float, str] | None = None

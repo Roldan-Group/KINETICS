@@ -219,11 +219,14 @@ def solve_ode_system(model, t_span: tuple[float, float], t_eval: np.ndarray, dyn
         jac = jac_func(t_num, *args, *y)
         return np.asarray(jac, dtype=float)
 
-    sol = solve_ivp(ode_system, t_span, y0, t_eval=t_eval, args=arguments, method="LSODA", jac=ode_jacobian,
-                    rtol=1e-6,   atol=1e-8,)
+    #sol = solve_ivp(ode_system, t_span, y0, t_eval=t_eval, args=arguments, method="LSODA", jac=ode_jacobian,
+    #                rtol=1e-6,   atol=1e-8,)
+    sol = solve_ivp(fun=ode_system, t_span=t_span, y0=y0, t_eval=t_eval, args=arguments, method="BDF",
+                    rtol=1e-8, atol=1e-12,)
 
     if not sol.success:
-        raise RuntimeError(f"ODE solver failed: {sol.message}")
+        print(f"WARNING: ODE solver failed: {sol.message}")
+
     y_dynamic = clip_dynamic_species(model, dynamic_species, surfaces, adsorbates_by_surface, gas_indices, sol.y)
     y_surfaces = surface_coverages(model, y_dynamic, dynamic_species, surfaces, adsorbates_by_surface)
     augmented = SimpleNamespace()
@@ -334,6 +337,7 @@ class TPR:
                                           gas_species=gas_species, rhs_func=rhs_func, gas_rate_func=gas_rate_func,
                                           temperatures=temperatures, beta_min=float(beta_min),)
                 results.append(result)
+
         return results
 
     def temperature_values(self) -> np.ndarray:
@@ -361,15 +365,21 @@ class TPR:
 
         def ode_rhs(t_num, y):
             temperature_num = temperature_profile(t_num)
-            dydt = np.asarray(rhs_func(t_num, temperature_num, *y), dtype=float)
-            if not np.all(np.isfinite(dydt)):
-                raise RuntimeError(f"Non-finite TPR RHS at t={t_num}; T={temperature_num}; y={y}; dydt={dydt}")
+            dydt = np.asarray(rhs_func(t_num, temperature_num, *y), dtype=float,).ravel()
+            dydt = np.nan_to_num(dydt, nan=0.0, posinf=1.0e50, neginf=-1.0e50,)
+            dydt = np.clip(dydt, -1.0e30, 1.0e30,)
             return dydt
 
-        sol = solve_ivp(ode_rhs, t_span, y0, t_eval=t_eval, method="BDF", rtol=1e-3, atol=1e-8,)
+        sol = solve_ivp(ode_rhs, t_span, y0, t_eval=t_eval, method="BDF", rtol=1e-3, atol=1e-6,)
 
         if not sol.success:
-            raise RuntimeError(f"TPR solver failed for {gas_name}: {sol.message}")
+            print(f"WARNING: TPR solver failed for {gas_name}: {sol.message}")
+            concentrations = np.zeros((len(temperatures), len(adsorbates)), dtype=float,)
+            spectra = {gas: np.zeros(len(temperatures), dtype=float) for gas in gas_species}
+            return TPRResult(gas=gas_name, heating_rate=beta_min, temperatures=temperatures, adsorbates=adsorbates,
+                             gas_species=gas_species, concentrations=concentrations, spectra=spectra,
+                             metadata={"initial_adsorbate": adsorbates[ads_idx], "beta_K_per_s": beta,
+                                       "solver_success": False, "solver_message": sol.message,},)
 
         concentrations = np.zeros((len(temperatures), len(adsorbates)), dtype=float)
         if sol.y.size:

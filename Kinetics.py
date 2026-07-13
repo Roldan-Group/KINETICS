@@ -110,10 +110,10 @@ class RConstants:
             kinetics.ktunneling = self.tunneling(process)
             if process.kind.upper() == "A":
                 kinetics.sticky = self.sticky(process, kinetics.activation,)
-                kinetics.krate0 = sp.simplify(kinetics.sticky * kinetics.arrhenius * kinetics.ktunneling)
+                kinetics.krate0 = kinetics.sticky * kinetics.arrhenius * kinetics.ktunneling
             else:
                 kinetics.sticky = sp.Integer(1)
-                kinetics.krate0 = sp.simplify(kinetics.arrhenius * sp.exp(-kinetics.activation / (kb * temp * JtoeV))
+                kinetics.krate0 = (kinetics.arrhenius * sp.exp(-kinetics.activation / (kb * temp * JtoeV))
                                                 * kinetics.ktunneling)
             self.model.kinetics.by_process[pid] = kinetics
         return self.model
@@ -138,10 +138,10 @@ class RConstants:
         total = sp.Integer(0)
         for item in items:
             total += item.coefficient * self.gibbs3d(item.species)
-        return sp.simplify(total)
+        return total
 
     def reaction_energy(self, process):
-        return sp.simplify(self.state_gibbs3d(process.products) - self.state_gibbs3d(process.reactants))
+        return self.state_gibbs3d(process.products) - self.state_gibbs3d(process.reactants)
 
     def activation(self, process):
         ''' the activation energy in adsorption and desorption processes is considered as the difference between
@@ -156,7 +156,7 @@ class RConstants:
             ts_g = self.adsorption_like_ts_gibbs(process.products)
         else:
             ts_g = self.state_gibbs3d(process.products)
-        return sp.Max(sp.simplify(ts_g - reactants_g), sp.Integer(0),)
+        return sp.Max(ts_g - reactants_g, sp.Integer(0),)
 
     def adsorption_like_ts_gibbs(self, items):
         ''' the activation energy in adsorption and desorption processes is considered as the difference between
@@ -169,14 +169,14 @@ class RConstants:
                 total += item.coefficient * species.thermo.gibbs2d
             else:
                 total += item.coefficient * species.thermo.gibbs3d
-        return sp.simplify(total)
+        return total
 
     def state_q3d(self, items):
         total = sp.Integer(1)
         for item in items:
             species = self.species(item.species)
             total *= species.thermo.q3d ** item.coefficient
-        return sp.simplify(total)
+        return total
 
     def sticky(self, process, activation):
         ''' the sticky coefficient is evaluate as the reduction of degrees of freedom, i.e. from a 3D free molecule
@@ -184,7 +184,7 @@ class RConstants:
         qr = self.state_q3d(process.reactants)
         if process.ts:
             qts = self.state_q3d(process.ts)
-            return sp.simplify(qts / qr)
+            return qts / qr
         qts = sp.Integer(1)
         for item in process.reactants:
             species = self.species(item.species)
@@ -192,7 +192,7 @@ class RConstants:
                 qts *= self.adsorption_qts(species, item.coefficient, activation,)
             else:
                 qts *= species.thermo.q3d ** item.coefficient
-        return sp.simplify(qts / qr)
+        return qts / qr
 
     def adsorption_qts(self, species, coefficient, activation):
         thermo = species.thermo
@@ -206,7 +206,7 @@ class RConstants:
         w3 = self.smooth_step(activation, 0.25, 0.02) * (1 - self.smooth_step(activation, 0.70, 0.05))
         w4 = self.smooth_step(activation, 0.70, 0.05) * (1 - self.smooth_step(activation, 1.00, 0.05))
         w5 = self.smooth_step(activation, 1.00, 0.05)
-        return sp.simplify(w1 * expr1 + w2 * expr2 + w3 * expr3 + w4 * expr4 + w5 * expr5 *
+        return (w1 * expr1 + w2 * expr2 + w3 * expr3 + w4 * expr4 + w5 * expr5 *
                            sp.exp(-activation / (kb * temp * JtoeV)))
 
     @staticmethod
@@ -222,10 +222,10 @@ class RConstants:
                 raise ValueError(f"{molecule.name}: molecular mass is required for adsorption.")
             if area is None:
                 raise ValueError(f"{molecule.name}: adsorption area could not be resolved from the surface site information.")
-            return sp.simplify(area / sp.sqrt(2 * sp.pi * mass * kb * temp))
+            return area / sp.sqrt(2 * sp.pi * mass * kb * temp)
         qts = self.transition_state_partition_function(process)
         qr = self.state_q3d(process.reactants)
-        return sp.simplify(kb * temp / h * qts / qr)
+        return kb * temp / h * qts / qr
 
     def transition_state_partition_function(self, process):
         if process.ts:
@@ -237,7 +237,7 @@ class RConstants:
                 qts *= species.thermo.q2d ** item.coefficient
             else:
                 qts *= species.thermo.q3d ** item.coefficient
-        return sp.simplify(qts)
+        return qts
 
     def adsorbing_molecule(self, process):
         for item in process.reactants:
@@ -269,7 +269,7 @@ class RConstants:
             species = self.species(item.species)
             if hasattr(species, "ifreq") and species.ifreq is not None:
                 correction *= (1 + sp.Rational(1, 24) * (hc * species.ifreq / (2 * sp.pi * kb * temp)) ** 2)
-        return sp.simplify(correction)
+        return correction
 
 
 class REquations:
@@ -325,7 +325,7 @@ class REquations:
         rate = kin.krate0
         for item in process.reactants:
             rate *= sp.Symbol(item.species) ** item.coefficient
-        return sp.simplify(net_factor * rate), net_factor
+        return net_factor * rate, net_factor
 
     def overall_stoichiometry(self) -> list[sp.Expr]:
         """ Return one overall stoichiometric vector that eliminates adsorbed species.
@@ -350,7 +350,7 @@ class REquations:
 
     @staticmethod
     def normalise_integer_vector(vector):
-        values = [sp.nsimplify(value) for value in vector]
+        values = [value for value in vector]
         denominators = [value.as_numer_denom()[1] for value in values]
         def lcm(a, b):
             return abs(int(a) * int(b)) // gcd(int(a), int(b))
@@ -370,7 +370,7 @@ class Profile:
         self.temp_num = temp_num
         self.cache: dict[tuple, float] = {}
         self.data = self.build()
-        self.model.profile = self.data
+        self.model.profile.data = self.data
 
     def build(self) -> list[list[str]]:
         data: list[list[str]] = [["Process", "Kind", "Reaction", f"G(T={self.temp_num} K) [eV]", "Ea [eV]", "Er [eV]"]]
