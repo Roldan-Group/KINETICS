@@ -96,7 +96,7 @@ class PartitionFunctions:
 		Adsorption Journal Of The International Adsorption Society
 		(Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		page 88		 PER m^3'''
-		return ((2 * sp.pi * species.mass * kb * temp) ** sp.Rational(3, 2)/ h**3)
+		return ((2 * sp.pi * species.mass * kb * temp) ** sp.Rational(3, 2)/ h**3) * species.volume
 
 	@staticmethod
 	def qtrans2d(species):
@@ -104,7 +104,7 @@ class PartitionFunctions:
 		Adsorption Journal Of The International Adsorption Society
 		(Wiley, Weinheim, FRG, 2003). doi:10.1002/3527602658.
 		page 88		  PER m^2 '''
-		return (2 * sp.pi * species.mass * kb * temp / h**2)
+		return (2 * sp.pi * species.mass * kb * temp / h**2) * species.area
 
 	@staticmethod
 	def qrot(species):
@@ -359,7 +359,7 @@ class Enthalpy:
 	@staticmethod
 	def rotational_cp(species):
 		if species.linear:
-			return kb
+			return kb * JtoeV
 		return sp.Rational(3, 2) * kb * JtoeV
 
 	@staticmethod

@@ -107,7 +107,7 @@ def get_equation_tuple(model):
         equations = get_rate_equations(model)
         if equations is not None:
             return equations
-    raise ValueError("Rate equations are missing. Run REquations(model) before Experiments.")
+    raise ValueError("Rate equations are missing. Run Kinetics(model) before Experiments.")
 
 def participating_species(model, *, include_ts: bool = False) -> list[str]:
     seen: list[str] = []
@@ -151,10 +151,11 @@ def nsites(model, name: str) -> float:
     value = getattr(model.species[name], "nsites", None)
     return float(value) if value is not None else 1.0
 
-def build_surface_expressions(model, dynamic_species: list[str], surfaces: list[str], adsorbates_by_surface: dict[str, list[int]], *, smooth: bool = False):
+def build_surface_expressions(model, dynamic_species: list[str], surfaces: list[str],
+                              adsorbates_by_surface: dict[str, list[int]], *, smooth: bool = True):
     """Build algebraic surface-coverage expressions."""
     expressions: dict[sp.Symbol, sp.Expr] = {}
-    eps = sp.Float("1e-30")
+    eps = sp.Float("1e-12") # smoothening value
     for surface_name in surfaces:
         coverage = sp.Float(1.0)
         for idx in adsorbates_by_surface[surface_name]:
@@ -165,7 +166,8 @@ def build_surface_expressions(model, dynamic_species: list[str], surfaces: list[
         expressions[species_symbol(surface_name)] = coverage
     return expressions
 
-def clip_dynamic_species(model, dynamic_species: list[str], surfaces: list[str], adsorbates_by_surface: dict[str, list[int]], gas_indices: list[int], y: np.ndarray) -> np.ndarray:
+def clip_dynamic_species(model, dynamic_species: list[str], surfaces: list[str],
+                         adsorbates_by_surface: dict[str, list[int]], gas_indices: list[int], y: np.ndarray) -> np.ndarray:
     """Clip gases to non-negative values and enforce surface site conservation."""
     y = np.asarray(y, dtype=float).copy()
     for surface_name in surfaces:
@@ -191,7 +193,8 @@ def clip_dynamic_species(model, dynamic_species: list[str], surfaces: list[str],
             y[idx] = np.clip(y[idx], 0.0, None)
     return y
 
-def surface_coverages(model, y: np.ndarray, dynamic_species: list[str], surfaces: list[str], adsorbates_by_surface: dict[str, list[int]]) -> list[np.ndarray]:
+def surface_coverages(model, y: np.ndarray, dynamic_species: list[str], surfaces: list[str],
+                      adsorbates_by_surface: dict[str, list[int]]) -> list[np.ndarray]:
     """Compute surface coverages from adsorbate coverages."""
     values: list[np.ndarray] = []
     for surface_name in surfaces:
@@ -207,25 +210,102 @@ def solve_ode_system(model, t_span: tuple[float, float], t_eval: np.ndarray, dyn
                      initial_conditions: list[float], rhs_func, jac_func, arguments: tuple[float, ...],):
     """Solve the microkinetic ODE system for one set of external arguments."""
     y0 = np.asarray(initial_conditions, dtype=float)
+    gas_index_set = set(gas_indices)
+    if y0.ndim != 1 or y0.size != len(dynamic_species):
+        raise ValueError(f"Invalid initial state shape {y0.shape}; expected ({len(dynamic_species)},).")
+    if not np.all(np.isfinite(y0)):
+        raise ValueError(f"Initial state contains non-finite values: {y0}")
+    if np.any(y0 < 0.0):
+        invalid = [(name, value) for name, value in zip(dynamic_species, y0) if value < 0.0]
+        raise ValueError(f"Negative initial conditions: {invalid}")
+    for surface_name in surfaces:    # Check initial site balances.
+        occupied = sum(nsites(model, dynamic_species[idx]) * y0[idx] for idx in adsorbates_by_surface[surface_name])
+        if occupied > 1.0 + 1.0e-12:
+            raise ValueError(f"Initial coverage exceeds the capacity of {surface_name}: occupied coverage = {occupied:.8e}")
 
     def ode_system(t_num, y, *args):
-        dydt = rhs_func(t_num, *args, *y)
-        dydt = np.asarray(dydt, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if not np.all(np.isfinite(y)):
+            raise FloatingPointError(f"Non-finite state at t={t_num:.16e}: {y}")
+        dydt = np.asarray(rhs_func(t_num, *args, *y), dtype=float,).reshape(-1)
+        if dydt.shape != y.shape:
+            raise ValueError(f"RHS returned shape {dydt.shape}; expected {y.shape}.")
         if not np.all(np.isfinite(dydt)):
-            raise RuntimeError(f"Non-finite RHS at t={t_num}; y={y}; dydt={dydt}")
+            raise FloatingPointError(f"Non-finite RHS at t={t_num:.16e}; y={y}; dydt={dydt}")
         return dydt
 
     def ode_jacobian(t_num, y, *args):
-        jac = jac_func(t_num, *args, *y)
-        return np.asarray(jac, dtype=float)
+        jac = np.asarray(jac_func(t_num, *args, *y), dtype=float,)
+        expected_shape = (len(dynamic_species), len(dynamic_species))
+        if jac.shape != expected_shape:
+            raise ValueError(f"Jacobian returned shape {jac.shape}; expected {expected_shape}.")
+        if not np.all(np.isfinite(jac)):
+            raise FloatingPointError(f"Non-finite Jacobian at t={t_num:.16e}\ny={y}")
+        return jac
 
-    #sol = solve_ivp(ode_system, t_span, y0, t_eval=t_eval, args=arguments, method="LSODA", jac=ode_jacobian,
-    #                rtol=1e-6,   atol=1e-8,)
-    sol = solve_ivp(fun=ode_system, t_span=t_span, y0=y0, t_eval=t_eval, args=arguments, method="BDF",
-                    rtol=1e-8, atol=1e-12,)
+    def validate_initial_ode_state(y0, dynamic_species, t0, arguments, ode_system, ode_jacobian=None,):
+        print("\n==============================")
+        print(" Initial ODE validation")
+        print("==============================")
+        print(f"Number of variables : {len(y0)}")
+        print(f"Initial time        : {t0}")
+        f0 = np.asarray(ode_system(t0, y0, *arguments,), dtype=float,).ravel()
+        print("\nVariable               y0              dy/dt")
+        print("-----------------------------------------------")
+        for name, value, deriv in zip(dynamic_species, y0, f0):
+            print(f"{name:20s} {value:12.3e} {deriv:14.3e}")
+        print("-----------------------------------------------")
+        print(f"Maximum |y|      = {np.max(np.abs(y0)):.3e}")
+        print(f"Maximum |dy/dt|  = {np.max(np.abs(f0)):.3e}")
+        if ode_jacobian is not None:
+            J = np.asarray(ode_jacobian(t0, y0, *arguments,), dtype=float,)
+            print("\nJacobian")
+            print(f"Shape : {J.shape}")
+            print(f"Max |J| : {np.max(np.abs(J)):.3e}")
+            try:
+                print(f"Condition number : " f"{np.linalg.cond(J):.3e}")
+            except Exception:
+                pass
+        print("==============================\n")
 
-    if not sol.success:
-        print(f"WARNING: ODE solver failed: {sol.message}")
+    # Coverages naturally have a scale of unity. Gas tolerances should reflect their actual initial magnitudes rather
+    # than use one universal value. Too low makes the system too loose and difficult to resolve.
+    atol = np.empty(len(dynamic_species), dtype=float)
+    for idx, value in enumerate(y0):
+        if idx in gas_index_set:
+            gas_scale = max(abs(value), 1.0)
+            atol[idx] = max(1.0e-9 * gas_scale, 1.0e-10)
+        else:
+            atol[idx] = 1.0e-10
+
+    #validate_initial_ode_state(y0=y0, dynamic_species=dynamic_species, t0=t_span[0], arguments=arguments,
+    #                           ode_system=ode_system, ode_jacobian=ode_jacobian,)
+
+    integration_options = {"fun": ode_system, "t_span": t_span, "y0": y0, "t_eval": t_eval, "args": arguments,
+                               "rtol": 1.0e-6, "atol": atol, "jac": ode_jacobian,}
+
+    sol = None
+    for method in ("BDF", "LSODA", "Radau"):
+        trial = solve_ivp(method=method,  **integration_options,)
+        if trial.success:
+            sol = trial
+            break
+        print(f"WARNING: {method} failed at T={arguments[0]:g} K.\n"
+              f" Message           : {trial.message}\n"
+              f" Last reached time : {trial.t[-1] if trial.t.size else t_span[0]:.16e}\n"
+              f" Function calls    : {trial.nfev}\n Jacobian calls    : {trial.njev}\n"
+              f" Linear algebra operations : {trial.nlu}",flush=True,)
+        '''if trial.y.size:     # to print the species concentrations
+            last_state = trial.y[:, -1]
+            print("   Last solver state:")
+            for name, value in zip(dynamic_species, last_state):
+                print(f"\t{name:10s} = {value: .8e}")'''
+    if sol is None:
+        return None
+    if len(sol.t) != len(t_eval):
+        print(f"WARNING: Incomplete solution at T={arguments[0]:g} K: "
+              f"returned {len(sol.t)} of {len(t_eval)} requested points.", flush=True,)
+        return None
 
     y_dynamic = clip_dynamic_species(model, dynamic_species, surfaces, adsorbates_by_surface, gas_indices, sol.y)
     y_surfaces = surface_coverages(model, y_dynamic, dynamic_species, surfaces, adsorbates_by_surface)
@@ -247,7 +327,8 @@ class Isothermal:
     def build(self) -> TimeSeriesResult:
         equations, _, _, _ = get_equation_tuple(self.model)
         initial_conditions, dynamic_species, surfaces, gas_indices, adsorbates_by_surface = initial_species(self.model)
-        surface_expr = build_surface_expressions(self.model, dynamic_species, surfaces, adsorbates_by_surface)
+        surface_expr = build_surface_expressions(self.model, dynamic_species, surfaces, adsorbates_by_surface,
+                                                 smooth=True,)
         rhs = []
         for name in dynamic_species:
             expr = sp.Integer(0)
@@ -255,6 +336,7 @@ class Isothermal:
                 expr += contribution
             expr = expr.subs(surface_expr).subs(constants)
             rhs.append(expr)
+
         dynamic_symbols = [species_symbol(name) for name in dynamic_species]
         conditions = [t, temp]
         rhs_func = sp.lambdify((*conditions, *dynamic_symbols), rhs, [{"exp": safe_exp}, "numpy"])
@@ -268,13 +350,40 @@ class Isothermal:
         temperature_values = scan_values(self.model.conditions.temperature, default=[300.0])
 
         rows = []
+        expected_columns = (1                       # Temperature
+                            + 1                     # time
+                            + len(dynamic_species)
+                            + len(surfaces))
         for temperature in temperature_values:
-            _, data, _ = solve_ode_system(self.model, t_span, t_eval, dynamic_species, surfaces, adsorbates_by_surface,
+            results = solve_ode_system(self.model, t_span, t_eval, dynamic_species, surfaces, adsorbates_by_surface,
                                           gas_indices, initial_conditions, rhs_func, jac_func, (float(temperature),),)
+            # Failed integration.
+            if results is None:
+                # print(f"WARNING: no rows retained at T={float(temperature):g} K.", flush=True,)
+                continue
+            sol, data, augmented = results
+            # Additional protection if the function returns a tuple of None values.
+            if data is None:
+                # print(f"WARNING: no rows retained at T={float(temperature):g} K.", flush=True,)
+                continue
+            data = np.asarray(data, dtype=float)
+            if data.ndim != 2:
+                # print(f"WARNING: skipping malformed result at T={float(temperature):g} K: "
+                #      f"expected a 2D array, got shape {data.shape}.", flush=True,)
+                continue
+            if data.shape[0] == 0:
+                # print(f"WARNING: skipping empty result at T={float(temperature):g} K.", flush=True,)
+                continue
+            if data.shape[1] != expected_columns:
+                # print(f"WARNING: skipping malformed result at T={float(temperature):g} K: "
+                #      f"expected {expected_columns} columns, got {data.shape[1]}.", flush=True,)
+                continue
             rows.append(data)
-        values = np.vstack(rows) if rows else np.empty((0, 0))
+            if rows:
+                values = np.vstack(rows)
+            else:
+                values = np.empty((0, expected_columns), dtype=float,)
         headers = ["Temperature", "time", *dynamic_species, *surfaces]
-
         return TimeSeriesResult(headers=headers, values=values, species=dynamic_species, surfaces=surfaces,
                                 metadata={"adsorbates_by_surface": adsorbates_by_surface, "gas_indices": gas_indices,},)
 
@@ -341,12 +450,12 @@ class TPR:
         return results
 
     def temperature_values(self) -> np.ndarray:
-        if self.temperature_scan is not None:
+        """if self.temperature_scan is not None:
             return np.asarray(scan_values(self.temperature_scan), dtype=float)
         if self.model.conditions.temperature is not None:
             values = scan_values(self.model.conditions.temperature)
             if len(values) >= 2:
-                return np.asarray(values, dtype=float)
+                return np.asarray(values, dtype=float)"""
         return np.arange(10.0, 1273.0 + 1.0, 1.0)
 
     def run_one_tpr(self, *, gas_name: str, adsorbates: list[str], ads_idx: int, gas_species: list[str], rhs_func,
@@ -357,8 +466,22 @@ class TPR:
         t_eval = (temperatures - temp_i) / beta
         t_span = (float(t_eval[0]), float(t_eval[-1]))
         y0 = np.zeros(len(adsorbates), dtype=float)
-        nmolsite = float(getattr(self.model.species[gas_name], "nmolsite", 1.0))
-        y0[ads_idx] = 0.95 / nmolsite  # not 1 to give some wiggle
+
+        initial_adsorbate = adsorbates[ads_idx]
+        occupied_sites = nsites(self.model, initial_adsorbate,)
+        if occupied_sites <= 0.0:
+            raise ValueError(f"{initial_adsorbate}: nsites must be positive, got {occupied_sites}.")
+        y0[ads_idx] = 0.95 / occupied_sites  # not 1 to give some wiggle
+
+        '''
+        print(f"\nStarting TPR:"
+              f"\n  gas              = {gas_name}"
+              f"\n  initial adsorbate = {adsorbates[ads_idx]}"
+              f"\n  temperature       = {temp_i:g}–{temp_f:g} K"
+              f"\n  heating rate      = {beta_min:g} K/min"
+              f"\n  integration time  = {t_span[1]:.3e} s"
+              f"\n  variables         = {len(y0)}",
+              flush=True,)'''
 
         def temperature_profile(t_num):
             return temp_i + beta * t_num
@@ -370,7 +493,27 @@ class TPR:
             dydt = np.clip(dydt, -1.0e30, 1.0e30,)
             return dydt
 
-        sol = solve_ivp(ode_rhs, t_span, y0, t_eval=t_eval, method="BDF", rtol=1e-3, atol=1e-6,)
+        integration_options = {"fun": ode_rhs, "t_span": t_span, "y0": y0, "t_eval": t_eval, "rtol": 1.0e-6, "atol": 1e-10,}
+        sol = None
+        for method in ("BDF", "LSODA", "Radau"):
+            trial = solve_ivp(method=method, **integration_options, )
+            if trial.success:
+                sol = trial
+                break
+            last_time = (float(trial.t[-1]) if trial.t.size else t_span[0])
+            last_temperature = temperature_profile(last_time)
+            print(f"WARNING: TPD/TPR {method} failed for {gas_name} at T={last_temperature:g} K.\n"
+                  f" Message           : {trial.message}\n Last reached time : {last_time:.16e} s\n"
+                  f" Function calls    : {trial.nfev}\n Jacobian calls    : {trial.njev}\n"
+                  f" Linear algebra operations : {trial.nlu}", flush=True,)
+        if sol is None:
+            return None
+        if len(sol.t) != len(t_eval):
+            print(f"WARNING: Incomplete TPD/TPR solution at T={arguments[0]:g} K: "
+                  f"returned {len(sol.t)} of {len(t_eval)} requested points.", flush=True, )
+            return None
+        '''
+        sol = solve_ivp(ode_rhs, t_span, y0, t_eval=t_eval, method="BDF", rtol=1e-6, atol=1e-10,)
 
         if not sol.success:
             print(f"WARNING: TPR solver failed for {gas_name}: {sol.message}")
@@ -380,7 +523,7 @@ class TPR:
                              gas_species=gas_species, concentrations=concentrations, spectra=spectra,
                              metadata={"initial_adsorbate": adsorbates[ads_idx], "beta_K_per_s": beta,
                                        "solver_success": False, "solver_message": sol.message,},)
-
+        '''
         concentrations = np.zeros((len(temperatures), len(adsorbates)), dtype=float)
         if sol.y.size:
             concentrations[: len(sol.t), :] = sol.y.T

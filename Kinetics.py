@@ -217,7 +217,7 @@ class RConstants:
         if process.kind.upper() == "A":
             molecule = self.adsorbing_molecule(process)
             mass = molecule.mass
-            area = self.adsorption_area(molecule)
+            area = molecule.area
             if mass is None:
                 raise ValueError(f"{molecule.name}: molecular mass is required for adsorption.")
             if area is None:
@@ -245,21 +245,6 @@ class RConstants:
             if self.is_molecule(species):
                 return species
         raise ValueError(f"Process {process.id}: adsorption process has no molecular reactant.")
-
-    def adsorption_area(self, molecule):
-        if molecule.area is not None:
-            return molecule.area
-        molsite = molecule.molsite
-        if isinstance(molsite, list):
-            molsite = molsite[0] if molsite else None
-        if molsite is None:
-            return None
-        for species in self.model.species.values():
-            if species.kind.lower() != "surface":
-                continue
-            if species.sites == molsite:
-                return species.area
-        return None
 
     def tunneling(self, process):
         ''' Second order harmonic Wigner approach to shallow quantum tunneling valid for

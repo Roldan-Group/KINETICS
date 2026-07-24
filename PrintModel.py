@@ -121,6 +121,145 @@ def object_numeric_fields(obj: Any) -> dict[str, Any]:
 def finite(values: Iterable[float]) -> list[float]:
     return [float(v) for v in values if isinstance(v, (int, float, np.number)) and np.isfinite(v)]
 
+def setup_signed_log_axis(ax, *value_arrays, padding=1.5, origin_gap=1.5,):
+    """ Transform signed values into logarithmic-decade coordinates and configure the corresponding y-axis. """
+    if not value_arrays:
+        raise ValueError("At least one value array must be provided.")
+    arrays = tuple(np.asarray(values, dtype=float) for values in value_arrays)
+    all_values = np.concatenate([values.ravel() for values in arrays])
+    finite_values = all_values[np.isfinite(all_values)]
+    # Handle arrays containing only zeros, NaN, or infinity.
+    if finite_values.size == 0:
+        transformed = tuple(np.full_like(values, np.nan, dtype=float) for values in arrays)
+        ax.set_yticks([0.0])
+        ax.set_yticklabels([r"$0$"])
+        ax.set_ylim(-1.0, 1.0)
+        return transformed
+    positive_values = finite_values[finite_values > 0.0]
+    negative_values = finite_values[finite_values < 0.0]
+    has_positive = positive_values.size > 0
+    has_negative = negative_values.size > 0
+    nonzero_values = finite_values[finite_values != 0.0]
+    if nonzero_values.size == 0:     # All finite values are zero.
+        transformed = tuple(np.where(np.isfinite(values), 0.0, np.nan) for values in arrays)
+        ax.set_yticks([0.0])
+        ax.set_yticklabels([r"$0$"])
+        ax.set_ylim(-0.5, 0.5)
+        return transformed
+    magnitudes = np.abs(nonzero_values)
+    min_exponent = int(np.floor(np.log10(np.min(magnitudes))))
+    max_exponent = int(np.ceil(np.log10(np.max(magnitudes))))
+
+    def transform(values):
+        values = np.asarray(values, dtype=float)
+        output = np.zeros_like(values, dtype=float)
+        finite = np.isfinite(values)
+        nonzero = finite & (values != 0.0)
+        output[nonzero] = (np.sign(values[nonzero]) * (np.log10(np.abs(values[nonzero])) - min_exponent + origin_gap))
+        output[~finite] = np.nan
+        return output
+
+    transformed_arrays = tuple(transform(values) for values in arrays)
+    # Estimate how many exponent labels fit on the axis.
+    available_tick_space = max(3, int(ax.yaxis.get_tick_space()),)
+    # Mixed-sign plots share the available space between both sides.
+    if has_positive and has_negative:
+        target_ticks_per_side = max(3, (available_tick_space - 2) // 2,)
+    else:
+        target_ticks_per_side = max(3, available_tick_space - 2,)
+    n_decades = max_exponent - min_exponent + 1
+    # Use one constant exponent interval, so all displayed ticks are equidistant.
+    decade_step = max(1, int(np.ceil(n_decades / target_ticks_per_side)),)
+
+    exponents = np.arange(min_exponent, max_exponent + 1, decade_step, dtype=int,)
+    # Use the same coordinate transform as the plotted values.
+    positive_positions = (exponents - min_exponent + origin_gap).astype(float)
+    # Remove the smallest decade adjacent to zero when both positive and negative values are present.
+    if (has_positive and has_negative and origin_gap < 2.0 and len(exponents) > 1):
+        exponents_to_plot = exponents[1:]
+        positions_to_plot = positive_positions[1:]
+    else:
+        exponents_to_plot = exponents
+        positions_to_plot = positive_positions
+
+    tick_positions = []
+    tick_labels = []
+    if has_negative:
+        tick_positions.extend((-positions_to_plot[::-1]).tolist())
+        tick_labels.extend([rf"$-10^{{{exponent}}}$" for exponent in exponents_to_plot[::-1]])
+    if has_positive:
+        tick_positions.extend(positions_to_plot.tolist())
+        tick_labels.extend([rf"$10^{{{exponent}}}$" for exponent in exponents_to_plot])
+
+    # Include zero only when zero is relevant as the baseline.
+    #tick_positions.append(0.0)
+    #tick_labels.append(r"$0$")
+
+    ax.set_yticks(tick_positions)
+    ax.set_yticklabels(tick_labels)
+    finite_transformed = np.concatenate([values[np.isfinite(values)] for values in transformed_arrays])
+    transformed_min = float(np.min(finite_transformed))
+    transformed_max = float(np.max(finite_transformed))
+
+    if has_positive and not has_negative:
+        # Positive-only plot: no unnecessary negative region.
+        ax.set_ylim(0.0, transformed_max + padding,)
+    elif has_negative and not has_positive:
+        # Negative-only plot: no unnecessary positive region.
+        ax.set_ylim(transformed_min - padding, 0.0,)
+    else:
+        # Mixed-sign plot: each side follows its actual data extent.
+        ax.set_ylim(transformed_min - padding, transformed_max + padding,)
+    return transformed_arrays
+
+def plot_initial_final_bars(*, labels, initial_values, final_values, initial_temperature, final_temperature, output,
+                            title, ylabel, xlabel="Process ID", logy=False,):
+    """ Plot paired initial/final bar values.
+        When logy=True, signed values are displayed using logarithmic-decade coordinates """
+    labels = list(labels)
+    if not labels:
+        return
+    # Ensure the arrays correspond directly to one bar per label.
+    initial_values = np.asarray(initial_values, dtype=float).reshape(-1)
+    final_values = np.asarray(final_values, dtype=float).reshape(-1)
+    expected_size = len(labels)
+    if not (expected_size == initial_values.size == final_values.size):
+        raise ValueError("Labels and initial/final values must have equal lengths."
+                         f"The {title} plot got labels={len(labels)}, initial_values={initial_values.size}, "
+                         f"final_values={final_values.size}.")
+
+    formatted_labels = [rf"${label}$" for label in labels]
+    x = np.arange(expected_size, dtype=float)
+    width = 0.4
+    fig, ax = plt.subplots(figsize=(max(10.0, 0.45 * expected_size), 6.0), clear=True,)
+    if logy:
+        (initial_plot_values, final_plot_values,) = setup_signed_log_axis(ax, initial_values, final_values,)
+    else:
+        initial_plot_values = initial_values
+        final_plot_values = final_values
+    ax.bar(x - width / 2.0, initial_plot_values, width, label=f"{initial_temperature:g} K", hatch=ipatterns[0],
+           edgecolor="black",)
+    ax.bar(x + width / 2.0, final_plot_values, width, label=f"{final_temperature:g} K", hatch=ipatterns[1],
+           edgecolor="black",)
+    ax.axhline(0.0, linewidth=0.8, color="black",)
+    ax.set_xticks(x)
+    ax.set_xticklabels(formatted_labels, rotation=45, ha="right", rotation_mode="anchor",)
+    ax.tick_params(axis="x", labelsize=16, pad=2.5,)
+    ax.tick_params(axis="y", labelsize=16,)
+    ax.set_xlabel(xlabel, fontsize=18,)
+    ax.set_ylabel(ylabel, fontsize=18,)
+    ax.set_title(title, fontsize=18,)
+    if not logy:
+        ax.margins(y=0.15)
+    if expected_size:
+        ax.set_xlim(-0.75, expected_size - 0.25, )
+    ax.legend(fontsize=16)
+    fig.tight_layout()
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True,)
+    fig.savefig(output, dpi=300, transparent=True, bbox_inches="tight",)
+    plt.close(fig)
+
 
 class ThermodynamicsReporter:
     def __init__(self, model, output_dir="./"):
@@ -216,32 +355,29 @@ class ThermodynamicsReporter:
                 continue
             values = np.asarray([np.nan if value is None else value for value in values], dtype=float,)
             ax.plot(temperatures, values, color=icolour[n % len(icolour)], linestyle=iliner[n % len(iliner)], label=field,)
-        ax.set_xlabel("Temperature (K)")
-        ax.set_ylabel(ylabel)
-        ax.set_title(species.name)
-        ax.legend()
+        ax.tick_params(labelsize=16,)
+        ax.set_xlabel('Temperature $(K)$', fontsize=18,)
+        ax.set_ylabel(f'{ylabel}', fontsize=18, )
+        ax.set_title(species.name, fontsize=18, )
+        #ax.legend()
         fig.tight_layout()
         fig.savefig(species_dir / filename, dpi=300, transparent=True)
         plt.close(fig)
 
     def plot_partition_functions(self, species, species_dir):
-        self.plot_fields(species, species_dir, ["qtrans3d", "qrot", "qelec", "qvib3d", "q3d",
-                                                "qtrans2d", "qvib2d", "q2d",],
-                         "Partition_functions.svg", "Partition function",)
+        self.plot_fields(species, species_dir, ["q3d",], "Partition_functions.svg", "Partition function, $Q$",)
 
     def plot_entropy(self, species, species_dir):
-        self.plot_fields(species, species_dir,["strans3d", "selec", "srot", "svib3d", "sentropy3d",
-                                               "strans2d", "svib2d", "sentropy2d",], "Entropy.svg", "Entropy (eV/K)",)
+        self.plot_fields(species, species_dir,["sentropy3d",], "Entropy.svg", "Entropy, $S$ $(eV/K)$",)
 
     def plot_enthalpy(self, species, species_dir):
-        self.plot_fields(species, species_dir, ["zpe3d", "hthermal3d", "enthalpy3d",
-                                                "zpe2d", "hthermal2d", "enthalpy2d",], "Enthalpy.svg", "Enthalpy (eV)",)
+        self.plot_fields(species, species_dir, ["enthalpy3d",], "Enthalpy.svg", "Enthalpy, $H$ $(eV)$",)
 
     def plot_heat_capacity(self, species, species_dir):
-        self.plot_fields(species, species_dir, ["cp3d", "cp2d",], "Heat_capacity.svg", "Heat capacity (eV/K)",)
+        self.plot_fields(species, species_dir, ["cp3d",], "Heat_capacity.svg", "Heat capacity, $C_{p}$ $(eV/K)$",)
 
     def plot_gibbs(self, species, species_dir):
-        self.plot_fields(species, species_dir, ["gibbs3d", "gibbs2d"], "Gibbs.svg", "Gibbs free energy (eV)",)
+        self.plot_fields(species, species_dir, ["gibbs3d"], "Gibbs.svg", "Gibbs free energy, $G$ $(eV)$",)
 
 
 class KineticsReporter:
@@ -249,43 +385,93 @@ class KineticsReporter:
         self.model = model
         self.output_dir = Path(output_dir)
         self.root = self.output_dir / "KINETICS"
+        self._expression_cache = {}
+        self._array_cache = {}
 
     def write_and_plot(self):
         self.root.mkdir(parents=True, exist_ok=True)
+        self._array_cache = {}
         self.write_rate_constants()
         self.write_reaction_energies()
+        self.write_symbolic_rate_equations()
         self.plot_rate_constants()
         self.plot_activation_energies()
         self.plot_reaction_energies()
+        self._array_cache.clear()
 
     def temperatures(self):
         if self.model.conditions.temperature is None:
             return [300.0]
         return self.model.conditions.temperature.values()
 
-    def evaluate(self, expr, temperature):
+    def _compile_expression(self, expr):
+        """ Compile a symbolic expression into a NumPy-compatible function.
+        Each expression is compiled only once and stored in the cache. """
         if expr is None:
             return None
+        key = id(expr)
+        if key in self._expression_cache:
+            return self._expression_cache[key]
         try:
-            expr = sp.sympify(expr).subs(constants)
-            value = expr.subs(temp, temperature)
-            return float(value)
-        except Exception:
-            try:
-                return float(expr)
-            except Exception:
-                return None
+            symbolic_expr = sp.sympify(expr).subs(constants)
+            if temp in symbolic_expr.free_symbols:
+                function = sp.lambdify(temp, symbolic_expr, modules="numpy",)
+            else:
+                constant_value = float(symbolic_expr)
 
-    def kinetic_rows(self, fields):
+                def function(temperatures, value=constant_value):
+                    temperatures = np.asarray(temperatures, dtype=float,)
+                    return np.full(temperatures.shape, value, dtype=float,)
+            self._expression_cache[key] = function
+            return function
+        except (TypeError, ValueError, OverflowError, ZeroDivisionError, sp.SympifyError,):
+            self._expression_cache[key] = None
+            return None
+
+    def evaluate_array(self, expr, temperatures):
+        """ Evaluate an expression over a complete temperature array. """
+        temperatures = np.asarray(temperatures, dtype=float,)
+        if expr is None:
+            return np.full(temperatures.shape, np.nan, dtype=float,)
+        cache_key = (id(expr), temperatures.shape, temperatures.tobytes(),)
+        if cache_key in self._array_cache:
+            return self._array_cache[cache_key]
+        function = self._compile_expression(expr)
+        if function is None:
+            values = np.full(temperatures.shape, np.nan, dtype=float,)
+            self._array_cache[cache_key] = values
+            return values
+        try:
+            with np.errstate(over="ignore", divide="ignore", invalid="ignore", under="ignore",):
+                values = function(temperatures)
+            values = np.asarray(values, dtype=float,)
+            # Some lambdified expressions return one scalar even when an array of temperatures is supplied.
+            if values.ndim == 0:
+                values = np.full(temperatures.shape, float(values), dtype=float,)
+            else:           # Ensure that the returned array has the expected shape.
+                values = np.broadcast_to(values, temperatures.shape,).astype(float, copy=True,)
+            values[~np.isfinite(values)] = np.nan
+            return values
+        except (TypeError, ValueError, OverflowError, ZeroDivisionError, sp.SympifyError,):
+            values = np.full(temperatures.shape, np.nan, dtype=float,)
+        self._array_cache[cache_key] = values
+        return values
+
+    def evaluate_kinetic_fields(self, fields):
+        temperatures = np.asarray(self.temperatures(), dtype=float,)
+        process_items = list(self.model.kinetics.by_process.items())
+        evaluated = {pid: {field: self.evaluate_array(getattr(kinetics, field, None), temperatures,)
+                           for field in fields} for pid, kinetics in process_items}
+        return temperatures, process_items, evaluated
+
+    def kinetic_rows(self, fields, temperatures=None, process_items=None, evaluated=None,):
+        if temperatures is None or process_items is None or evaluated is None:
+            temperatures, process_items, evaluated = (self.evaluate_kinetic_fields(fields))
         rows = []
-        for temp_num in self.temperatures():
-            for pid, kinetics in self.model.kinetics.by_process.items():
+        for index, temp_num in enumerate(temperatures):
+            for pid, kinetics in process_items:
                 process = self.model.processes[pid]
-                row = [temp_num, pid, process.kind,]
-                for field in fields:
-                    expr = getattr(kinetics, field, None)
-                    row.append(self.evaluate(expr, temp_num))
-                rows.append(row)
+                rows.append([temp_num, pid, process.kind, *[evaluated[pid][field][index] for field in fields],])
         return rows
 
     def write_rate_constants(self):
@@ -295,48 +481,133 @@ class KineticsReporter:
 
     def write_reaction_energies(self):
         fields = ["activation", "reaction_energy",]
-        Writer.write(filename=self.root / "Reaction_energies.dat", header=["Temperature(K)", "Process", "Kind",
-                                                                        "activation_energy(eV)", "reaction_energy(eV)",],
+        Writer.write(filename=self.root / "Reaction_energies.dat",
+                     header=["Temperature(K)", "Process", "Kind", "activation_energy(eV)", "reaction_energy(eV)",],
                      rows=self.kinetic_rows(fields), title="Reaction free energies by process",)
 
-    def plot_process_field(self, field, filename, ylabel, logy=False):
-        temperatures = self.temperatures()
-        process_ids = list(self.model.kinetics.by_process.keys())
+    @staticmethod
+    def _coefficient_for(items, species_name: str) -> float:
+        """ Return the total stoichiometric coefficient of one species. """
+        return sum(float(item.coefficient) for item in items if item.species == species_name)
+    def _dynamic_species_names(self) -> list[str]:
+        """ Return all integrated species. Surfaces are excluded because their coverages are reconstructed from
+        the site balance rather than integrated as independent variables."""
+        names: set[str] = set()
+        for process in self.model.processes.values():
+            names.update(item.species for item in process.reactants)
+            names.update(item.species for item in process.products)
+        return sorted(name for name in names if str(self.model.species[name].kind).lower() != "surface")
 
-        for temp_num in temperatures:
-            values = []
-            for pid in process_ids:
-                kinetics = self.model.kinetics.by_process[pid]
-                value = self.evaluate(getattr(kinetics, field, None), temp_num,)
-                if value is None:
-                    value = np.nan
-                values.append(value)
-            fig, ax = plt.subplots(figsize=(10, 6), clear=True)
-            x = np.arange(len(process_ids))
-            ax.bar(x, values)
-            ax.set_xticks(x)
-            ax.set_xticklabels(process_ids, rotation=45, ha="right")
-            ax.set_xlabel("Process ID")
-            ax.set_ylabel(ylabel)
-            ax.set_title(f"{field} at T = {temp_num:g} K")
-            if logy:
-                positive = [value for value in values if value is not None and np.isfinite(value) and value > 0]
-                if positive:
-                    ax.set_yscale("log")
-            fig.tight_layout()
-            fig.savefig(self.root / f"{filename}_{temp_num:g}K.svg", dpi=300, transparent=True,)
-            plt.close(fig)
+    def _species_rate_symbol(self, species_name: str) -> str:
+        """ Use P_species for gas-phase molecules and the species name for adsorbates and surfaces. """
+        species = self.model.species[species_name]
+        kind = str(species.kind).lower()
+        if kind == "molecule":
+            return f"P_{species_name}"
+        return species_name
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        """ Format an integer-like stoichiometric coefficient without a decimal. """
+        if np.isclose(value, round(value)):
+            return str(int(round(value)))
+        return f"{value:g}"
+
+    def _format_reactant_factor(self, item) -> str:
+        """ Format one reactant using its stoichiometric coefficient as the elementary reaction order. """
+        symbol = self._species_rate_symbol(item.species)
+        order = float(item.coefficient)
+        if np.isclose(order, 1.0):
+            return symbol
+        return f"{symbol}^{self._format_number(order)}"
+
+    def _format_elementary_rate(self, process_id, process) -> str:
+        """ Construct: k_i reactant_1 reactant_2^order ... """
+        factors = [f"k_{process_id}"]
+        factors.extend(self._format_reactant_factor(item) for item in process.reactants)
+        return " ".join(factors)
+
+    def _symbolic_rhs_contributions(self, species_name: str,) -> list[tuple[float, str]]:
+        """ Return every elementary contribution to d[species]/dt. """
+        contributions: list[tuple[float, str]] = []
+        for process_id, process in self.model.processes.items():
+            product_coefficient = self._coefficient_for(process.products, species_name,)
+            reactant_coefficient = self._coefficient_for(process.reactants, species_name,)
+            net_factor = product_coefficient - reactant_coefficient
+            if np.isclose(net_factor, 0.0):
+                continue
+            rate_expression = self._format_elementary_rate(process_id, process,)
+            contributions.append((net_factor, rate_expression))
+        return contributions
+
+    def _format_species_rhs(self, species_name: str) -> str:
+        """ Format a complete species rate equation. """
+        contributions = self._symbolic_rhs_contributions(species_name)
+        if not contributions:
+            return f"d[{species_name}]/dt = 0"
+        terms: list[str] = []
+        for index, (net_factor, rate_expression) in enumerate(contributions):
+            sign = "+" if net_factor > 0.0 else "-"
+            magnitude = abs(net_factor)
+            if np.isclose(magnitude, 1.0):
+                coefficient = ""
+            else:
+                coefficient = f"{self._format_number(magnitude)} "
+            term = f"{sign} {coefficient}{rate_expression}"
+            if index == 0:
+                terms.append(f"d[{species_name}]/dt = {term}")
+            else:
+                indentation = " " * (len(species_name) + 9)
+                terms.append(f"{indentation}{term}")
+        return "\n".join(terms)
+
+    def symbolic_rate_equations_text(self) -> str:
+        """ Return all symbolic species rate equations as plain text. """
+        title = "Symbolic species rate equations"
+        lines = [title,"=" * len(title),"",]
+        for species_name in self._dynamic_species_names():
+            lines.append(self._format_species_rhs(species_name))
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
+    def write_symbolic_rate_equations(self) -> None:
+        """ Write the symbolic RHS equations and also print them to the terminal. """
+        filename = self.root / "Equations.dat"
+        filename.write_text(self.symbolic_rate_equations_text(), encoding="utf-8")
+
+    def plot_process_field(self, field, filename, ylabel, logy=False,):
+        temperatures = np.asarray(self.temperatures(), dtype=float,)
+        if temperatures.size == 0:
+            return
+        temp_initial = float(temperatures[0])
+        temp_final = float(temperatures[-1])
+        process_ids = list(self.model.kinetics.by_process.keys())
+        if not process_ids:
+            return
+        process_ids = []
+        initial_values = []
+        final_values = []
+        for pid, kinetics in self.model.kinetics.by_process.items():
+            values = self.evaluate_array(getattr(kinetics, field, None), temperatures,)
+            process_ids.append(pid)
+            initial_values.append(values[0])
+            final_values.append(values[-1])
+        plot_initial_final_bars(labels=process_ids, initial_values=initial_values, final_values=final_values,
+                                initial_temperature=temp_initial, final_temperature=temp_final,
+                                output=self.root / f"{filename}.svg", title=f"{field}",
+                                ylabel=ylabel, xlabel="Process ID", logy=logy,)
 
     def plot_rate_constants(self):
-        self.plot_process_field(field="krate0", filename="Rate_constants", ylabel="Rate constant", logy=True,)
+        self.plot_process_field(field="krate0", filename="Rate_constants",
+                                ylabel="Rate constant, $K$ $(M^{\\dagger}/s)$", logy=True,)
 
     def plot_activation_energies(self):
-        self.plot_process_field(field="activation", filename="Activation_energies", ylabel="Activation energy (eV)",
-                                logy=False,)
+        self.plot_process_field(field="activation", filename="Activation_energies",
+                                ylabel="Activation energy, $G_{A}$ $(eV)$", logy=False,)
 
     def plot_reaction_energies(self):
-        self.plot_process_field(field="reaction_energy", filename="Reaction_energies", ylabel="Reaction free energy (eV)",
-                                logy=False,)
+        self.plot_process_field(field="reaction_energy", filename="Reaction_energies",
+                                ylabel="Reaction free energy, $G_{R}$ $(eV)$", logy=False,)
 
 
 class ExperimentReporter:
@@ -400,65 +671,84 @@ class DiagnosticsReporter:
     def __init__(self, model, output_dir="./"):
         self.model = model
         self.output_dir = Path(output_dir)
-        self.root = self.output_dir / "DIAGNOSTICS"
+        self.root = self.output_dir / "EXPERIMENTS"
+        self.net_rates_root = self.root / "Rates"
+        self.drc_root = self.root / "DRC"
 
     def write_and_plot(self):
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.net_rates_root.mkdir(parents=True, exist_ok=True,)
+        self.drc_root.mkdir(parents=True, exist_ok=True)
         diagnostics = getattr(self.model, "diagnostics", None)
         if diagnostics is None:
+            print("WARNING: model.diagnostics is None.", flush=True,)
             return
-        self.write_table_result(diagnostics.steady_state_net_rates, self.root / "Steady_state_net_rates.dat",)
-        self.write_table_result(diagnostics.average_net_rates, self.root / "Average_net_rates.dat",)
-        self.write_table_result(diagnostics.equilibrium_control, self.root / "Equilibrium_control.dat",)
-        self.write_table_result(diagnostics.drc_assessment, self.root / "DRC_assessment.dat",)
-        self.write_control_tables(diagnostics.degree_of_rate_control, self.root / "Degree_of_rate_control",)
-        self.write_control_tables(diagnostics.degree_of_selectivity_control, self.root/"Degree_of_selectivity_control",)
+
+        self.write_table_result(diagnostics.steady_state_net_rates, self.net_rates_root / "Steady_state_net_rates.dat",)
+        self.write_table_result(diagnostics.average_net_rates, self.net_rates_root / "Average_net_rates.dat",)
+        self.write_table_result(diagnostics.equilibrium_control, self.drc_root / "Equilibrium_control.dat",)
+        self.write_table_result(diagnostics.drc_assessment, self.drc_root / "DRC_assessment.dat",)
+        self.write_control_tables(diagnostics.degree_of_rate_control, self.drc_root / "Degree_of_rate_control",)
+        self.write_control_tables(diagnostics.degree_of_selectivity_control, self.drc_root/"Degree_of_selectivity_control",)
+
         self.write_reaction_pathways()
         self.write_tpr_peaks()
         self.write_ir_spectra()
-        self.plot_table_bars(diagnostics.steady_state_net_rates, "Steady_state_net_rates.svg",
-                             "Steady-state net rates", "Net rate",)
-        self.plot_table_bars(diagnostics.average_net_rates, "Average_net_rates.svg",
-                             "Average net rates", "Average net rate",)
-        self.plot_table_bars(diagnostics.equilibrium_control, "Equilibrium_control.svg",
+        self.plot_table_bars(diagnostics.steady_state_net_rates, self.net_rates_root / "Steady_state_net_rates.svg",
+                             "Steady-state net rates",  "Net rate, $R_{N}^{SS}$ $(s^{-1})$", logy=True,)
+        self.plot_table_bars(diagnostics.average_net_rates, self.net_rates_root / "Average_net_rates.svg",
+                             "Average net rates", "Average net rate, $R_{N}^{Av}$ $(s^{-1})$", logy=True,)
+
+        self.plot_table_bars(diagnostics.equilibrium_control, self.drc_root / "Equilibrium_control.svg",
                              "Equilibrium control", "DEC",)
-        self.plot_control_tables(diagnostics.degree_of_rate_control, self.root /"Degree_of_rate_control", ylabel="DRC",)
-        self.plot_control_tables(diagnostics.degree_of_selectivity_control, self.root / "Degree_of_selectivity_control",
+        self.plot_control_tables(diagnostics.degree_of_rate_control, self.drc_root / "Degree_of_rate_control", ylabel="DRC")
+        self.plot_control_tables(diagnostics.degree_of_selectivity_control, self.drc_root / "Degree_of_selectivity_control",
                                  ylabel="DSC",)
         self.plot_reaction_pathways()
-        self.plot_tpr_peaks()
+        #self.plot_tpr_peaks()  # no plot an bar image with TPR peacks
         self.plot_tpr_spectra()
         self.plot_ir_spectra()
 
+    def write_control_tables(self, tables, directory):  # WITH several tables
+        if not tables:
+            return
+        directory.mkdir(parents=True, exist_ok=True,)
+        for name, table in tables.items():
+            if table is None:
+                continue
+            self.write_table_result(table, directory / f"{name}.dat",)
+
     def write_table_result(self, table, filename):
         if table is None:
+            print(f"WARNING: table for {filename.name} is None; file not written.", flush=True,)
+            return
+        if not table.rows:
+            print(f"WARNING: table for {filename.name} has no rows; file not written.", flush=True,)
             return
         Writer.write(filename=filename, header=table.headers, rows=table.rows, title=filename.stem.replace("_", " "),)
 
-    def write_control_tables(self, tables, directory):
-        directory.mkdir(parents=True, exist_ok=True)
-        for name, table in tables.items():
-            self.write_table_result(table, directory / f"{name}.dat",)
-
     def write_reaction_pathways(self):
         diagnostics = self.model.diagnostics
-        filename = self.root / "Reaction_pathways.dat"
+        directory = self.root / "Reaction_pathways"
+        directory.mkdir(parents=True, exist_ok=True)
         rows = []
         for pathway in diagnostics.reaction_pathways:
             for reactant, product, flux in pathway.edges:
                 rows.append([pathway.temperature, reactant, product, flux,])
-        Writer.write(filename=filename, header=["Temperature(K)", "Reactant", "Product", "Flux",],
+        Writer.write(filename=directory / "Reaction_pathways.dat", header=["Temperature(K)", "Reactant", "Product",
+                                                                           "Flux",],
                      rows=rows, title="Flux-weighted reaction pathways",)
 
     def write_tpr_peaks(self):
         diagnostics = self.model.diagnostics
-        filename = self.root / "TPR_peaks.dat"
+        directory = self.root / "TPR"
+        directory.mkdir(parents=True, exist_ok=True)
         rows = []
         for peak in diagnostics.tpr_peaks:
             rows.append([peak.source_gas, peak.signal_gas, peak.heating_rate, peak.peak_temperature,
                          peak.peak_rate, peak.area,])
-        Writer.write(filename=filename, header=["SourceGas", "SignalGas", "HeatingRate(K/min)", "PeakTemperature(K)",
-                                                "PeakRate", "Area",], rows=rows, title="TPR peak summary",)
+        Writer.write(filename=directory / "TPR_peaks.dat", header=["SourceGas", "SignalGas", "HeatingRate(K/min)",
+                                                                   "PeakTemperature(K)", "PeakRate", "Area",],
+                     rows=rows, title="TPR peak summary",)
 
     def write_ir_spectra(self):
         diagnostics = self.model.diagnostics
@@ -473,48 +763,43 @@ class DiagnosticsReporter:
             Writer.write(filename=filename, header=["Temperature(K)", "Time(s)", "Wavenumber(cm-1)", "Intensity",],
                          rows=rows, title=(f"IR evolution: {spectrum.phase}, {spectrum.temperature:g} K"),)
 
-    def plot_table_bars(self, table, filename, title, ylabel):
+    def plot_table_bars(self,table, filename, title, ylabel, *, logy=False,):
         if table is None or not table.rows:
             return
-        headers = table.headers
-        xlabels = headers[1:]
-        for row in table.rows:
-            temperature = row[0]
-            values = np.asarray(row[1:], dtype=float)
-            fig, ax = plt.subplots(figsize=(10, 6), clear=True)
-            x = np.arange(len(xlabels))
-            ax.bar(x, values)
-            ax.set_xticks(x)
-            ax.set_xticklabels(xlabels, rotation=45, ha="right")
-            ax.set_xlabel("Reaction step")
-            ax.set_ylabel(ylabel)
-            ax.set_title(f"{title} at {temperature:g} K")
-            fig.tight_layout()
-            output = (self.root / filename.replace(".svg", f"_{temperature:g}K.svg",))
-            fig.savefig(output, dpi=300, transparent=True,)
-            plt.close(fig)
+        rows = sorted(table.rows, key=lambda row: float(row[0]),)
+        initial_row = rows[0]
+        final_row = rows[-1]
+        initial_temperature = float(initial_row[0])
+        final_temperature = float(final_row[0])
+        labels = list(table.headers[1:])
+        initial_values = [np.nan if value is None else float(value) for value in initial_row[1:]]
+        final_values = [np.nan if value is None else float(value) for value in final_row[1:]]
+        plot_initial_final_bars(labels=labels, initial_values=initial_values, final_values=final_values,
+                                initial_temperature=initial_temperature, final_temperature=final_temperature,
+                                output=filename, title=title, ylabel=ylabel, xlabel="Process ID", logy=logy,)
 
-    def plot_control_tables(self, tables, directory, ylabel):
-        directory.mkdir(parents=True, exist_ok=True)
+    def plot_control_tables(self, tables, directory, ylabel,):
+        directory.mkdir(parents=True, exist_ok=True,)
+        expected_columns = len(table.headers)
+        for row_index, row in enumerate(table.rows):
+            if len(row) != expected_columns:
+                raise ValueError(f"{name}: malformed control table. Headers={expected_columns}, "
+                                 f"row {row_index}={len(row)}. Expected one value per header.")
         for name, table in tables.items():
             if table is None or not table.rows:
                 continue
-            headers = table.headers
-            xlabels = headers[1:]
-            for row in table.rows:
-                temperature = row[0]
-                values = np.asarray(row[1:], dtype=float)
-                fig, ax = plt.subplots(figsize=(10, 6), clear=True)
-                x = np.arange(len(xlabels))
-                ax.bar(x, values)
-                ax.set_xticks(x)
-                ax.set_xticklabels(xlabels, rotation=45, ha="right")
-                ax.set_xlabel("Reaction step")
-                ax.set_ylabel(ylabel)
-                ax.set_title(f"{name} {ylabel} at {temperature:g} K")
-                fig.tight_layout()
-                fig.savefig(directory / f"{name}_{temperature:g}K.svg", dpi=300, transparent=True,)
-                plt.close(fig)
+            rows = sorted(table.rows, key=lambda row: float(row[0]),)
+            initial_row = rows[0]
+            final_row = rows[-1]
+            initial_temperature = float(initial_row[0])
+            final_temperature = float(final_row[0])
+            labels = list(table.headers[1:])
+            initial_values = [np.nan if value is None else float(value) for value in initial_row[1:]]
+            final_values = [np.nan if value is None else float(value) for value in final_row[1:]]
+            plot_initial_final_bars(labels=labels, initial_values=initial_values, final_values=final_values,
+                                    initial_temperature=initial_temperature, final_temperature=final_temperature,
+                                    output=(directory / f"{name}_initial_final.svg"), title=f"{name}: {ylabel}",
+                                    ylabel=ylabel, xlabel="Process ID", logy=False,)
 
     def plot_reaction_pathways(self):
         diagnostics = self.model.diagnostics
@@ -523,7 +808,7 @@ class DiagnosticsReporter:
         for pathway in diagnostics.reaction_pathways:
             if not pathway.edges:
                 continue
-            labels = [f"{reactant}_to_{product}" for reactant, product, _ in pathway.edges]
+            labels = [f"${reactant}_to_{product}$" for reactant, product, _ in pathway.edges]
             values = [flux for _, _, flux in pathway.edges]
             fig, ax = plt.subplots(figsize=(10, 6), clear=True)
             y = np.arange(len(labels))
@@ -540,7 +825,7 @@ class DiagnosticsReporter:
         diagnostics = self.model.diagnostics
         if not diagnostics.tpr_peaks:
             return
-        labels = [f"{peak.source_gas}/{peak.signal_gas}" for peak in diagnostics.tpr_peaks]
+        labels = [f"${peak.source_gas}$ - ${peak.signal_gas}$" for peak in diagnostics.tpr_peaks]
         temperatures = [peak.peak_temperature for peak in diagnostics.tpr_peaks]
         fig, ax = plt.subplots(figsize=(10, 6), clear=True)
         x = np.arange(len(labels))
@@ -667,6 +952,8 @@ class Writer:
         if isinstance(value, int):
             return str(value)
         if isinstance(value, float):
+            if abs(value) < 1e-50:
+                value = 0.0
             return cls.float_format.format(value)
         return str(value)
 

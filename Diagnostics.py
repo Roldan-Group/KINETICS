@@ -187,8 +187,10 @@ def build_surface_expressions(model, dynamic_species: list[str], surfaces: list[
         expressions[species_symbol(surface_name)] = coverage
     return expressions
 
-def clip_concentrations(model, dynamic_species: list[str], surfaces: list[str], ads_by_surface: dict[str, list[int]], gas_indices: list[int], y: np.ndarray):
+def clip_concentrations(model, dynamic_species: list[str], surfaces: list[str], ads_by_surface: dict[str, list[int]],
+                        gas_indices: list[int], y: np.ndarray):
     y = np.asarray(y, dtype=float).copy()
+    y =  np.nan_to_num(y, nan=0.0, neginf=0.0, posinf=1.0e30,)
     for surface_name in surfaces:
         indices = ads_by_surface[surface_name]
         total = sum(y[idx] * nsites(model, dynamic_species[idx]) for idx in indices)
@@ -286,7 +288,7 @@ class Diagnostics:
         concentration_vec = sp.Matrix([species_syms[name] for name in species_names])
         all_variables = (temp, *concentration_vec, *k_sym_list)
         step_pairs = [(process_ids[i], process_ids[i + 1]) for i in range(0, len(process_ids) - 1, 2)]
-        step_labels = [f"r_{{{a}}}/r_{{{b}}}" for a, b in step_pairs]
+        step_labels = [f"$r_{{{a}}} - r_{{{b}}}$" for a, b in step_pairs]
         rate_exprs: dict[str, sp.Expr] = {}
         for pid, process in self.model.processes.items():
             expr = k_syms[pid]
@@ -309,8 +311,8 @@ class Diagnostics:
             f_list.append(expr)
         f_vec = sp.Matrix(f_list)
         f_func = sp.lambdify(all_variables, f_vec, "numpy")
-        products = [name for name, species in self.model.species.items() if is_molecule(species)
-                    and float(getattr(species, "pressure0", 0.0)) == 0.0]
+        products = [name for name, species in self.model.species.items() if is_molecule(species)]
+                    # and float(getattr(species, "pressure0", 0.0)) == 0.0] Alberto 21/07/2026 test
         stoichi_pairs = np.array([[(equation_factors.get(product, [0.0] * len(process_ids))[process_index[forward]]
                                     - equation_factors.get(product, [0.0] * len(process_ids))[process_index[backward]])
                                    for forward, backward in step_pairs] for product in products], dtype=float)
@@ -393,6 +395,18 @@ class Diagnostics:
 
     def steady_state_point(self, temp_num: float, context, functions):
         concentration_guess = np.asarray(context["concentrations"][temp_num][context["times"][-1]], dtype=float)
+        # Validation test
+        invalid = ( ~np.isfinite(concentration_guess) | (concentration_guess < 0.0))
+        if np.any(invalid):
+            species_names = self.dynamic_species_names()
+            print("\nInvalid steady-state initial guess:", flush=True,)
+            for index in np.flatnonzero(invalid):
+                name = (species_names[index] if index < len(species_names) else f"index_{index}")
+                print(f"    {name}: {concentration_guess[index]:.6e}", flush=True, )
+
+        concentration_guess = np.asarray(concentration_guess, dtype=float,).copy()
+        concentration_guess = np.nan_to_num(concentration_guess, nan=0.0, neginf=0.0, posinf=1.0e30,)
+        concentration_guess = np.maximum(concentration_guess, 0.0,)
         k_values = self.k_values(temp_num, functions)
         def residual(x):
             return np.asarray(functions["f_func"](temp_num, *x, *k_values), dtype=float).ravel()
@@ -484,21 +498,36 @@ class Diagnostics:
             alpha = np.abs(r_vec) / (np.abs(r_vec) + np.sum(np.abs(r_forward)) + eps)
             dr_total = alpha[:, None] * dr_net_total + (1 - alpha[:, None]) * dr_forward_total
 
-            mask = np.abs(r_vec) > 1e-20
+            mask = np.abs(r_vec) > 1e-50
             if not np.any(mask):
                 continue
 
             filtered_products = [p for i, p in enumerate(products) if mask[i]]
             r_vec_filtered = r_vec[mask]
             dr_total_filtered = dr_total[mask]
-            drc = dr_total_filtered / (r_vec_filtered[:, None] + eps)
+            filtered_products = [product for i, product in enumerate(products) if mask[i]]
+            r_vec_filtered = r_vec[mask]
+            dr_total_filtered = dr_total[mask]
+            # Convert derivatives with respect to k into derivatives with respect to ln(k).
+            scaled_derivatives = (dr_total_filtered * k_values[None, :])
+            drc_process = scaled_derivatives / (r_vec_filtered[:, None] + eps)
             r_tot = np.sum(r_vec_filtered)
-            if abs(r_tot) < 1e-20:
-                dsc = np.zeros_like(drc)
+            if abs(r_tot) < 1.0e-20:
+                dsc_process = np.zeros_like(drc_process)
             else:
                 selectivity = r_vec_filtered / r_tot
-                derivative_sum = np.sum(dr_total_filtered, axis=0)
-                dsc = (dr_total_filtered - selectivity[:, None] * derivative_sum) / (selectivity[:, None] * r_tot + eps)
+                derivative_sum = np.sum(scaled_derivatives, axis=0,)
+                dsc_process = ((scaled_derivatives - selectivity[:, None] * derivative_sum) / (
+                        selectivity[:, None] * r_tot + eps))
+            # Combine forward and backward process sensitivities into one value for each reversible elementary step.
+            n_steps = len(functions["step_pairs"])
+            drc = np.empty((len(filtered_products), n_steps), dtype=float,)
+            dsc = np.empty_like(drc)
+            for pair_index, (forward, backward) in enumerate(functions["step_pairs"]):
+                forward_index = functions["process_index"][forward]
+                backward_index = functions["process_index"][backward]
+                drc[:, pair_index] = (drc_process[:, forward_index] + drc_process[:, backward_index])
+                dsc[:, pair_index] = (dsc_process[:, forward_index] + dsc_process[:, backward_index])
             for i, product in enumerate(filtered_products):
                 drc_data[product].rows.append([temp_num, *drc[i].tolist()])
                 dsc_data[product].rows.append([temp_num, *dsc[i].tolist()])

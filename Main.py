@@ -23,6 +23,8 @@ from Kinetics import KineticsResults
 from Experiments import ExperimentResults
 from Diagnostics import DiagnosticResults, Diagnostics
 from PrintModel import ThermodynamicsReporter, KineticsReporter, ExperimentReporter, DiagnosticsReporter
+from Symbols_def import kb, temp
+
 
 
 class SpeciesType(str, Enum):
@@ -302,6 +304,50 @@ def parse_system(lines, i):
         i += 1
     return species, i + 1
 
+def molecular_prop(model: MKModel) -> MKModel:
+    """ Assign an effective adsorption area to every species that has MOLSITE. """
+    surfaces_by_site = {}
+    # Build a lookup table from ISITES labels to surface species.
+    for surface in model.species.values():
+        if surface.kind.lower() != "surface":
+            continue
+        if surface.sites is None:
+            raise ValueError(f"{surface.name}: surface has no ISITES definition.")
+        if surface.area is None:
+            raise ValueError(f"{surface.name}: surface has no IACAT area.")
+        if surface.sites in surfaces_by_site:
+            raise ValueError(f"Multiple surfaces use the site label {surface.sites!r}.")
+        surfaces_by_site[surface.sites] = surface
+    # Assign areas to species associated with a surface site.
+    for species in model.species.values():
+        if species.kind.lower() == "surface":
+            continue
+        molsite = species.molsite
+        if isinstance(molsite, list):
+            if len(molsite) != 1:
+                raise ValueError(f"{species.name}: multiple MOLSITE labels are not currently supported: {molsite}")
+            molsite = molsite[0]
+        # Species without MOLSITE do not participate in adsorption.
+        if molsite is None:
+            continue
+        surface = surfaces_by_site.get(molsite)
+        if surface is None:
+            raise ValueError(f"{species.name}: MOLSITE {molsite!r} does not match any surface ISITES label.")
+        occupied_sites = species.nmolsites
+        if occupied_sites is None:
+            occupied_sites = 1.0
+        if occupied_sites <= 0:
+            raise ValueError(f"{species.name}: nmolsites must be positive, got {occupied_sites}.")
+        species.area = occupied_sites * surface.area / surface.nsites
+    """ Assign the standard-state molecular volume to all gas molecules. """
+    p0 = sp.Integer(101325.0)   # Pa
+    for species in model.species.values():
+        if species.kind.lower() != "molecule":
+            continue
+        species.volume = kb * temp / p0
+
+    return model
+
 def read_input(filename: str) -> MKModel:
     model = MKModel()
     with open(filename) as fh:
@@ -344,19 +390,24 @@ def read_input(filename: str) -> MKModel:
         else:
             raise ValueError(f"Unknown top-level instruction: {line}")
         i += 1
+    molecular_prop(model)
     return model
+
 
 # --- OTHERS
 def run_stage(label, func, model):
-    start = time.time()
     print(f"{label}...")
+    start = time.time()
     result = func(model)
+    print("   Writing...")
+    return result, start
+
+def timing(start):
     elapsed = time.time() - start
     if elapsed < 30:
         print(f"\t{elapsed:.3f} seconds")
     else:
         print(f"\t{elapsed/60:.3f} minutes")
-    return result
 
 def main():
     start_total = time.time()
@@ -365,19 +416,33 @@ def main():
     model = read_input(args.input)
     print(f"\t{time.time() - start:.3f} seconds")
 
-    run_stage("Building partition functions", PartitionFunctions, model)
-    run_stage("Building thermodynamics", Energy, model)
+
+
+
+    result, start = run_stage("Building partition functions", PartitionFunctions, model)
     ThermodynamicsReporter(model, output_dir="./").write_and_plot()
-    run_stage("Building rate constants", RConstants, model)
+    timing(start)
+    result, start = run_stage("Building thermodynamics", Energy, model)
+    ThermodynamicsReporter(model, output_dir="./").write_and_plot()
+    timing(start)
+    result, start = run_stage("Building rate constants", RConstants, model)
     KineticsReporter(model, output_dir="./").write_and_plot()
-    run_stage("Building rate equations", REquations, model)
-    run_stage("Building energy profile", Profile, model)
-    run_stage("Running microkinetics", Isothermal, model)
+    timing(start)
+    result, start = run_stage("Building rate equations", REquations, model)
+    KineticsReporter(model, output_dir="./").write_and_plot()
+    timing(start)
+    result, start = run_stage("Building energy profile", Profile, model)
     ExperimentReporter(model, output_dir="./").write()
-    run_stage("Running TPR/D", TPR, model)
+    timing(start)
+    result, start = run_stage("Running microkinetics", Isothermal, model)
     ExperimentReporter(model, output_dir="./").write()
-    run_stage("Diagnosis", Diagnostics, model)
+    timing(start)
+    result, start = run_stage("Running TPR/D", TPR, model)
+    ExperimentReporter(model, output_dir="./").write()
+    timing(start)
+    result, start = run_stage("Diagnosis", Diagnostics, model)
     DiagnosticsReporter(model, output_dir="./").write_and_plot()
+    timing(start)
 
     total = time.time() - start_total
     if total < 60:
