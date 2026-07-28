@@ -152,10 +152,11 @@ def nsites(model, name: str) -> float:
     return float(value) if value is not None else 1.0
 
 def build_surface_expressions(model, dynamic_species: list[str], surfaces: list[str],
-                              adsorbates_by_surface: dict[str, list[int]], *, smooth: bool = True):
+                              adsorbates_by_surface: dict[str, list[int]], *, smooth: bool = True,
+                              smoothing_epsilon: float = 1.0e-12,):
     """Build algebraic surface-coverage expressions."""
     expressions: dict[sp.Symbol, sp.Expr] = {}
-    eps = sp.Float("1e-12") # smoothening value
+    eps = sp.Float(smoothing_epsilon) # smoothening value
     for surface_name in surfaces:
         coverage = sp.Float(1.0)
         for idx in adsorbates_by_surface[surface_name]:
@@ -290,11 +291,12 @@ def solve_ode_system(model, t_span: tuple[float, float], t_eval: np.ndarray, dyn
         if trial.success:
             sol = trial
             break
-        print(f"WARNING: {method} failed at T={arguments[0]:g} K.\n"
+        print(f"\nWARNING: {method} failed at T={arguments[0]:g} K.\n"
               f" Message           : {trial.message}\n"
               f" Last reached time : {trial.t[-1] if trial.t.size else t_span[0]:.16e}\n"
               f" Function calls    : {trial.nfev}\n Jacobian calls    : {trial.njev}\n"
-              f" Linear algebra operations : {trial.nlu}",flush=True,)
+              f" Linear algebra operations : {trial.nlu}\n"
+              " Moving to the next method (BDF, LSODA, Radau).\n", flush=True,)
         '''if trial.y.size:     # to print the species concentrations
             last_state = trial.y[:, -1]
             print("   Last solver state:")
@@ -388,6 +390,15 @@ class Isothermal:
                                 metadata={"adsorbates_by_surface": adsorbates_by_surface, "gas_indices": gas_indices,},)
 
 
+def process_involves_gas(model, process,) -> bool:
+    """   Return True when any reactant or product of a process is a gas-phase molecule.    """
+    for item in (*process.reactants, *process.products,):
+        species = model.species[item.species]
+        if is_molecule(species):
+            return True
+    return False
+
+
 class TPR:
     """Run temperature-programmed simulations and store spectra in memory."""
     def __init__(self, model, *, heating_rates: list[float] | None = None, temperature_scan=None):
@@ -402,36 +413,101 @@ class TPR:
         self.results = self.build()
         ensure_experiment_results(model).tpr = self.results
 
+    def build_surface_only_tpd_equations(self, *, tpd_equations: dict[str, list[sp.Expr],],
+                                         tpd_factors: dict[str, list[float],], adsorbates: list[str],) -> dict[str, list[sp.Expr],]:
+        """    Construct TPD equations containing only elementary processes that involve no gas-phase molecules.
+            The TPD equation arrays contain only processes for which:            process.kind.upper() != "A"        """
+        tpd_process_items = [(process_id, process,) for (process_id, process,) in self.model.processes.items()
+                             if (process.kind.upper() != "A" or process.kind.upper() != "D")]
+        number_of_tpd_processes = len(tpd_process_items)
+        surface_only: dict[str, list[sp.Expr],] = {name: [] for name in adsorbates}
+
+        # Verify that the equation arrays are aligned with the non-adsorption TPD process list.
+        for adsorbate in adsorbates:
+            contributions = tpd_equations.get(adsorbate, [],)
+            factors = tpd_factors.get(adsorbate, [],)
+            if len(contributions) != number_of_tpd_processes:
+                raise ValueError(f"TPD contribution/process alignment failure for {adsorbate!r}: "
+                                 f"{len(contributions)} contributions but {number_of_tpd_processes} non-adsorption")
+            if len(factors) != number_of_tpd_processes:
+                raise ValueError(f"TPD factor/process alignment failure for {adsorbate!r}: {len(factors)} factors but "
+                                 f"{number_of_tpd_processes} non-adsorption processes.")
+
+        # Retain only processes whose reactants and products contain no molecule species.
+        #print("\nTPR: classifying preparation processes", flush=True,)
+        active_process_count = 0
+        disabled_process_count = 0
+        for (tpd_index, (process_id, process,),)in enumerate(tpd_process_items):
+            involves_gas = process_involves_gas(self.model, process,)
+            if involves_gas:
+                disabled_process_count += 1
+                #print(f"  {process_id}: DISABLED: gas exchange", flush=True,)
+                continue
+            active_process_count += 1
+            #print(f"  {process_id}: ACTIVE: surface only", flush=True,)
+            for adsorbate in adsorbates:
+                contribution = tpd_equations[adsorbate][tpd_index] factor = float(tpd_factors[adsorbate][tpd_index])
+                # The equation generator stores a zero expression and zero factor for species unaffected by this process.
+                if factor == 0.0:
+                    continue
+                surface_only[adsorbate].append(contribution)
+        print(f"  TPR preparation mechanism: {active_process_count} active surface processes,"
+            f" {disabled_process_count} gas processes disabled.", flush=True, )
+        return surface_only
+
     def build(self) -> list[TPRResult]:
         _, _, tpd_equations, tpd_factors = get_equation_tuple(self.model)
         initial_conditions, dynamic_species, surfaces, gas_indices, adsorbates_by_surface = initial_species(self.model)
         gas_species = [dynamic_species[idx] for idx in gas_indices]
         adsorbates = [name for name in dynamic_species if is_adsorbate(self.model.species[name])]
+        tpd_surface_equations = (self.build_surface_only_tpd_equations(tpd_equations=tpd_equations,
+                                                                       tpd_factors=tpd_factors, adsorbates=adsorbates,))
         ads_symbols = [species_symbol(name) for name in adsorbates]
         surface_expr = build_surface_expressions(self.model, dynamic_species, surfaces, adsorbates_by_surface,
-                                                 smooth=True,)
-        rhs_ads = []
-        max_rate = sp.Float(1e7)
-        for name in adsorbates:
-            expr = sp.Integer(0)
-            for contribution in tpd_equations.get(name, []):
-                expr += max_rate * sp.tanh(contribution / max_rate)
-            expr = expr.subs(surface_expr).subs(constants)
-            rhs_ads.append(expr)
-        rhs_func = sp.lambdify((t, temp, *ads_symbols), rhs_ads, [{"exp": safe_exp}, "numpy"])
-        gas_rate_expr: dict[str, sp.Expr] = {}
+                                                 smooth=True, smoothing_epsilon=1.0e-16,)
+        function_arguments = (t, temp, *ads_symbols,)
+
+        # Helper for constructing one symbolic RHS vector.
+        def construct_adsorbate_rhs(equation_contributions: dict[str, list[sp.Expr],], *, label: str,)-> list[sp.Expr]:
+            """ Construct the ordered symbolic adsorbate RHS.
+             The order of the returned expressions matches ``adsorbates`` and therefore matches ``ads_symbols``.  """
+            expressions: list[sp.Expr] = []
+            #print(f"TPR: constructing {label} RHS expressions", flush=True,)
+            for name in adsorbates:
+                contributions = equation_contributions.get(name, [],)
+                if contributions:
+                    expression = sp.Add(*contributions, evaluate=False,)
+                else:
+                    expression = sp.Integer(0)
+                expression = expression.subs(surface_expr)
+                expression = expression.subs(constants)
+                expressions.append(expression)
+            if len(expressions) != len(ads_symbols):
+                raise ValueError(f"The {label} RHS contains {len(expressions)} expressions, but "
+                                 f"{len(ads_symbols)} adsorbate symbols were defined.")
+            return expressions
+
+        rhs_ads = construct_adsorbate_rhs(tpd_equations, label="full",)
+        rhs_matrix = sp.Matrix(rhs_ads)
+        surface_rhs_ads = construct_adsorbate_rhs(tpd_surface_equations, label="surface-only",)
+        surface_rhs_matrix = sp.Matrix(surface_rhs_ads)
+        jacobian_matrix = rhs_matrix.jacobian(ads_symbols)
+        modules = [{"exp": safe_exp}, "numpy",]
+        rhs_func = sp.lambdify(function_arguments, rhs_matrix, modules, cse=True,)
+        surface_rhs_func = sp.lambdify(function_arguments, surface_rhs_matrix, modules, cse=True,)
+        jac_func = sp.lambdify(function_arguments, jacobian_matrix, modules, cse=True,)
+
+        gas_rate_func: dict[str, Any] = {}
         for gas in gas_species:
             expr = sp.Integer(0)
-            for factor, contribution in zip(tpd_factors.get(gas, []), tpd_equations.get(gas, [])):
-                if factor > 0:
+            factors = tpd_factors.get(gas, [])
+            contributions = tpd_equations.get(gas, [])
+            for factor, contribution in zip(factors, contributions,):
+                if factor > 0.0:
                     expr += contribution
-            gas_rate_expr[gas] = expr.subs(surface_expr).subs(constants)
-
-        gas_rate_func = {gas: sp.lambdify((t, temp, *ads_symbols), expr, [{"exp": safe_exp}, "numpy"])
-                         for gas, expr in gas_rate_expr.items()}
+            expr = expr.subs(surface_expr).subs(constants)
+            gas_rate_func[gas] = sp.lambdify(function_arguments, expr, modules, cse=True,)
         temperatures = self.temperature_values()
-        if len(temperatures) < 2:
-            raise ValueError("TPR requires at least two temperature points.")
         results: list[TPRResult] = []
         for gas_name in gas_species:
             try:
@@ -443,110 +519,516 @@ class TPR:
             ads_idx = adsorbates.index(ads_name)
             for beta_min in self.heating_rates:
                 result = self.run_one_tpr(gas_name=gas_name, adsorbates=adsorbates, ads_idx=ads_idx,
-                                          gas_species=gas_species, rhs_func=rhs_func, gas_rate_func=gas_rate_func,
-                                          temperatures=temperatures, beta_min=float(beta_min),)
-                results.append(result)
-
+                                          gas_species=gas_species, rhs_func=rhs_func, surface_rhs_func=surface_rhs_func,
+                                          jac_func=jac_func, gas_rate_func=gas_rate_func, temperatures=temperatures,
+                                          beta_min=float(beta_min),)
+                if result is not None:
+                    results.append(result)
         return results
 
     def temperature_values(self) -> np.ndarray:
-        """if self.temperature_scan is not None:
-            return np.asarray(scan_values(self.temperature_scan), dtype=float)
-        if self.model.conditions.temperature is not None:
-            values = scan_values(self.model.conditions.temperature)
-            if len(values) >= 2:
-                return np.asarray(values, dtype=float)"""
-        return np.arange(10.0, 1273.0 + 1.0, 1.0)
+        return np.arange(150.0, 1273.0 + 5.0, 5.0)
+
+    def pre_equilibrate_tpr_state(self, *, surface_rhs_func, y0: np.ndarray, temp_i: float, adsorbates: list[str],
+                                  site_occupancies: np.ndarray, maximum_relaxation_time: float = 100.0,
+                                  absolute_rate_tolerance: float = 1.0e-8, relative_rate_tolerance: float = 1.0e-6,
+                                  coverage_scale: float = 1.0e-10,  rtol: float = 1.0e-7, atol: float = 1.0e-10,
+                                  ) -> tuple[np.ndarray, dict[str, Any]]:
+        """  Pre-equilibrate a nominal TPD initial state at constant temperature.
+                Only the reactions included in ``surface_rhs_func`` are evaluated.
+            surface_rhs_func:            Lambdified surface-only RHS with the signature:
+                            surface_rhs_func(time, temperature, *coverages)
+                            It must contain no adsorption, desorption, or other elementary reaction involving a gas-phase.
+            y0            Nominal initial adsorbate-coverage vector.
+            temp_i            Initial/preparation temperature in K.
+            adsorbates            Ordered adsorbate names corresponding to the state vector.
+            site_occupancies            Number of sites occupied by one molecule of each adsorbate.
+            maximum_relaxation_time             Maximum cumulative isothermal relaxation time in seconds.
+            absolute_rate_tolerance            Absolute convergence threshold for max(abs(dtheta/dt)).
+            relative_rate_tolerance            Scale-aware convergence threshold in s^-1.
+            coverage_scale              Coverage floor used in the relative-rate calculation.
+            rtol, atol            Solver tolerances used during pre-equilibration.   """
+        y_initial = np.asarray(y0, dtype=float,).reshape(-1)
+        y_current = y_initial.copy()
+        site_occupancies = np.asarray(site_occupancies, dtype=float,).reshape(-1)
+        n_adsorbates = len(adsorbates)
+        if y_current.size != n_adsorbates:
+            raise ValueError("The pre-equilibration state size does not match the number of adsorbates: "
+                             f"state={y_current.size}, adsorbates={n_adsorbates}.")
+        if site_occupancies.size != n_adsorbates:
+            raise ValueError("The site-occupancy array size does not match the number of adsorbates: "
+                             f"occupancies={site_occupancies.size}, adsorbates={n_adsorbates}.")
+        if not np.all(np.isfinite(y_current)):
+            raise ValueError("The nominal pre-equilibration state contains NaN or infinity.")
+        if not np.all(np.isfinite(site_occupancies)):
+            raise ValueError("The site-occupancy array contains NaN or infinity.")
+        if np.any(site_occupancies <= 0.0):
+            invalid_species = [name for name, occupancy in zip(adsorbates, site_occupancies,) if occupancy <= 0.0]
+            raise ValueError(f"All site occupancies must be positive. Invalid species: {invalid_species}.")
+        if np.any(y_current < 0.0):
+            negative_species = [name for name, coverage in zip(adsorbates, y_current,) if coverage < 0.0]
+            raise ValueError(f"The nominal pre-equilibration state contains negative coverages for: {negative_species}.")
+        maximum_relaxation_time = float(maximum_relaxation_time)
+        if (not np.isfinite(maximum_relaxation_time) or maximum_relaxation_time <= 0.0):
+            raise ValueError("maximum_relaxation_time must be finite and positive.")
+
+        occupied_fraction_initial = float(np.dot(y_current, site_occupancies,))
+        if occupied_fraction_initial > 1.0 + 1.0e-8:
+            raise ValueError(f"The nominal pre-equilibration state exceeds the "
+                             f"available site capacity: {occupied_fraction_initial:.8e}.")
+
+        rhs_call_count = 0
+
+        def relaxation_rhs(relaxation_time: float, state: np.ndarray,) -> np.ndarray:
+            nonlocal rhs_call_count
+            rhs_call_count += 1
+            state = np.asarray(state, dtype=float,).reshape(-1)
+            if state.size != n_adsorbates:
+                raise ValueError(f"The surface-only RHS received a state of the wrong "
+                                 f"size: expected {n_adsorbates}, got {state.size}.")
+            if not np.all(np.isfinite(state)):
+                raise FloatingPointError("The pre-equilibration solver generated a "
+                                         f"non-finite state at t={relaxation_time:.8e} s.")
+            values = np.asarray(surface_rhs_func(float(relaxation_time), float(temp_i), *state,), dtype=float,).reshape(-1)
+            if values.size != n_adsorbates:
+                raise ValueError("The surface-only RHS returned the wrong number of "
+                                 f"components: expected {n_adsorbates}, got {values.size}.")
+            if not np.all(np.isfinite(values)):
+                invalid_indices = np.flatnonzero(~np.isfinite(values))
+                invalid_species = [adsorbates[index] for index in invalid_indices]
+                raise FloatingPointError("The surface-only RHS generated NaN or infinity at "
+                                         f"t={relaxation_time:.8e} s and T={temp_i:.8g} K. "
+                                         f"Invalid equations: {invalid_species}.")
+            return values
+
+        def evaluate_relaxation(state: np.ndarray, elapsed_time: float,) -> dict[str, Any]:
+            derivative = relaxation_rhs(elapsed_time, state,)
+            absolute_rates = np.abs(derivative)
+            relative_rates = (absolute_rates / np.maximum(np.abs(state), coverage_scale,))
+            maximum_absolute_rate = float(np.max(absolute_rates))
+            maximum_relative_rate = float(np.max(relative_rates))
+            absolute_converged = (maximum_absolute_rate <= absolute_rate_tolerance)
+            relative_converged = (maximum_relative_rate <= relative_rate_tolerance)
+
+            # - the absolute criterion handles species near zero;
+            # - the relative criterion handles finite coverages.
+            converged = bool(absolute_converged or relative_converged)
+            return {"derivative": derivative, "maximum_absolute_rate": maximum_absolute_rate,
+                    "maximum_relative_rate": maximum_relative_rate, "absolute_converged": absolute_converged,
+                    "relative_converged": relative_converged, "converged": converged,}
+
+        initial_diagnostics = evaluate_relaxation(y_current, 0.0,)
+
+        '''print("\n Surface-only TPD pre-equilibration:"f"\n  temperature              = {temp_i:g} K"
+              f"\n  initial occupied fraction = {occupied_fraction_initial:.16e}"
+              f"\n  initial max |dtheta/dt|   = {initial_diagnostics['maximum_absolute_rate']:.6e}"
+              f"\n  initial max relative rate = {initial_diagnostics['maximum_relative_rate']:.6e} s^-1", flush=True,)
+        print("\n Initial surface-only derivatives:", flush=True,)
+        for (adsorbate_name, coverage, derivative,) in zip(adsorbates, y_current, initial_diagnostics["derivative"],):
+            if (abs(coverage) > 1.0e-14 or abs(derivative) > 1.0e-14):
+                print(f"  {adsorbate_name:18s} theta={coverage: .6e} dtheta/dt={derivative: .6e}", flush=True,)'''
+
+        # Use successively larger cumulative relaxation times.
+        # This avoids asking the solver to span immediately from a sub-picosecond transient to tens of seconds.
+
+        candidate_end_times = np.asarray([1.0e-15, 1.0e-14, 1.0e-13, 1.0e-12, 1.0e-11, 1.0e-10, 1.0e-9, 1.0e-8, 1.0e-7,
+                                          1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2,1.0e-1,1.0,10.0,100.0,],dtype=float,)
+        relaxation_end_times = [float(value) for value in candidate_end_times if value <= maximum_relaxation_time]
+        if (not relaxation_end_times or relaxation_end_times[-1] < maximum_relaxation_time):
+            relaxation_end_times.append(maximum_relaxation_time)
+        elapsed_time = 0.0
+        converged = bool(initial_diagnostics["converged"])
+        attempts: list[dict[str, Any]] = []
+        final_diagnostics = (initial_diagnostics)
+        if converged:
+            print("  The nominal state already satisfies the surface-relaxation criterion.", flush=True,)
+
+        # Perform staged integrations.
+        for target_time in relaxation_end_times:
+            if converged:
+                break
+            interval_duration = (target_time - elapsed_time)
+            if interval_duration <= 0.0:
+                continue
+            trial_solution = None
+            selected_method = None
+            for method in ("BDF", "Radau",):
+                calls_before_attempt = (rhs_call_count)
+                try:
+                    trial = solve_ivp(fun=relaxation_rhs, t_span=(elapsed_time, target_time,), y0=y_current,
+                                      method=method, rtol=rtol, atol=atol, max_step=max(interval_duration / 10.0,
+                                                                                        np.finfo(float).tiny,),)
+                except (FloatingPointError, ValueError, OverflowError,) as error:
+                    attempts.append({"method": method, "start_time_s": elapsed_time, "target_time_s": target_time,
+                                     "success": False, "message": (f"{type(error).__name__}: {error}"),
+                                     "nfev": (rhs_call_count - calls_before_attempt), "njev": 0, "nlu": 0,})
+                    print(f"  {method} pre-equilibration raised {type(error).__name__}: {error}", flush=True,)
+                    continue
+
+                attempts.append({"method": method, "start_time_s": elapsed_time, "target_time_s": target_time,
+                                 "success": bool(trial.success), "message": str(trial.message),
+                                 "nfev": int(getattr(trial, "nfev", 0,)), "njev": int(getattr(trial, "njev", 0,)),
+                                 "nlu": int(getattr(trial, "nlu", 0,)),})
+                if (trial.success and len(trial.t) > 0 and np.isclose(float(trial.t[-1]), target_time, rtol=0.0,
+                                                        atol=max(1.0e-18, 1.0e-10 * max(1.0,abs(target_time),),),)):
+                    trial_solution = trial
+                    selected_method = method
+                    break
+                print(f"  {method} did not complete the pre-equilibration interval "
+                      f"{elapsed_time:.3e}–{target_time:.3e} s: {trial.message}", flush=True,)
+            if trial_solution is None:
+                raise RuntimeError(f"Surface-only TPD pre-equilibration failed between {elapsed_time:.6e} and "
+                                   f"{target_time:.6e} s.")
+            y_current = np.asarray(trial_solution.y[:, -1], dtype=float,).reshape(-1)
+            elapsed_time = float(trial_solution.t[-1])
+            if not np.all(np.isfinite(y_current)):
+                raise FloatingPointError("Surface-only pre-equilibration produced NaN or infinity.")
+            # Remove only negligible negative integration noise.
+            tiny_negative = ((y_current < 0.0) & (y_current >= -1.0e-12))
+            y_current[tiny_negative] = 0.0
+            if np.any(y_current < -1.0e-12):
+                negative_indices = np.flatnonzero(y_current < -1.0e-12)
+                negative_species = [adsorbates[index] for index in negative_indices]
+                minimum_coverage = float(np.min(y_current))
+                raise RuntimeError("Surface-only pre-equilibration produced substantially negative coverages. "
+                                   f"Species: {negative_species}; minimum coverage={minimum_coverage:.6e}.")
+
+            occupied_fraction = float(np.dot(y_current, site_occupancies,))
+            occupancy_derivative = relaxation_rhs(elapsed_time, y_current,)
+            occupancy_rate = float(np.dot(occupancy_derivative, site_occupancies,))
+            capacity_repair_tolerance = 1.0e-5
+            if occupied_fraction > 1.0:
+                capacity_excess = (occupied_fraction - 1.0)
+                if (capacity_excess <= capacity_repair_tolerance and occupancy_rate <= 0.0):
+                    # The solver has crossed the capacity boundary slightly, but the vector field points back into the
+                    # physical region. Project the state onto occupied_fraction = 1.
+                    y_current = (y_current / occupied_fraction)
+                    occupied_fraction = float(np.dot(y_current, site_occupancies,))
+                    print(f"  Corrected small surface-capacity overshoot: excess={capacity_excess:.6e}, "
+                          f"d(occupied)/dt={occupancy_rate:.6e} s^-1, corrected occupied="
+                          f"{occupied_fraction:.6e}", flush=True,)
+                else:
+                    raise RuntimeError("Surface-only pre-equilibration exceeded the surface capacity at "
+                                       f"t={elapsed_time:.6e} s: occupied fraction={occupied_fraction:.16e}, "
+                                       f"excess={capacity_excess:.6e}, d(occupied)/dt={occupancy_rate:.16e}.")
+
+            final_diagnostics = (evaluate_relaxation(y_current, elapsed_time,))
+            occupied_fraction = float(np.dot(y_current, site_occupancies,))
+            occupancy_rate = float(np.dot(final_diagnostics["derivative"], site_occupancies,))
+            converged = bool(final_diagnostics["converged"])
+            #print(f"  pre-equilibration: method={selected_method}, t={elapsed_time:.3e} s, max|dtheta/dt|="
+            #      f"{final_diagnostics['maximum_absolute_rate']:.3e},"
+            #      f" max relative rate={final_diagnostics['maximum_relative_rate']:.3e} s^-1,"
+            #      f" occupied={occupied_fraction:.6e}", flush=True,)
+
+        # Final validation and report.
+        '''final_occupied_fraction = float(np.dot(y_current, site_occupancies,))
+        print("\n Prepared TPD initial state:", flush=True,)
+        for (adsorbate_name, before, after, derivative,) in zip(adsorbates, y_initial, y_current,
+                                                                final_diagnostics["derivative"],):
+            if (abs(before) > 1.0e-14 or abs(after) > 1.0e-14 or abs(derivative) > 1.0e-14):
+                print(f"  {adsorbate_name:18s} before={before: .6e} after={after: .6e} dtheta/dt={derivative: .6e}",
+                      flush=True,)'''
+        if not converged:
+            print("WARNING: Surface-only pre-equilibration reached its maximum permitted time without satisfying the requested "
+                  "rate tolerance. The final relaxed state will still be used for the TPD.", flush=True,)
+        metadata = {"enabled": True, "surface_only": True, "gas_evolution_allowed": False, "temperature_K": float(temp_i),
+                    "converged": bool(converged), "elapsed_time_s": float(elapsed_time),
+                    "initial_occupied_fraction": (occupied_fraction_initial),
+                    "prepared_occupied_fraction": float(np.dot(y0, site_occupancies,)),
+                    "initial_maximum_absolute_rate": (initial_diagnostics["maximum_absolute_rate"]),
+                    "final_maximum_absolute_rate": (final_diagnostics["maximum_absolute_rate"]),
+                    "initial_maximum_relative_rate": (initial_diagnostics["maximum_relative_rate"]),
+                    "final_maximum_relative_rate": (final_diagnostics["maximum_relative_rate"]),
+                    "absolute_rate_tolerance": float(absolute_rate_tolerance),
+                    "relative_rate_tolerance": float(relative_rate_tolerance), "rtol": float(rtol), "atol": float(atol),
+                    "rhs_calls": int(rhs_call_count), "attempts": attempts,}
+        return y_current, metadata
 
     def run_one_tpr(self, *, gas_name: str, adsorbates: list[str], ads_idx: int, gas_species: list[str], rhs_func,
-                    gas_rate_func: dict[str, Any], temperatures: np.ndarray, beta_min: float,) -> TPRResult:
-        beta = beta_min / 60.0
+                    surface_rhs_func, jac_func, gas_rate_func: dict[str, Any], temperatures: np.ndarray,
+                    beta_min: float,) -> TPRResult | None:
+        """ Run one temperature-programmed reaction/desorption simulation using the linear temperature ramp:
+        T(t) = T_initial + beta * t
+        gas_name:         Gas species associated with the initially populated adsorbate.
+        adsorbates:       Ordered adsorbate names corresponding to the state vector.
+        ads_idx:       Position of the initially populated adsorbate in the state vector.
+        gas_species:        Gas-phase species for which TPR spectra are evaluated.
+        rhs_func:        Lambdified kinetic RHS with arguments:   rhs_func(time, temperature, *coverages)
+        jac_func:        Lambdified symbolic Jacobian. Accepted for compatibility with build(), but NONE here.
+        gas_rate_func:        Dictionary mapping gas names to lambdified production-rate expressions.
+        temperatures:        Requested output-temperature grid in K.
+        beta_min:        Heating rate in K/min.    """
+
+        _ = jac_func
+        temperatures = np.asarray(temperatures, dtype=float,).reshape(-1)
+        if temperatures.size < 2:
+            raise ValueError("TPR requires at least two temperature points.")
+        if not np.all(np.isfinite(temperatures)):
+            raise ValueError("TPR temperature grid contains NaN or infinity.")
+        temperature_steps = np.diff(temperatures)
+        if np.any(temperature_steps <= 0.0):
+            raise ValueError("TPR temperatures (K) must be strictly increasing.")
+
+        beta_min = float(beta_min)
+        if not np.isfinite(beta_min) or beta_min <= 0.0:
+            raise ValueError(f"TPR heating rate must be finite and positive; got {beta_min!r} K/min.")
+        beta = beta_min / 60.0    # Convert K/min to K/s.
+
         temp_i = float(temperatures[0])
         temp_f = float(temperatures[-1])
-        t_eval = (temperatures - temp_i) / beta
-        t_span = (float(t_eval[0]), float(t_eval[-1]))
-        y0 = np.zeros(len(adsorbates), dtype=float)
+        times = (temperatures - temp_i) / beta        # t(T) = (T - T_initial)/beta
+        time_i = float(times[0])
+        time_f = float(times[-1])
+        time_span = (time_i, time_f,)
 
+        # Validate and construct the initial state.
+        n_adsorbates = len(adsorbates)
+        if n_adsorbates == 0:
+            raise ValueError("TPR requires at least one adsorbate.")
+        if not 0 <= ads_idx < n_adsorbates:
+            raise IndexError(f"ads_idx={ads_idx} is outside the valid range 0–{n_adsorbates - 1}.")
+        site_occupancies = np.asarray([nsites(self.model, name,) for name in adsorbates], dtype=float,)
+        if site_occupancies.shape != (n_adsorbates,):
+            raise ValueError(f"Unexpected site-occupancy array shape: {site_occupancies.shape}; expected "
+                             f"({n_adsorbates},).")
+        if np.any(~np.isfinite(site_occupancies)):
+            invalid_species = [name for name, occupancy in zip(adsorbates, site_occupancies,)
+                               if not np.isfinite(occupancy)]
+            raise ValueError(f"One or more adsorbates have non-finite nsites: {invalid_species}.")
+        if np.any(site_occupancies <= 0.0):
+            invalid_species = [name for name, occupancy in zip(adsorbates, site_occupancies,) if occupancy <= 0.0]
+            raise ValueError(f"Adsorbate nsites must be positive. Invalid species: {invalid_species}.")
         initial_adsorbate = adsorbates[ads_idx]
-        occupied_sites = nsites(self.model, initial_adsorbate,)
-        if occupied_sites <= 0.0:
-            raise ValueError(f"{initial_adsorbate}: nsites must be positive, got {occupied_sites}.")
-        y0[ads_idx] = 0.95 / occupied_sites  # not 1 to give some wiggle
+        y0 = np.zeros(n_adsorbates, dtype=float,)
 
-        '''
-        print(f"\nStarting TPR:"
-              f"\n  gas              = {gas_name}"
-              f"\n  initial adsorbate = {adsorbates[ads_idx]}"
-              f"\n  temperature       = {temp_i:g}–{temp_f:g} K"
-              f"\n  heating rate      = {beta_min:g} K/min"
-              f"\n  integration time  = {t_span[1]:.3e} s"
-              f"\n  variables         = {len(y0)}",
-              flush=True,)'''
+        # Initialise 95% of the available site capacity with the selected adsorbate.
+        y0[ads_idx] = (0.95 / site_occupancies[ads_idx])
+        total_initial_coverage = float(np.dot(y0, site_occupancies,))
+        if total_initial_coverage > 1.0 + 1.0e-8:
+            raise ValueError(f"Initial TPR coverage exceeds the available surface capacity: {total_initial_coverage:g}.")
 
-        def temperature_profile(t_num):
-            return temp_i + beta * t_num
+        # Pre-equilibration
+        y0, pre_equilibration_metadata = (self.pre_equilibrate_tpr_state(surface_rhs_func=surface_rhs_func, y0=y0,
+                                                                         temp_i=temp_i, adsorbates=adsorbates,
+                                                                         site_occupancies=site_occupancies,))
+        if np.any(y0 < 0.0) or not np.all(np.isfinite(y0)):
+            raise ValueError(f"Invalid initial TPR state: {y0}.")
+        print("\n Starting TPR:"
+              f"\n  gas              = {gas_name}\n  initial adsorbate = {initial_adsorbate}"
+              f"\n  temperature       = {temp_i:g}–{temp_f:g} K\n  heating rate      = {beta_min:g} K/min"
+              f"\n  integration time  = {time_f:.3e} s\n  variables         = {n_adsorbates}", flush=True,)
 
-        def ode_rhs(t_num, y):
-            temperature_num = temperature_profile(t_num)
-            dydt = np.asarray(rhs_func(t_num, temperature_num, *y), dtype=float,).ravel()
-            dydt = np.nan_to_num(dydt, nan=0.0, posinf=1.0e50, neginf=-1.0e50,)
-            dydt = np.clip(dydt, -1.0e30, 1.0e30,)
-            return dydt
+        def temperature_profile(time_num: float | np.ndarray,) -> float | np.ndarray:
+            """ Return the temperature corresponding to elapsed time. """
+            values = (temp_i + beta * np.asarray(time_num, dtype=float,))
+            if values.ndim == 0:
+                return float(values)
+            return values
 
-        integration_options = {"fun": ode_rhs, "t_span": t_span, "y0": y0, "t_eval": t_eval, "rtol": 1.0e-6, "atol": 1e-10,}
-        sol = None
-        for method in ("BDF", "LSODA", "Radau"):
-            trial = solve_ivp(method=method, **integration_options, )
-            if trial.success:
-                sol = trial
+        rhs_call_count = 0
+
+        def ode_rhs(time_num: float, y: np.ndarray,) -> np.ndarray:
+            """ Evaluate d(theta)/dt at one time and state. """
+            nonlocal rhs_call_count
+            rhs_call_count += 1
+            time_num = float(time_num)
+            temperature_num = float(temperature_profile(time_num))
+            state = np.asarray(y, dtype=float,).reshape(-1)
+            if state.size != n_adsorbates:
+                raise ValueError("TPR solver supplied a state vector with the wrong "
+                                 f"size: expected {n_adsorbates}, got {state.size}.")
+            if not np.all(np.isfinite(state)):
+                raise FloatingPointError("TPR solver supplied a non-finite state at "
+                                         f"t={time_num:.8e} s and T={temperature_num:.8g} K.")
+            values = np.asarray(rhs_func(time_num, temperature_num, *state,), dtype=float,).reshape(-1)
+            if values.size != n_adsorbates:
+                raise ValueError("TPR RHS returned the wrong number of components: "
+                                 f"expected {n_adsorbates}, got {values.size}.")
+            if not np.all(np.isfinite(values)):
+                invalid_indices = np.flatnonzero(~np.isfinite(values))
+                invalid_names = [adsorbates[index] for index in invalid_indices]
+                raise FloatingPointError(f"TPR RHS generated NaN or infinity at t={time_num:.8e} s and "
+                                         f"T={temperature_num:.8g} K. Invalid equations: {invalid_names}.")
+            return values
+
+        # Report the initial derivatives before calling solve_ivp.
+        initial_rhs = np.asarray(ode_rhs(time_i, y0,), dtype=float,).reshape(-1)
+        print("\n Initial TPR derivatives:", flush=True,)
+        for (adsorbate_name, initial_coverage, occupied_sites, derivative,) in zip(adsorbates, y0,
+                                                                                   site_occupancies, initial_rhs,):
+            print(f"  {adsorbate_name:18s} theta={initial_coverage: .6e} nsites={occupied_sites: .6e}"
+                  f" dtheta/dt={derivative: .6e}", flush=True,)
+        print(f"  max |dtheta/dt| = {np.max(np.abs(initial_rhs)):.6e}", flush=True,)
+
+        # Solver controls.
+        # max_step is specified in seconds. Choose it so that one internal step corresponds to at most approximately 1 K:
+        maximum_temperature_step = 1.0
+        maximum_time_step = (maximum_temperature_step / beta)    #     delta_t = delta_T / beta
+
+        integration_options = {"fun": ode_rhs, "t_span": time_span, "y0": y0, "t_eval": times,
+                               "rtol": 1.0e-5, "atol": 1.0e-9, "max_step": maximum_time_step,}
+
+        # BDF and Radau will estimate their Jacobians from ode_rhs.
+        solution = None
+        attempted_methods: list[dict[str, Any]] = []
+        selected_method: str | None = None
+        for method in ("BDF", "LSODA", "Radau",):
+            calls_before_attempt = (rhs_call_count)
+            try:
+
+                trial = solve_ivp(method=method, **integration_options,)
+
+            except (FloatingPointError, ValueError, OverflowError,) as error:
+                attempted_methods.append({"method": method, "success": False, "complete": False,
+                                          "message": (f"{type(error).__name__}: {error}"),
+                                          "nfev": (rhs_call_count - calls_before_attempt),
+                                          "njev": 0, "nlu": 0, "returned_points": 0,})
+                print(f"  {method}: raised "f"{type(error).__name__}: {error}", flush=True,)
+                continue
+            returned_points = len(trial.t)
+            reached_final_time = (returned_points > 0 and
+                                  np.isclose(float(trial.t[-1]), time_f, rtol=0.0,
+                                             atol=max(1.0e-8, 1.0e-10 * max(1.0, abs(time_f),),),))
+            complete = bool(trial.success and returned_points == times.size and reached_final_time)
+            attempt_record = {"method": method, "success": bool(trial.success), "complete": complete,
+                              "message": str(trial.message), "nfev": int(getattr(trial, "nfev", 0,)),
+                              "njev": int(getattr(trial, "njev", 0,)),
+                              "nlu": int(getattr(trial, "nlu", 0,)), "returned_points": (returned_points),}
+            attempted_methods.append(attempt_record)
+            print(f"\n  {method}: success={trial.success}, points={returned_points}/{times.size}, "
+                  f"nfev={attempt_record['nfev']}, njev={attempt_record['njev']}, nlu={attempt_record['nlu']}\n",
+                  flush=True,)
+            if complete:
+                solution = trial
+                selected_method = method
                 break
-            last_time = (float(trial.t[-1]) if trial.t.size else t_span[0])
-            last_temperature = temperature_profile(last_time)
-            print(f"WARNING: TPD/TPR {method} failed for {gas_name} at T={last_temperature:g} K.\n"
-                  f" Message           : {trial.message}\n Last reached time : {last_time:.16e} s\n"
-                  f" Function calls    : {trial.nfev}\n Jacobian calls    : {trial.njev}\n"
-                  f" Linear algebra operations : {trial.nlu}", flush=True,)
-        if sol is None:
-            return None
-        if len(sol.t) != len(t_eval):
-            print(f"WARNING: Incomplete TPD/TPR solution at T={arguments[0]:g} K: "
-                  f"returned {len(sol.t)} of {len(t_eval)} requested points.", flush=True, )
-            return None
-        '''
-        sol = solve_ivp(ode_rhs, t_span, y0, t_eval=t_eval, method="BDF", rtol=1e-6, atol=1e-10,)
+            if returned_points > 0:
+                last_time = float(trial.t[-1])
+                last_temperature = float(temperature_profile(last_time))
+            else:
+                last_time = time_i
+                last_temperature = temp_i
+            print(f"WARNING: TPR {method} failed or was incomplete for {gas_name}.\n"
+                  f"  Last reached time        : {last_time:.8g} s\n"
+                  f"  Last reached temperature : {last_temperature:.8g} K\n"
+                  f"  Message                  : {trial.message}", flush=True,)
 
-        if not sol.success:
-            print(f"WARNING: TPR solver failed for {gas_name}: {sol.message}")
-            concentrations = np.zeros((len(temperatures), len(adsorbates)), dtype=float,)
-            spectra = {gas: np.zeros(len(temperatures), dtype=float) for gas in gas_species}
-            return TPRResult(gas=gas_name, heating_rate=beta_min, temperatures=temperatures, adsorbates=adsorbates,
-                             gas_species=gas_species, concentrations=concentrations, spectra=spectra,
-                             metadata={"initial_adsorbate": adsorbates[ads_idx], "beta_K_per_s": beta,
-                                       "solver_success": False, "solver_message": sol.message,},)
-        '''
-        concentrations = np.zeros((len(temperatures), len(adsorbates)), dtype=float)
-        if sol.y.size:
-            concentrations[: len(sol.t), :] = sol.y.T
-        concentrations = np.clip(concentrations, 0.0, None)
-        for row in concentrations:
-            total = sum(row[i] * nsites(self.model, ads) for i, ads in enumerate(adsorbates))
-            if total > 1.0:
-                row[:] /= total
+        if solution is None:
+            print(f"WARNING: No TPR solver completed the {gas_name} calculation.", flush=True,)
+            return None
 
+        # Extract and validate the completed trajectory.
+        solution_times = np.asarray(solution.t, dtype=float,).reshape(-1)
+        result_temperatures = np.asarray(temperature_profile(solution_times), dtype=float,).reshape(-1)
+        concentrations = np.asarray(solution.y.T, dtype=float,)
+        expected_shape = (temperatures.size, n_adsorbates,)
+        if concentrations.shape != expected_shape:
+            raise ValueError(f"Unexpected TPR concentration array shape: {concentrations.shape}; expected "
+                             f"{expected_shape}.")
+        if solution_times.shape != times.shape:
+            raise ValueError(f"Unexpected TPR time-array shape: {solution_times.shape}; expected "
+                             f"{times.shape}.")
+        if result_temperatures.shape != temperatures.shape:
+            raise ValueError(f"Unexpected reconstructed temperature-array shape: {result_temperatures.shape}; expected "
+                             f"{temperatures.shape}.")
+        if not np.allclose(solution_times, times, rtol=0.0, atol=1.0e-8,):
+            maximum_time_difference = float(np.max(np.abs(solution_times - times)))
+            raise RuntimeError("TPR solver returned values at unexpected times. "
+                               f"Maximum difference: {maximum_time_difference:.6e} s.")
+        if not np.allclose(result_temperatures, temperatures, rtol=0.0, atol=1.0e-8,):
+            maximum_temperature_difference = float(np.max(np.abs(result_temperatures - temperatures)))
+            raise RuntimeError( "TPR solver times do not reproduce the requested "
+                                f"temperature grid. Maximum difference: {maximum_temperature_difference:.6e} K.")
+        if not np.all(np.isfinite(concentrations)):
+            raise FloatingPointError("Completed TPR trajectory contains NaN or infinity.")
+
+        # Clean only small numerical violations after integration.
+        negative_tolerance = 1.0e-10
+        substantially_negative = (concentrations < -negative_tolerance)
+        if np.any(substantially_negative):
+            row_indices, column_indices = np.nonzero(substantially_negative)
+            worst_position = int(np.argmin(concentrations[row_indices, column_indices,]))
+            worst_row = int(row_indices[worst_position])
+            worst_column = int(column_indices[worst_position])
+            print("WARNING: Completed TPR trajectory contains negative coverages.\n"
+                  f" Most negative species     : {adsorbates[worst_column]}\n"
+                  f" Temperature               : {temperatures[worst_row]:.8g} K\n"
+                  f" Coverage                  : {concentrations[worst_row, worst_column]:.6e}", flush=True,)
+        concentrations = np.maximum(concentrations, 0.0,)
+
+        # Enforce site capacity on the stored output; the solver's internal trajectory is not rescaled.
+        occupied_fraction = (concentrations @ site_occupancies)
+        overfilled = (occupied_fraction > 1.0)
+        if np.any(overfilled):
+            maximum_occupied_fraction = float(np.max(occupied_fraction[overfilled]))
+            print(f"WARNING: Rescaling {np.count_nonzero(overfilled)} TPR output states that exceed the surface capacity."
+                  f"Maximum occupied fraction before rescaling: {maximum_occupied_fraction:.6e}.", flush=True,)
+            concentrations[overfilled, :,] /= occupied_fraction[overfilled, None,]
+
+        # Evaluate the gas-production spectra.
+        spectra = self.evaluate_tpr_spectra(gas_species=gas_species, gas_rate_func=gas_rate_func,
+                                            temperatures=temperatures, concentrations=concentrations,
+                                            temp_i=temp_i, beta=beta,)
+
+        return TPRResult(gas=gas_name, heating_rate=beta_min, temperatures=temperatures.copy(),
+                         adsorbates=list(adsorbates), gas_species=list(gas_species), concentrations=concentrations,
+                         spectra=spectra, metadata={"initial_adsorbate": (initial_adsorbate), "beta_K_per_s": beta,
+                                                    "integration_variable": "time", "integration_time_s": time_f,
+                                                    "solver_method": selected_method, "solver_success": True,
+                                                    "solver_attempts": attempted_methods,
+                                                    "initial_occupied_fraction": (total_initial_coverage),
+                                                    "maximum_internal_step_s": (maximum_time_step),
+                                                    "maximum_internal_step_K": (maximum_temperature_step),
+                                                    "rtol": integration_options["rtol"],
+                                                    "atol": integration_options["atol"],},)
+
+    def evaluate_tpr_spectra(self, *, gas_species: list[str], gas_rate_func: dict[str, Any], temperatures: np.ndarray,
+                             concentrations: np.ndarray, temp_i: float, beta: float,) -> dict[str, np.ndarray]:
+        """Evaluate gas-production rates along a completed TPR trajectory."""
+        temperatures = np.asarray(temperatures, dtype=float,)
+        concentrations = np.asarray(concentrations, dtype=float,)
+        if temperatures.ndim != 1:
+            raise ValueError("TPR temperatures must be one-dimensional.")
+        if concentrations.ndim != 2:
+            raise ValueError("TPR concentrations must be a two-dimensional array.")
+        if concentrations.shape[0] != temperatures.size:
+            raise ValueError("TPR concentration and temperature arrays have "
+                             f"different lengths: {concentrations.shape[0]} and {temperatures.size}.")
+        if not np.isfinite(beta) or beta <= 0.0:
+            raise ValueError(f"TPR heating rate must be positive, got {beta!r} K/s.")
+        times = (temperatures - float(temp_i)) / float(beta)
+        coverage_arguments = [concentrations[:, index] for index in range(concentrations.shape[1])]
         spectra: dict[str, np.ndarray] = {}
         for gas in gas_species:
-            rates = np.zeros(len(temperatures), dtype=float)
             func = gas_rate_func.get(gas)
             if func is None:
-                spectra[gas] = rates
+                spectra[gas] = np.zeros_like(temperatures, dtype=float,)
                 continue
-            for i, (t_num, temperature_num) in enumerate(zip(t_eval, temperatures)):
-                rates[i] = float(func(t_num, temperature_num, *concentrations[i]))
-            spectra[gas] = np.maximum(rates, 0.0)
-
-        return TPRResult(gas=gas_name, heating_rate=beta_min, temperatures=temperatures, adsorbates=adsorbates,
-                         gas_species=gas_species, concentrations=concentrations, spectra=spectra,
-                         metadata={"initial_adsorbate": adsorbates[ads_idx], "beta_K_per_s": beta,},)
+            try:
+                # Fast vectorised evaluation.
+                rates = np.asarray(func(times, temperatures, *coverage_arguments,), dtype=float,)
+                rates = np.squeeze(rates)
+                if rates.ndim == 0:
+                    rates = np.full(temperatures.shape, float(rates), dtype=float,)
+                else:
+                    rates = np.broadcast_to(rates, temperatures.shape,).astype(float, copy=True,)
+            except (TypeError, ValueError):
+                # Fallback for lambdified expressions that do not
+                # support array-valued inputs.
+                rates = np.empty_like(temperatures, dtype=float,)
+                for index, (time_num, temperature_num,) in enumerate(zip(times, temperatures)):
+                    value = func(float(time_num), float(temperature_num), *concentrations[index],)
+                    value_array = np.asarray(value, dtype=float,).reshape(-1)
+                    if value_array.size != 1:
+                        raise ValueError(f"Gas-rate function for {gas!r} returned "
+                                         f"{value_array.size} values at one temperature; expected one scalar.")
+                    rates[index] = float(value_array[0])
+            rates = np.nan_to_num(rates, nan=0.0, posinf=0.0, neginf=0.0,)
+            # TPD/TPR spectra represent gas production. Negative
+            # values correspond to gas consumption and are discarded.
+            spectra[gas] = np.maximum(rates, 0.0,)
+        return spectra
 
     def desorbing_adsorbate(self, gas_name: str) -> str:
         for process in self.model.processes.values():

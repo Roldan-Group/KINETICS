@@ -187,13 +187,12 @@ def setup_signed_log_axis(ax, *value_arrays, padding=1.5, origin_gap=1.5,):
     if has_negative:
         tick_positions.extend((-positions_to_plot[::-1]).tolist())
         tick_labels.extend([rf"$-10^{{{exponent}}}$" for exponent in exponents_to_plot[::-1]])
+    # Include zero only when zero is relevant as the baseline.
+    tick_positions.append(0.0)
+    tick_labels.append(r"$0$")
     if has_positive:
         tick_positions.extend(positions_to_plot.tolist())
         tick_labels.extend([rf"$10^{{{exponent}}}$" for exponent in exponents_to_plot])
-
-    # Include zero only when zero is relevant as the baseline.
-    #tick_positions.append(0.0)
-    #tick_labels.append(r"$0$")
 
     ax.set_yticks(tick_positions)
     ax.set_yticklabels(tick_labels)
@@ -228,7 +227,7 @@ def plot_initial_final_bars(*, labels, initial_values, final_values, initial_tem
                          f"The {title} plot got labels={len(labels)}, initial_values={initial_values.size}, "
                          f"final_values={final_values.size}.")
 
-    formatted_labels = [rf"${label}$" for label in labels]
+    formatted_labels = [rf"{label}" for label in labels]
     x = np.arange(expected_size, dtype=float)
     width = 0.4
     fig, ax = plt.subplots(figsize=(max(10.0, 0.45 * expected_size), 6.0), clear=True,)
@@ -778,17 +777,26 @@ class DiagnosticsReporter:
                                 initial_temperature=initial_temperature, final_temperature=final_temperature,
                                 output=filename, title=title, ylabel=ylabel, xlabel="Process ID", logy=logy,)
 
-    def plot_control_tables(self, tables, directory, ylabel,):
+    def plot_control_tables(self, control_tables, directory, ylabel,):
         directory.mkdir(parents=True, exist_ok=True,)
-        expected_columns = len(table.headers)
-        for row_index, row in enumerate(table.rows):
-            if len(row) != expected_columns:
-                raise ValueError(f"{name}: malformed control table. Headers={expected_columns}, "
-                                 f"row {row_index}={len(row)}. Expected one value per header.")
-        for name, table in tables.items():
-            if table is None or not table.rows:
+        if not control_tables:
+            print("No control tables available to plot.", flush=True,)
+            return
+        for name, table in control_tables.items():
+            if table is None:
+                print(f"Skipping empty control table: {table_name}", flush=True,)
                 continue
-            rows = sorted(table.rows, key=lambda row: float(row[0]),)
+            headers = getattr(table, "headers", None,)
+            rows = getattr(table, "rows", None,)
+            if headers is None:
+                raise ValueError(f"Control table {name!r} has no 'headers' attribute.")
+            if rows is None:
+                raise ValueError(f"Control table {name!r} has no 'rows' attribute.")
+            expected_columns = len(headers)
+            for row_index, row in enumerate(rows):
+                if len(row) != expected_columns:
+                    raise ValueError(f"{name}: malformed control table. Headers={expected_columns}, "
+                                     f"row {row_index}={len(row)}. Expected one value per header.")
             initial_row = rows[0]
             final_row = rows[-1]
             initial_temperature = float(initial_row[0])
@@ -808,7 +816,7 @@ class DiagnosticsReporter:
         for pathway in diagnostics.reaction_pathways:
             if not pathway.edges:
                 continue
-            labels = [f"${reactant}_to_{product}$" for reactant, product, _ in pathway.edges]
+            labels = [f"{reactant}$\\rightarrow${product}" for reactant, product, _ in pathway.edges]
             values = [flux for _, _, flux in pathway.edges]
             fig, ax = plt.subplots(figsize=(10, 6), clear=True)
             y = np.arange(len(labels))
@@ -906,7 +914,7 @@ class DiagnosticsReporter:
                     continue
                 if np.nanmax(rates) <= 0.0:
                     continue
-                label = f"{result.gas}_to_{gas} ({result.heating_rate:g} K/min)"
+                label = f"{result.gas}$\\rightarrow${gas} ({result.heating_rate:g} K/min)"
                 ax.plot(temperatures, rates, label=label,)
                 plotted = True
         if not plotted:
