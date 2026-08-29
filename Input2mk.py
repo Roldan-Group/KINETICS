@@ -289,9 +289,22 @@ class VaspReader(BaseReader):
                         current_dipole = None
         return dipoles
 
+    def has_dipoles(self, path: str) -> bool:
+        return len(self.extract_dipoles(path)) > 0
+
     def read_displaced_geometries(self, outcar):
         geometries = self.read_geometries(outcar)
         dipoles = self.extract_dipoles(outcar)
+        if not geometries:
+            print(f"No displaced geometries were found in VASP output: {outcar}")
+            raise ValueError("WARNING")
+        if not dipoles:
+            print(f"No dipole moments were found in VASP output: {outcar}")
+            raise ValueError("WARNING")
+        if len(geometries) != len(dipoles):
+            print("WARNING: mismatch between displaced geometries and dipoles"
+                  f"\n  File       = {outcar}\n  Geometries = {len(geometries)}\n  Dipoles    = {len(dipoles)}"
+                  f")\n  Using      = {min(len(geometries), len(dipoles))}", file=sys.stderr, flush=True,)
         n = min(len(geometries), len(dipoles))
         result = []
         for geom, dip in zip(geometries[:n], dipoles[:n]):
@@ -603,10 +616,16 @@ def normalize_ir(intensities):
 
 def compute_ir_intensities(freqfile, reader, eigenvectors):
     displaced = reader.read_displaced_geometries(freqfile)
+    if not displaced:
+        raise ValueError(f"No displaced geometries with dipole information were found in frequency file: {freqfile}")
     equilibrium = displaced[0]
     delta = reader.read_displacement_step(freqfile)
     pairs = pair_displacements(displaced[1:], equilibrium)
+    if not pairs:
+        raise ValueError(f"No valid +/- displacement pairs could be constructed from frequency file: {freqfile}")
     derivs = cartesian_dipole_derivatives(pairs, delta)
+    if not derivs:
+        raise ValueError(f"No Cartesian dipole derivatives could be constructed from frequency file: {freqfile}")
     dmu_dx = derivative_matrix(derivs, len(equilibrium.positions))
     intens = ir_intensities(dmu_dx, eigenvectors)
     return intens
@@ -635,9 +654,15 @@ def main(inputfile):
         atoms = reader.read_system(system.syspath)
         system.energy = atoms.get_total_energy()
         freqfile = system.freqpath or system.syspath
+
         frequencies = reader.read_frequencies(freqfile)
         eigenvectors = reader.read_eigenvectors(freqfile)
-        ir_intensities = compute_ir_intensities(freqfile, reader, eigenvectors)
+        if reader.has_dipoles(freqfile):
+            ir_intensities = compute_ir_intensities(freqfile, reader, eigenvectors,)
+        else:
+            ir_intensities = []
+            print(f"WARNING: No dipole information found for SYSTEM = {system.name}\n         FREQPATH = {freqfile}\n"
+                  f"         IR intensities will not be calculated.", file=sys.stderr,  flush=True,)
 
         if system.system_type == "Molecule":
             masses, natoms, system.linear, system.inertia = molecular_data(atoms)

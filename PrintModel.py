@@ -19,7 +19,8 @@ mpl.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 
-from Symbols_def import vext, ph, temp, constants
+from Symbols_def import vext, ph, temp, constants, chem_label
+
 
 
 icolour = ["b", "r", "c", "g", "m", "y", "grey", "olive", "brown", "pink", "darkgreen", "seagreen", "khaki", "teal"]
@@ -187,12 +188,13 @@ def setup_signed_log_axis(ax, *value_arrays, padding=1.5, origin_gap=1.5,):
     if has_negative:
         tick_positions.extend((-positions_to_plot[::-1]).tolist())
         tick_labels.extend([rf"$-10^{{{exponent}}}$" for exponent in exponents_to_plot[::-1]])
-    # Include zero only when zero is relevant as the baseline.
-    tick_positions.append(0.0)
-    tick_labels.append(r"$0$")
     if has_positive:
         tick_positions.extend(positions_to_plot.tolist())
         tick_labels.extend([rf"$10^{{{exponent}}}$" for exponent in exponents_to_plot])
+    # Include zero only when zero is relevant as the baseline.
+    if has_negative and has_positive:
+        tick_positions.append(0.0)
+        tick_labels.append(r"$0$")
 
     ax.set_yticks(tick_positions)
     ax.set_yticklabels(tick_labels)
@@ -276,11 +278,13 @@ class ThermodynamicsReporter:
             self.write_enthalpy(species, species_dir)
             self.write_heat_capacity(species, species_dir)
             self.write_gibbs(species, species_dir)
+            self.write_ir_spectrum(species, species_dir)
             self.plot_partition_functions(species, species_dir)
             self.plot_entropy(species, species_dir)
             self.plot_enthalpy(species, species_dir)
             self.plot_heat_capacity(species, species_dir)
             self.plot_gibbs(species, species_dir)
+            self.plot_ir_spectrum(species, species_dir)
 
     def species_dir(self, species):
         path = self.root / species.name
@@ -345,6 +349,28 @@ class ThermodynamicsReporter:
         self.write_table(species_dir / "Gibbs.dat", ["Temperature(K)", *fields], self.table_rows(species, fields),
                          title=f"Gibbs free energy for {species.name}",)
 
+    def write_ir_spectrum(self, species, species_dir):
+        """Write calculated vibrational frequencies and IR intensities."""
+        frequencies = getattr(species, "frequencies", []) or []
+        intensities = getattr(species, "ir_intensities", []) or []
+        if not frequencies or not intensities:
+            return
+        n_modes = min(len(frequencies), len(intensities),)
+        frequencies = np.asarray(frequencies[:n_modes], dtype=float,)
+        intensities = np.asarray(intensities[:n_modes], dtype=float,)
+        # Remove invalid entries. Keep all valid vibrational modes;
+        # the plotting routine can apply its own frequency window.
+        mask = (np.isfinite(frequencies) & np.isfinite(intensities))
+        frequencies = frequencies[mask]
+        intensities = intensities[mask]
+        if frequencies.size == 0:
+            return
+        output_file = species_dir / "IR_spectrum.dat"
+        with open(output_file, "w") as output:
+            output.write("# Wavenumber(cm^-1)\tIR_intensity(a.u.)\n")
+            for frequency, intensity in zip(frequencies, intensities,):
+                output.write(f"{frequency:15.3f}\t{intensity:15.3e}\n")
+
     def plot_fields(self, species, species_dir, fields, filename, ylabel):
         temperatures = np.asarray(self.temperatures(), dtype=float)
         fig, ax = plt.subplots(figsize=(8, 6), clear=True)
@@ -378,6 +404,40 @@ class ThermodynamicsReporter:
     def plot_gibbs(self, species, species_dir):
         self.plot_fields(species, species_dir, ["gibbs3d"], "Gibbs.svg", "Gibbs free energy, $G$ $(eV)$",)
 
+    def plot_ir_spectrum(self, species, species_dir, *, freq_min=500.0, freq_max=4000.0, points=3000, sigma=8.0,):
+        """Plot the intrinsic IR spectrum of one species."""
+        frequencies = getattr(species, "frequencies", []) or []
+        intensities = getattr(species, "ir_intensities", []) or []
+        if not frequencies or not intensities:
+            return
+        n_modes = min(len(frequencies), len(intensities),)
+        frequencies = np.asarray(frequencies[:n_modes], dtype=float,)
+        intensities = np.asarray(intensities[:n_modes], dtype=float,)
+        # Keep only physical vibrational frequencies in the requested spectral window.
+        mask = (np.isfinite(frequencies) & np.isfinite(intensities) & (frequencies >= freq_min) &
+                (frequencies <= freq_max))
+        frequencies = frequencies[mask]
+        intensities = intensities[mask]
+        if frequencies.size == 0:
+            return
+        wavenumbers = np.linspace(freq_min, freq_max, points,)
+        spectrum = np.zeros_like(wavenumbers, dtype=float,)
+        for frequency, intensity in zip(frequencies, intensities,):
+            spectrum += intensity * np.exp(-((wavenumbers - frequency) ** 2 / (2.0 * sigma ** 2)))
+        fig, ax = plt.subplots(figsize=(10, 6), clear=True,)
+        ax.plot(wavenumbers, spectrum, linewidth=1.5,)
+        # Optional sticks showing the actual calculated normal modes.
+        #ax.vlines(frequencies, 0.0, intensities, linewidth=0.8, alpha=0.5,)
+        # Conventional IR presentation: high wavenumber on the left.
+        ax.set_xlim(freq_max, freq_min,)
+        ax.set_xlabel(r"Wavenumber ($cm^{-1}$)", fontsize=16,)
+        ax.set_ylabel("IR intensity ($a.u.$)", fontsize=16,)
+        ax.set_title(f"IR spectrum of {chem_label(species.name)}", fontsize=18,)
+        ax.tick_params(axis="both", labelsize=14,)
+        ax.margins(y=0.10)
+        fig.tight_layout()
+        fig.savefig(species_dir / "IR_spectrum.svg", dpi=300, transparent=True, bbox_inches="tight",)
+        plt.close(fig)
 
 class KineticsReporter:
     def __init__(self, model, output_dir="./"):
@@ -393,9 +453,12 @@ class KineticsReporter:
         self.write_rate_constants()
         self.write_reaction_energies()
         self.write_symbolic_rate_equations()
+        self.write_overall_stoichiometry()
+        self.write_profile()
         self.plot_rate_constants()
         self.plot_activation_energies()
         self.plot_reaction_energies()
+
         self._array_cache.clear()
 
     def temperatures(self):
@@ -472,6 +535,113 @@ class KineticsReporter:
                 process = self.model.processes[pid]
                 rows.append([temp_num, pid, process.kind, *[evaluated[pid][field][index] for field in fields],])
         return rows
+
+    def dynamic_species_names(self) -> list[str]:
+        """   Return dynamic species in exactly the same order used by Kinetics.REquations.overall_stoichiometry().  """
+        names: set[str] = set()
+        for process in self.model.processes.values():
+            names.update(item.species for item in process.reactants)
+            names.update(item.species for item in process.products)
+        return sorted(name for name in names if str(self.model.species[name].kind).lower() != "surface")
+
+    @staticmethod
+    def format_stoichiometric_number(value: sp.Expr | int | float,) -> str:
+        """  Format an exact stoichiometric coefficient without unnecessary decimal notation.  """
+        value = sp.nsimplify(value)
+        if value == 1:
+            return ""
+        if value.is_Integer:
+            return f"{int(value)} "
+        return f"{value} "
+
+    def write_overall_stoichiometry(self) -> Path | None:
+        """  Write the overall gas-phase reaction stored in model.equations.overall_stoichiometry.
+            Negative coefficients are reactants and positive coefficients are products.
+            Adsorbates and bare surfaces must cancel from a valid overall reaction.     """
+        equations = getattr(self.model, "equations", None,)
+        if equations is None:
+            print("WARNING: model.equations is unavailable; Overall_Reaction.dat was not written.", flush=True,)
+            return None
+        overall = list(getattr(equations, "overall_stoichiometry", [],))
+        species_names = self.dynamic_species_names()
+        if not overall:
+            print("WARNING: no overall stoichiometry is available. Run REquations(model) before KineticsReporter.",
+                  flush=True,)
+            return None
+        if len(overall) != len(species_names):
+            raise ValueError(f"Overall-stoichiometry/species alignment failure: {len(overall)} coefficients but "
+                             f"{len(species_names)} dynamic species.")
+        coefficients = [sp.nsimplify(value) for value in overall]
+        adsorbed_residuals: list[tuple[str, sp.Expr]] = []
+        molecular_coefficients: list[tuple[str, sp.Expr]] = []
+        for name, coefficient in zip(species_names, coefficients,):
+            if coefficient == 0:
+                continue
+            species_kind = str(self.model.species[name].kind).lower()
+            if species_kind == "molecule":
+                molecular_coefficients.append((name, coefficient,))
+            else:
+                adsorbed_residuals.append((name, coefficient,))
+        if adsorbed_residuals:
+            residual_text = ", ".join(f"{name}={coefficient}" for name, coefficient in adsorbed_residuals)
+            raise ValueError("The calculated overall reaction does not eliminate all adsorbed intermediates: "
+                             f"{residual_text}.")
+        if not molecular_coefficients:
+            print("WARNING: the stored null-space solution produces no non-zero molecular reaction. The selected"
+                  "null-space vector probably represents cancellation of a forward and reverse elementary process.",
+                  flush=True,)
+            return None
+        reactants = [(name, -coefficient,) for name, coefficient in molecular_coefficients if coefficient < 0]
+        products = [(name, coefficient,) for name, coefficient in molecular_coefficients if coefficient > 0]
+        if not reactants or not products:
+            raise ValueError("The overall stoichiometric vector does not contain both molecular reactants and "
+                             f"molecular products: {molecular_coefficients}.")
+        reactant_text = " + ".join(self.format_stoichiometric_number(coefficient) + name
+                                   for name, coefficient in reactants)
+        product_text = " + ".join(self.format_stoichiometric_number(coefficient) + name
+                                  for name, coefficient in products)
+        reaction_text = (f"{reactant_text} --> {product_text}")
+        directory = self.root
+        directory.mkdir(parents=True, exist_ok=True,)
+        filename = (directory / "Overall_Reaction.dat")
+        with open(filename, "w", encoding="utf-8",) as handle:
+            handle.write("# Overall stoichiometry of the kinetic model\n")
+            handle.write("# Negative coefficients: reactants\n# Positive coefficients: products\n")
+            handle.write("# Adsorbed intermediates and surface sites must cancel.\n\n")
+            handle.write(reaction_text + "\n\n")
+            handle.write("# Complete dynamic-species vector\n# Species  Coefficient\n")
+            for name, coefficient in zip(species_names, coefficients,):
+                handle.write(f"{name:<20s} {str(coefficient):>12s}\n")
+        #print(f"  Written overall reaction: {reaction_text}", flush=True,)
+        return filename
+
+    def write_profile(self) -> Path | None:
+        """  Write the free-energy profile generated by Kinetics.Profile. """
+        profile_results = getattr(self.model, "profile", None,)
+        if profile_results is None:
+            print("WARNING: model.profile is unavailable; KINETICS/Profile.txt was not written.", flush=True,)
+            return None
+        data = getattr(profile_results, "data", None,)
+        if not data:
+            print("WARNING: the kinetic profile is empty. Run Profile(model, temp_num=...) before KineticsReporter.",
+                  flush=True,)
+            return None
+        if len(data) < 2:
+            print("WARNING: the kinetic profile contains a header but no process rows.", flush=True,)
+        header = [str(value) for value in data[0]]
+        rows = [[str(value) for value in row] for row in data[1:]]
+        expected_columns = 6
+        if len(header) != expected_columns:
+            raise ValueError(f"Unexpected profile-table structure: expected {expected_columns} columns, "
+                             f"but the header contains {len(header)}.")
+        for row_number, row in enumerate(rows, start=1,):
+            if len(row) != expected_columns:
+                raise ValueError(f"Malformed kinetic-profile row {row_number}: expected {expected_columns} "
+                                 f"columns, got {len(row)}.")
+        output_file = self.root / "Profile.txt"
+        Writer.write(output_file, header, rows, title=("Free-energy profile of the elementary kinetic processes"),)
+        #print(f"  Written kinetic profile: {output_file}", flush=True,)
+        return output_file
 
     def write_rate_constants(self):
         fields = ["sticky", "arrhenius", "ktunneling", "krate0",]
@@ -632,10 +802,12 @@ class ExperimentReporter:
         tpr_dir = self.root / "TPR"
         tpr_dir.mkdir(parents=True, exist_ok=True)
         for result in self.model.experiments.tpr:
-            label = (f"{result.gas}_{result.heating_rate:g}K_min")
-            self.write_tpr_concentrations(result, tpr_dir / f"{label}_concentrations.dat",)
-            self.write_tpr_spectra(result, tpr_dir / f"{label}_spectra.dat",)
-            self.write_tpr_metadata(result, tpr_dir / f"{label}_metadata.dat",)
+            label = (f"{result.gas}_{result.heating_rate:g}Kmin")
+            gas_dir = tpr_dir / label
+            gas_dir.mkdir(parents=True, exist_ok=True)
+            self.write_tpr_concentrations(result, gas_dir / f"{label}_concentrations.dat",)
+            self.write_tpr_spectra(result, gas_dir / f"{label}_spectra.dat",)
+            #self.write_tpr_metadata(result, gas_dir / f"{label}_metadata.dat",)
 
     def write_tpr_concentrations(self, result, filename):
         rows = []
@@ -688,10 +860,10 @@ class DiagnosticsReporter:
         self.write_table_result(diagnostics.drc_assessment, self.drc_root / "DRC_assessment.dat",)
         self.write_control_tables(diagnostics.degree_of_rate_control, self.drc_root / "Degree_of_rate_control",)
         self.write_control_tables(diagnostics.degree_of_selectivity_control, self.drc_root/"Degree_of_selectivity_control",)
-
         self.write_reaction_pathways()
         self.write_tpr_peaks()
         self.write_ir_spectra()
+
         self.plot_table_bars(diagnostics.steady_state_net_rates, self.net_rates_root / "Steady_state_net_rates.svg",
                              "Steady-state net rates",  "Net rate, $R_{N}^{SS}$ $(s^{-1})$", logy=True,)
         self.plot_table_bars(diagnostics.average_net_rates, self.net_rates_root / "Average_net_rates.svg",
@@ -703,9 +875,23 @@ class DiagnosticsReporter:
         self.plot_control_tables(diagnostics.degree_of_selectivity_control, self.drc_root / "Degree_of_selectivity_control",
                                  ylabel="DSC",)
         self.plot_reaction_pathways()
+        self.plot_reaction_pathway_networks()
         #self.plot_tpr_peaks()  # no plot an bar image with TPR peacks
         self.plot_tpr_spectra()
-        self.plot_ir_spectra()
+        self.plot_ir_spectra3d()
+
+
+
+
+
+        # PLOT the reaction network with import networkx as nx (Diagnostic) Alberto
+
+
+
+
+
+
+
 
     def write_control_tables(self, tables, directory):  # WITH several tables
         if not tables:
@@ -733,8 +919,8 @@ class DiagnosticsReporter:
         for pathway in diagnostics.reaction_pathways:
             for reactant, product, flux in pathway.edges:
                 rows.append([pathway.temperature, reactant, product, flux,])
-        Writer.write(filename=directory / "Reaction_pathways.dat", header=["Temperature(K)", "Reactant", "Product",
-                                                                           "Flux",],
+        Writer.write(filename=directory / "Reaction_pathways.dat", header=["Temperature($K$)", "Reactant", "Product",
+                                                                           "NetFlux($s^{-1}$) ",],
                      rows=rows, title="Flux-weighted reaction pathways",)
 
     def write_tpr_peaks(self):
@@ -823,10 +1009,59 @@ class DiagnosticsReporter:
             ax.barh(y, values)
             ax.set_yticks(y)
             ax.set_yticklabels(labels)
-            ax.set_xlabel("Flux")
+            ax.set_xlabel("Net Flux ($s{-1}$)")
             ax.set_title(f"Reaction pathway at {pathway.temperature:g} K")
             fig.tight_layout()
             fig.savefig(directory / f"pathway_{pathway.temperature:g}K.svg", dpi=300, transparent=True,)
+            plt.close(fig)
+
+    def plot_reaction_pathway_networks(self):
+        """Plot flux-weighted reaction pathways as directed NetworkX graphs."""
+        try:
+            import networkx as nx
+        except ImportError:
+            print("WARNING: networkx is not installed; skipping reaction-pathway network plots.", flush=True,)
+            return
+        diagnostics = self.model.diagnostics
+        directory = self.root / "Reaction_pathways"
+        directory.mkdir(parents=True, exist_ok=True)
+        for pathway in diagnostics.reaction_pathways:
+            if not pathway.edges:
+                continue
+            graph = nx.DiGraph()
+            # pathway.edges already contains the net-flux direction determined by Diagnostics.reaction_pathways().
+            for reactant, product, flux in pathway.edges:
+                flux = abs(float(flux))
+                if graph.has_edge(reactant, product):
+                    graph[reactant][product]["weight"] += flux
+                else:
+                    graph.add_edge(reactant, product, weight=flux,)
+            if graph.number_of_edges() == 0:
+                continue
+            labels = {name: chem_label(name) for name in graph.nodes()}
+            # Reproducible positioning.
+            pos = nx.spring_layout(graph, seed=0, k=2.5,)
+            edges = list(graph.edges(data=True))
+            weights = np.asarray([data["weight"] for _, _, data in edges], dtype=float,)
+            max_weight = np.max(weights)
+            if max_weight <= 0.0:
+                continue
+            # Width shows relative net flux.
+            widths = [0.5 + 5.0 * weight / max_weight for weight in weights]
+            fig, ax = plt.subplots(figsize=(12, 8), clear=True,)
+            nx.draw_networkx_nodes(graph, pos, ax=ax, node_size=2200,)
+            nx.draw_networkx_labels(graph, pos, labels=labels, ax=ax, font_size=16,)
+            nx.draw_networkx_edges(graph, pos, ax=ax, width=widths, arrows=True, arrowstyle="->", arrowsize=20,
+                                   connectionstyle="arc3,rad=0.05",)
+            # Numerical net flux on each edge.
+            edge_labels = {(u, v): f"{data['weight']:.2e}" for u, v, data in edges}
+            nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels, ax=ax, font_size=9, rotate=False,)
+            ax.set_title(f"Reaction pathway at {pathway.temperature:g} K", fontsize=18,)
+            ax.text(0.01, 0.01, r"Edge labels: Net Flux (s$^{-1}$)", transform=ax.transAxes, fontsize=14,)
+            ax.axis("off")
+            fig.tight_layout()
+            fig.savefig(directory / f"pathway_network_{pathway.temperature:g}K.svg", dpi=300, transparent=True,
+                        bbox_inches="tight",)
             plt.close(fig)
 
     def plot_tpr_peaks(self):
@@ -839,14 +1074,18 @@ class DiagnosticsReporter:
         x = np.arange(len(labels))
         ax.bar(x, temperatures)
         ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=45, ha="right")
-        ax.set_ylabel("Peak temperature (K)")
-        ax.set_title("TPR peak temperatures")
+        ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
+        ax.tick_params(axis="x", labelsize=16, pad=2.5,)
+        ax.tick_params(axis="y", labelsize=16,)
+        ax.set_ylabel("Peak temperature (K)", fontsize=18)
+        ax.set_title("TPR peak temperatures", fontsize=18)
+        ax.margins(y=0.15)
+        ax.legend(fontsize=16)
         fig.tight_layout()
-        fig.savefig(self.root / "TPR_peak_temperatures.svg", dpi=300, transparent=True,)
+        fig.savefig(self.root / "TPR_peak_temperatures.svg", dpi=300, transparent=True, bbox_inches="tight",)
         plt.close(fig)
 
-    def plot_ir_spectra(self):
+    def plot_ir_spectra2d(self):      # 2D
         diagnostics = self.model.diagnostics
         directory = self.root / "IR_spectra"
         directory.mkdir(parents=True, exist_ok=True)
@@ -856,11 +1095,63 @@ class DiagnosticsReporter:
             fig, ax = plt.subplots(figsize=(10, 6), clear=True)
             mesh = ax.pcolormesh(spectrum.wavenumbers, spectrum.times, spectrum.intensities, shading="auto",)
             fig.colorbar(mesh, ax=ax, label="Intensity (a.u.)",)
-            ax.set_xlabel("Wavenumber (cm$^{-1}$)")
-            ax.set_ylabel("Time (s)")
-            ax.set_title(f"IR evolution: {spectrum.phase}, {spectrum.temperature:g} K")
+            ax.set_xlabel("Wavenumber (cm$^{-1}$)", fontsize=18)
+            ax.set_ylabel("Time (s)", fontsize=18)
+            ax.tick_params(axis="x", labelsize=16, pad=2.5,)
+            ax.tick_params(axis="y", labelsize=16,)
+            ax.set_title(f"IR evolution: {spectrum.phase}, {spectrum.temperature:g} K", fontsize=18)
+            ax.margins(y=0.15)
+            ax.legend(fontsize=16)
             fig.tight_layout()
             fig.savefig(directory / f"{spectrum.phase}_{spectrum.temperature:g}K.svg", dpi=300, transparent=True,)
+            plt.close(fig)
+
+    def plot_ir_spectra3d(self):
+        """Plot time-resolved IR spectra as 3D waterfall plots."""
+        diagnostics = self.model.diagnostics
+        directory = self.root / "IR_spectra"
+        directory.mkdir(parents=True, exist_ok=True)
+        max_time_slices = 30         # Maximum number of spectra shown along the time direction.
+        max_frequency_points = 1000        # Also reduce the frequency sampling for plotting only.
+        for spectrum in diagnostics.ir_spectra:
+            if spectrum.intensities.size == 0:
+                continue
+            wavenumbers = np.asarray(spectrum.wavenumbers, dtype=float,)
+            times = np.asarray(spectrum.times, dtype=float,)
+            intensities = np.asarray(spectrum.intensities, dtype=float,)
+            if intensities.ndim != 2:
+                continue
+            if len(times) > max_time_slices:    # Reduce the number of time traces displayed.
+                time_indices = np.linspace(0, len(times) - 1, max_time_slices, dtype=int,)
+            else:
+                time_indices = np.arange(len(times))
+            if len(wavenumbers) > max_frequency_points:        # Reduce frequency points for plotting only.
+                freq_indices = np.linspace( 0, len(wavenumbers) - 1, max_frequency_points, dtype=int,)
+            else:
+                freq_indices = np.arange(len(wavenumbers))
+            x = wavenumbers[freq_indices]
+            fig = plt.figure(figsize=(12, 8), clear=True,)
+            ax = fig.add_subplot(111, projection="3d",)
+            for time_index in time_indices:
+                y = np.full(x.shape, times[time_index], dtype=float,)
+                z = intensities[time_index, freq_indices,]
+                ax.plot(x, y, z, linewidth=1.0,)
+            # Conventional IR orientation: high wavenumber on the left.
+            ax.set_xlim(np.max(x), np.min(x),)
+            ax.set_xlabel(r"Wavenumber (cm$^{-1}$)", fontsize=16, labelpad=10,)
+            ax.set_ylabel("Time (s)", fontsize=16, labelpad=10,)
+            ax.set_zlabel("Intensity (a.u.)", fontsize=16, labelpad=10,)
+            ax.set_title(f"IR evolution: {spectrum.phase}, {spectrum.temperature:g} K", fontsize=18,)
+            ax.tick_params(axis="x", labelsize=14,)
+            ax.tick_params(axis="y", labelsize=14,)
+            ax.tick_params(axis="z", labelsize=14,)
+            # Camera: x approximately parallel to the screen, y receding into the screen, z vertical.
+            ax.view_init(elev=25, azim=-65,)
+            # Make frequency visually wider than time/depth.
+            ax.set_box_aspect((2.2, 1.2, 1.0))
+            fig.tight_layout()
+            fig.savefig(directory / f"{spectrum.phase}_{spectrum.temperature:g}K.svg", dpi=300, transparent=True,
+                        bbox_inches="tight",)
             plt.close(fig)
 
     def plot_tpr_spectra(self):
@@ -879,71 +1170,80 @@ class DiagnosticsReporter:
     def plot_single_tpr_result(self, result, tpr_dir):
         source_dir = (tpr_dir / f"{result.gas}_{result.heating_rate:g}Kmin")
         source_dir.mkdir(parents=True, exist_ok=True)
-        temperatures = np.asarray(result.temperatures, dtype=float)
-        fig, ax = plt.subplots(figsize=(10, 6), clear=True)
-        for gas, rates in result.spectra.items():
-            rates = np.asarray(rates, dtype=float)
+        temperatures = np.asarray(result.temperatures, dtype=float,)
+        rates = np.asarray(result.spectra.get(result.gas, []), dtype=float,)
+        if rates.size == 0:
+            return
+        if np.nanmax(rates) <= 0.0:
+            return
+        fig, ax = plt.subplots(figsize=(10, 6), clear=True,)
+        ax.plot(temperatures, rates, label=chem_label(result.gas), color=icolour[0], linestyle=iliner[0],)
+        self.annotate_tpr_peaks(ax, temperatures, rates, result.gas, 0,)
+        ax.set_xlabel("Temperature (K)", fontsize=16,)
+        ax.set_ylabel("Desorption Rate", fontsize=16,)
+        ax.set_yticklabels([])
+        ax.tick_params(axis="x", labelsize=14, pad=2.5,)
+        ax.tick_params(axis="y", labelsize=14,)
+        ax.set_title(f"TPR spectrum from {result.gas} at {result.heating_rate:g} K/min", fontsize=18,)
+        ax.margins(y=0.15)
+        fig.tight_layout()
+        fig.savefig(source_dir / "TPR_single.svg", dpi=300, transparent=True, bbox_inches="tight",)
+        plt.close(fig)
+
+    def plot_combined_tpr_spectra(self, tpr_results, tpr_dir,):
+        combined_dir = tpr_dir / "Combined"
+        combined_dir.mkdir(parents=True, exist_ok=True,)
+        fig, ax = plt.subplots(figsize=(10, 6), clear=True,)
+        plotted = False
+        for i, result in enumerate(tpr_results):
+            temperatures = np.asarray(result.temperatures, dtype=float,)
+            rates = np.asarray(result.spectra.get(result.gas, []), dtype=float,)
             if rates.size == 0:
                 continue
             if np.nanmax(rates) <= 0.0:
                 continue
-            ax.plot(temperatures, rates, label=gas,)
-            self.annotate_tpr_peaks(ax, temperatures, rates, gas,)
-        ax.set_xlabel("Temperature (K)")
-        ax.set_ylabel("Desorption Rate")
-        ax.set_title(f"TPR spectrum from {result.gas} at {result.heating_rate:g} K/min")
-        handles, labels = ax.get_legend_handles_labels()
-        if not handles:
-            plt.close(fig)  #prevents saving the figure when all spectra is zero
-            return
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(source_dir / "TPR_single.svg", dpi=300, transparent=True,)
-        plt.close(fig)
-
-    def plot_combined_tpr_spectra(self, tpr_results, tpr_dir):
-        combined_dir = tpr_dir / "Combined"
-        combined_dir.mkdir(parents=True, exist_ok=True)
-        fig, ax = plt.subplots(figsize=(10, 6), clear=True)
-        plotted = False
-        for result in tpr_results:
-            temperatures = np.asarray(result.temperatures, dtype=float)
-            for gas, rates in result.spectra.items():
-                rates = np.asarray(rates, dtype=float)
-                if rates.size == 0:
-                    continue
-                if np.nanmax(rates) <= 0.0:
-                    continue
-                label = f"{result.gas}$\\rightarrow${gas} ({result.heating_rate:g} K/min)"
-                ax.plot(temperatures, rates, label=label,)
-                plotted = True
+            colour = icolour[i % len(icolour)]
+            linestyle = iliner[i % len(iliner)]
+            ax.plot(temperatures, rates, color=colour, linestyle=linestyle, label=chem_label(result.gas),)
+            self.annotate_tpr_peaks(ax, temperatures, rates, result.gas, i,)
+            plotted = True
         if not plotted:
             plt.close(fig)
             return
-        ax.set_xlabel("Temperature (K)")
-        ax.set_ylabel("Desorption Rate")
-        ax.set_title("Combined TPR spectra")
-        ax.legend()
+        ax.set_xlabel("Temperature ($K$)", fontsize=16,)
+        ax.set_ylabel("Desorption Rate", fontsize=16,)
+        ax.set_yticklabels([])
+        ax.tick_params(axis="x", labelsize=14, pad=2.5,)
+        ax.tick_params(axis="y", labelsize=14,)
+        heating_rates = {float(result.heating_rate) for result in tpr_results}
+        if len(heating_rates) == 1:
+            heating_rate = next(iter(heating_rates))
+            title = (f"Combined TPR spectra at {heating_rate:g} $K/min$")
+        else:
+            title = "Combined TPR spectra"
+        ax.set_title(title, fontsize=18,)
+        ax.margins(y=0.15)
+        ax.legend(fontsize=16,)
         fig.tight_layout()
-        fig.savefig(combined_dir / "TPR_combined.svg", dpi=300, transparent=True,)
+        fig.savefig(combined_dir / "TPR_combined.svg", dpi=300, transparent=True, bbox_inches="tight",)
         plt.close(fig)
 
-    def annotate_tpr_peaks(self, ax, temperatures, rates, gas,):
+    def annotate_tpr_peaks(self, ax, temperatures, rates, gas, i):
         rates = np.asarray(rates, dtype=float)
         if rates.size == 0:
             return
         maximum = np.nanmax(rates)
         if maximum <= 0.0:
             return
-        peak_indices, _ = find_peaks(rates, height=0.05 * maximum,)
+        peak_indices, _ = find_peaks(rates, height=0.25 * maximum,)
         if len(peak_indices) == 0:
             peak_indices = [int(np.nanargmax(rates))]
         for idx in peak_indices:
             peak_temperature = temperatures[idx]
             peak_rate = rates[idx]
             ax.scatter([peak_temperature], [peak_rate],)
-            ax.annotate(f"{gas}: {peak_temperature:.0f} K", xy=(peak_temperature, peak_rate),
-                        xytext=(5, 5), textcoords="offset points", fontsize=10,)
+            ax.annotate(f"{chem_label(gas)}: {peak_temperature:.0f} K", xy=(peak_temperature, peak_rate),
+                        xytext=(5, 5), textcoords="offset points", fontsize=14, color=icolour[i % len(icolour)],)
 
 
 class Writer:
@@ -1013,7 +1313,6 @@ def build_model(input_file: str, run_experiments: bool = True) -> Any:
                 continue
     return model
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate and plot all stored thermodynamic, kinetic and experimental model results.")
     parser.add_argument("input", help="Input .mk.in file")
@@ -1022,7 +1321,6 @@ def main() -> None:
     args = parser.parse_args()
     model = build_model(args.input, run_experiments=not args.skip_experiments)
     ModelPrinter(model, args.out).write_all()
-
 
 if __name__ == "__main__":
     main()

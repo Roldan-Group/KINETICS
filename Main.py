@@ -416,9 +416,6 @@ def main():
     model = read_input(args.input)
     print(f"\t{time.time() - start:.3f} seconds")
 
-
-
-
     result, start = run_stage("Building partition functions", PartitionFunctions, model)
     ThermodynamicsReporter(model, output_dir="./").write_and_plot()
     timing(start)
@@ -426,14 +423,12 @@ def main():
     ThermodynamicsReporter(model, output_dir="./").write_and_plot()
     timing(start)
     result, start = run_stage("Building rate constants", RConstants, model)
-    KineticsReporter(model, output_dir="./").write_and_plot()
     timing(start)
     result, start = run_stage("Building rate equations", REquations, model)
-    KineticsReporter(model, output_dir="./").write_and_plot()
     timing(start)
     result, start = run_stage("Building energy profile", Profile, model)
-    ExperimentReporter(model, output_dir="./").write()
     timing(start)
+    KineticsReporter(model, output_dir="./").write_and_plot()
     result, start = run_stage("Running microkinetics", Isothermal, model)
     ExperimentReporter(model, output_dir="./").write()
     timing(start)
@@ -443,6 +438,11 @@ def main():
     result, start = run_stage("Diagnosis", Diagnostics, model)
     DiagnosticsReporter(model, output_dir="./").write_and_plot()
     timing(start)
+
+
+    # PRINT GUIDELINES / plots meanings Alberto
+
+
 
     total = time.time() - start_total
     if total < 60:

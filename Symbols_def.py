@@ -18,10 +18,11 @@ constants = {
 	Av: sp.Float(6.022139922973909e23),  # mols^-1
 	Fa: sp.Float(96485.3321233100184),  # C⋅mol^−1
 	qelectron: sp.Float(-1.60217648740e-19),  # C
-	JtoeV: sp.Float(6.24150974e18)  # 1 J = 6.24..e18 eV
+	JtoeV: sp.Float(6.24150974e18),  # 1 J = 6.24..e18 eV
 	}
+pressure_std = sp.Float(101325.0)  # Pa, standard pressure
 
 def chem_label(s):	 # Turn digits into LaTeX subscripts
 	s = re.sub(r'(\d+)', r'_{\1}', s)
-	s = s.replace("ads", r"^{#}") 	# Optional: make "ads" appear as text subscript
+	s = s.replace("ads", r"^{\#}") 	# Optional: make "ads" appear as text subscript
 	return f"${s}$"

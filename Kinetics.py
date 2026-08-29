@@ -313,25 +313,66 @@ class REquations:
         return net_factor * rate, net_factor
 
     def overall_stoichiometry(self) -> list[sp.Expr]:
-        """ Return one overall stoichiometric vector that eliminates adsorbed species.
-
-        No files are written. The returned vector follows the order of the dynamic
-        species names used in the rate equations. """
+        """    Determine the overall molecular reaction by eliminating adsorbed intermediates.
+        Only forward processes are used to determine the overall reaction.   """
         names = self.dynamic_species_names()
         if not names:
             return []
         factors = self.model.equations.equation_factors
-        stoich_matrix = sp.Matrix([factors[name] for name in names])
-        ads_matrix = sp.Matrix([factors[name] for name in names if is_adsorbed_like(self.model.species[name])])
+        process_ids = list(self.model.processes.keys())
+        if len(process_ids) % 2 != 0:
+            raise ValueError("Overall stoichiometry requires consecutive forward/backward process pairs, but "
+                             f"{len(process_ids)} processes were found.")
+        # Only forward reactions: 0, 2, 4, ...
+        forward_indices = list(range(0, len(process_ids), 2))
+        # Stoichiometric matrix using forward processes only.
+        stoich_matrix = sp.Matrix([[sp.nsimplify(factors[name][i]) for i in forward_indices] for name in names])
+        # Adsorbed intermediates must disappear from the overall reaction.
+        ads_names = [name for name in names if is_adsorbed_like(self.model.species[name])]
+        ads_matrix = sp.Matrix([[sp.nsimplify(factors[name][i]) for i in forward_indices] for name in ads_names])
         if ads_matrix.rows == 0:
-            return [sp.Integer(0) for _ in names]
+            return []
         nullspace = ads_matrix.nullspace()
         if not nullspace:
             return []
-        v_int = self.normalise_integer_vector(nullspace[0])
-        if any(value < 0 for value in v_int):
-            v_int = -v_int
-        return list(stoich_matrix * v_int)
+        candidates = []
+        # Evaluate all null-space vectors rather than assuming ns[0].
+        for vector in nullspace:
+            v_int = self.normalise_integer_vector(vector)
+            overall = stoich_matrix * v_int
+            # Ignore complete cancellations: 0 -> 0
+            if all(value == 0 for value in overall):
+                continue
+            # There must be a molecular reaction.
+            molecular = [value for name, value in zip(names, overall)
+                         if is_molecule(self.model.species[name]) and value != 0]
+            if molecular:
+                candidates.append((v_int, overall))
+        if not candidates:
+            return []
+        # Prefer a candidate consistent with the supplied feed: initially pressurised molecules should be consumed.
+        for _, overall in candidates:
+            valid = True
+            has_reactant = False
+            has_product = False
+            for name, coefficient in zip(names, overall):
+                if coefficient == 0:
+                    continue
+                species = self.model.species[name]
+                if not is_molecule(species):
+                    continue
+                pressure0 = float(getattr(species, "pressure0", 0.0))
+                if pressure0 > 0.0:
+                    has_reactant = True
+                    if coefficient > 0:
+                        valid = False
+                        break
+                else:
+                    if coefficient > 0:
+                        has_product = True
+            if valid and has_reactant and has_product:
+                return list(overall)
+        return list(candidates[0][1])  # Fall back to first non-zero molecular solution.
 
     @staticmethod
     def normalise_integer_vector(vector):
