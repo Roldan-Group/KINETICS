@@ -247,7 +247,7 @@ def solve_ode_system(model, t_span: tuple[float, float], t_eval: np.ndarray,	dyn
 	class SolverWorkLimit(RuntimeError):
 		pass
 	rhs_call_count = 0
-	solver_limits = {"LSODA": 500000, "BDF": 15000, "Radau": 15000,}
+	solver_limits = {"LSODA": 500000, "BDF": 15000, "Radau": 25000,}
 
 	def ode_system(t_num, y_scaled, *args):
 		nonlocal rhs_call_count
@@ -261,10 +261,10 @@ def solve_ode_system(model, t_span: tuple[float, float], t_eval: np.ndarray,	dyn
 		if rhs_call_count % 5000 == 0:
 			print(f"    T={args[0]:g} K  RHS={rhs_call_count}  t={t_num:.8e} s"
 				  f"  min(y)={np.min(y_physical):.4e}  max(y)={np.max(y_physical):.4e}", flush=True,)
-			for surface_name in surfaces:
+			'''for surface_name in surfaces:
 				occupied = sum(nsites(model, dynamic_species[idx]) * y_physical[idx]
 				               for idx in adsorbates_by_surface[surface_name])
-				print(f"        {surface_name}: occupied={occupied:.8e}, free={1.0 - occupied:.8e}", flush=True,)
+				print(f"        {surface_name}: occupied={occupied:.8e}, free={1.0 - occupied:.8e}", flush=True,)'''
 		if rhs_call_count > rhs_call_limit:
 			raise SolverWorkLimit(f"Exceeded {rhs_call_limit} RHS evaluations at T={args[0]:g} K")
 		if not np.all(np.isfinite(y_scaled)):

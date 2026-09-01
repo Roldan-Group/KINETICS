@@ -17,7 +17,11 @@ import sympy as sp
 import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import SymmetricalLogLocator, MaxNLocator
+from matplotlib import cm, colors
+#plt.rcParams["path.simplify"] = False
 from scipy.signal import find_peaks
+from scipy.interpolate import PchipInterpolator
 
 from Symbols_def import vext, ph, temp, constants, chem_label
 
@@ -404,7 +408,7 @@ class ThermodynamicsReporter:
     def plot_gibbs(self, species, species_dir):
         self.plot_fields(species, species_dir, ["gibbs3d"], "Gibbs.svg", "Gibbs free energy, $G$ $(eV)$",)
 
-    def plot_ir_spectrum(self, species, species_dir, *, freq_min=500.0, freq_max=4000.0, points=3000, sigma=8.0,):
+    def plot_ir_spectrum(self, species, species_dir, *, freq_min=500.0, freq_max=4500.0, points=5000, sigma=8.0,):
         """Plot the intrinsic IR spectrum of one species."""
         frequencies = getattr(species, "frequencies", []) or []
         intensities = getattr(species, "ir_intensities", []) or []
@@ -430,10 +434,10 @@ class ThermodynamicsReporter:
         #ax.vlines(frequencies, 0.0, intensities, linewidth=0.8, alpha=0.5,)
         # Conventional IR presentation: high wavenumber on the left.
         ax.set_xlim(freq_max, freq_min,)
-        ax.set_xlabel(r"Wavenumber ($cm^{-1}$)", fontsize=16,)
-        ax.set_ylabel("IR intensity ($a.u.$)", fontsize=16,)
+        ax.set_xlabel(r"Wavenumber ($cm^{-1}$)", fontsize=18,)
+        ax.set_ylabel("IR intensity ($a.u.$)", fontsize=18,)
         ax.set_title(f"IR spectrum of {chem_label(species.name)}", fontsize=18,)
-        ax.tick_params(axis="both", labelsize=14,)
+        ax.tick_params(axis="both", labelsize=16,)
         ax.margins(y=0.10)
         fig.tight_layout()
         fig.savefig(species_dir / "IR_spectrum.svg", dpi=300, transparent=True, bbox_inches="tight",)
@@ -879,19 +883,7 @@ class DiagnosticsReporter:
         #self.plot_tpr_peaks()  # no plot an bar image with TPR peacks
         self.plot_tpr_spectra()
         self.plot_ir_spectra3d()
-
-
-
-
-
-        # PLOT the reaction network with import networkx as nx (Diagnostic) Alberto
-
-
-
-
-
-
-
+        self.plot_isothermal_species()
 
     def write_control_tables(self, tables, directory):  # WITH several tables
         if not tables:
@@ -1002,15 +994,18 @@ class DiagnosticsReporter:
         for pathway in diagnostics.reaction_pathways:
             if not pathway.edges:
                 continue
-            labels = [f"{reactant}$\\rightarrow${product}" for reactant, product, _ in pathway.edges]
+            labels = [(f"{chem_label(reactant)}$\\rightarrow$"
+                       f"{chem_label(product)}") for reactant, product, _ in pathway.edges]
             values = [flux for _, _, flux in pathway.edges]
             fig, ax = plt.subplots(figsize=(10, 6), clear=True)
             y = np.arange(len(labels))
             ax.barh(y, values)
+            ax.tick_params(axis="x", labelsize=16, pad=2.5,)
+            ax.tick_params(axis="y",)
             ax.set_yticks(y)
-            ax.set_yticklabels(labels)
-            ax.set_xlabel("Net Flux ($s{-1}$)")
-            ax.set_title(f"Reaction pathway at {pathway.temperature:g} K")
+            ax.set_yticklabels(labels, fontsize=18,)
+            ax.set_xlabel("Net Flux ($s^{-1}$)", fontsize=18,)
+            ax.set_title(f"Reaction pathway at {pathway.temperature:g} K", fontsize=18,)
             fig.tight_layout()
             fig.savefig(directory / f"pathway_{pathway.temperature:g}K.svg", dpi=300, transparent=True,)
             plt.close(fig)
@@ -1029,8 +1024,15 @@ class DiagnosticsReporter:
             if not pathway.edges:
                 continue
             graph = nx.DiGraph()
+            gas_species = {name for name, species in self.model.species.items()
+                           if str(species.kind).lower() == "molecule"}
+            adsorbates = {name for name, species in self.model.species.items()
+                          if str(species.kind).lower() not in {"molecule", "surface",}}
+            allowed_species = (gas_species | adsorbates)
             # pathway.edges already contains the net-flux direction determined by Diagnostics.reaction_pathways().
             for reactant, product, flux in pathway.edges:
+                if (reactant not in allowed_species or product not in allowed_species):
+                    continue
                 flux = abs(float(flux))
                 if graph.has_edge(reactant, product):
                     graph[reactant][product]["weight"] += flux
@@ -1040,22 +1042,34 @@ class DiagnosticsReporter:
                 continue
             labels = {name: chem_label(name) for name in graph.nodes()}
             # Reproducible positioning.
-            pos = nx.spring_layout(graph, seed=0, k=2.5,)
+            pos = nx.spring_layout(graph, seed=7, k=4,)
             edges = list(graph.edges(data=True))
             weights = np.asarray([data["weight"] for _, _, data in edges], dtype=float,)
             max_weight = np.max(weights)
             if max_weight <= 0.0:
                 continue
             # Width shows relative net flux.
-            widths = [0.5 + 5.0 * weight / max_weight for weight in weights]
+            #widths = [0.5 + 5.0 * weight / max_weight for weight in weights] # linear
+            positive_weights = weights[weights > 0.0]
+            min_weight = np.min(positive_weights)
+            max_weight = np.max(positive_weights)
+            if max_weight > min_weight: # log weight
+                log_weights = np.log10(weights)
+                widths = (0.5 + 5.0 * (log_weights - np.log10(min_weight))
+                          / (np.log10(max_weight) - np.log10(min_weight)))
+            else:
+                widths = np.full_like(weights, 2.0,)
+
             fig, ax = plt.subplots(figsize=(12, 8), clear=True,)
-            nx.draw_networkx_nodes(graph, pos, ax=ax, node_size=2200,)
+            node_size = 5000
+            nx.draw_networkx_nodes(graph, pos, ax=ax, node_size=node_size, node_color="lightblue", alpha=0.75,
+                                   edgecolors="grey", linewidths=1.0,)
             nx.draw_networkx_labels(graph, pos, labels=labels, ax=ax, font_size=16,)
-            nx.draw_networkx_edges(graph, pos, ax=ax, width=widths, arrows=True, arrowstyle="->", arrowsize=20,
-                                   connectionstyle="arc3,rad=0.05",)
-            # Numerical net flux on each edge.
-            edge_labels = {(u, v): f"{data['weight']:.2e}" for u, v, data in edges}
-            nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels, ax=ax, font_size=9, rotate=False,)
+            nx.draw_networkx_edges(graph, pos, ax=ax, width=widths, node_size=node_size, arrows=True,
+                                   arrowstyle="->", arrowsize=20, connectionstyle="arc3, rad=0.05",
+                                   min_source_margin=5, min_target_margin=5,)
+            edge_labels = {(u, v): f"{data['weight']:.2e}" for u, v, data in edges}    # Numerical net flux on edges
+            #nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels, ax=ax, font_size=9, rotate=False,)
             ax.set_title(f"Reaction pathway at {pathway.temperature:g} K", fontsize=18,)
             ax.text(0.01, 0.01, r"Edge labels: Net Flux (s$^{-1}$)", transform=ax.transAxes, fontsize=14,)
             ax.axis("off")
@@ -1107,12 +1121,12 @@ class DiagnosticsReporter:
             plt.close(fig)
 
     def plot_ir_spectra3d(self):
-        """Plot time-resolved IR spectra as 3D waterfall plots."""
+        """Plot time-resolved IR spectra as clean 3D waterfall plots."""
         diagnostics = self.model.diagnostics
         directory = self.root / "IR_spectra"
         directory.mkdir(parents=True, exist_ok=True)
-        max_time_slices = 30         # Maximum number of spectra shown along the time direction.
-        max_frequency_points = 1000        # Also reduce the frequency sampling for plotting only.
+        max_time_slices = 25
+        max_frequency_points = 2000
         for spectrum in diagnostics.ir_spectra:
             if spectrum.intensities.size == 0:
                 continue
@@ -1121,37 +1135,97 @@ class DiagnosticsReporter:
             intensities = np.asarray(spectrum.intensities, dtype=float,)
             if intensities.ndim != 2:
                 continue
-            if len(times) > max_time_slices:    # Reduce the number of time traces displayed.
-                time_indices = np.linspace(0, len(times) - 1, max_time_slices, dtype=int,)
+            if intensities.shape != (len(times), len(wavenumbers),):
+                continue
+            if len(wavenumbers) > max_frequency_points:        # Frequency subsampling
+                freq_indices = np.linspace(0, len(wavenumbers) - 1, max_frequency_points, dtype=int,)
             else:
-                time_indices = np.arange(len(times))
-            if len(wavenumbers) > max_frequency_points:        # Reduce frequency points for plotting only.
-                freq_indices = np.linspace( 0, len(wavenumbers) - 1, max_frequency_points, dtype=int,)
-            else:
-                freq_indices = np.arange(len(wavenumbers))
+                freq_indices = np.arange(len(wavenumbers), dtype=int,)
             x = wavenumbers[freq_indices]
-            fig = plt.figure(figsize=(12, 8), clear=True,)
+            if len(times) > max_time_slices:        # Time sampling: many spectra early, progressively fewer later.
+                t0 = float(times[0])
+                tf = float(times[-1])
+                if tf > t0:
+                    scaled = np.geomspace(1.0, 1.0 + (tf - t0), max_time_slices,) - 1.0
+                    target_times = t0 + scaled
+                    time_indices = np.asarray([np.argmin(np.abs(times - target_time)) for target_time in target_times],
+                                              dtype=int,)
+                    time_indices = np.unique(time_indices)
+                else:
+                    time_indices = np.array([0], dtype=int,)
+            else:
+                time_indices = np.arange(len(times), dtype=int,)
+
+            # Always retain the first and final states.
+            time_indices = np.unique(np.concatenate(([0], time_indices, [len(times) - 1],)))
+            # Normalise all spectra using ONE maximum for this complete time-resolved spectrum.
+            plotted_intensities = intensities[:, freq_indices]
+            maximum_intensity = np.nanmax(plotted_intensities)
+            if (not np.isfinite(maximum_intensity) or maximum_intensity <= 0.0):
+                continue
+            normalised_intensities = (plotted_intensities / maximum_intensity)
+            # Colour represents spectral intensity.
+            colour_norm = colors.Normalize(vmin=0.0, vmax=1.0,)
+            cmap = cm.viridis
+            fig = plt.figure(figsize=(13, 8), clear=True,)
             ax = fig.add_subplot(111, projection="3d",)
+            ax.set_proj_type("ortho")
+            # Draw each spectrum as short coloured line segments so the colour varies continuously with local IR intensity.
             for time_index in time_indices:
                 y = np.full(x.shape, times[time_index], dtype=float,)
-                z = intensities[time_index, freq_indices,]
-                ax.plot(x, y, z, linewidth=1.0,)
-            # Conventional IR orientation: high wavenumber on the left.
+                z = normalised_intensities[time_index, :]
+                for j in range(len(x) - 1):
+                    local_intensity = (0.5 * (z[j] + z[j + 1]))
+                    ax.plot(x[j:j + 2], y[j:j + 2], z[j:j + 2], color=cmap(colour_norm(local_intensity)), linewidth=1.2)
+
             ax.set_xlim(np.max(x), np.min(x),)
-            ax.set_xlabel(r"Wavenumber (cm$^{-1}$)", fontsize=16, labelpad=10,)
-            ax.set_ylabel("Time (s)", fontsize=16, labelpad=10,)
-            ax.set_zlabel("Intensity (a.u.)", fontsize=16, labelpad=10,)
+            ax.set_ylim(np.min(times), np.max(times),)
+            ax.set_zlim(0.0, 1.05,)
+            ax.set_xlabel(r"Wavenumber ($cm^{-1}$)", fontsize=18, labelpad=15,)
+            ax.set_ylabel("Time ($s$)", fontsize=18, labelpad=15,)
+            #ax.text2D(0.03, 0.2, "Time ($s$)", transform=ax.transAxes, fontsize=18,rotation=90,va="center",ha="center",)
+            ax.zaxis.set_rotate_label(False)
+            ax.set_zlabel("IR intensity", fontsize=18, rotation=90, labelpad=-5)
             ax.set_title(f"IR evolution: {spectrum.phase}, {spectrum.temperature:g} K", fontsize=18,)
-            ax.tick_params(axis="x", labelsize=14,)
-            ax.tick_params(axis="y", labelsize=14,)
-            ax.tick_params(axis="z", labelsize=14,)
-            # Camera: x approximately parallel to the screen, y receding into the screen, z vertical.
-            ax.view_init(elev=25, azim=-65,)
-            # Make frequency visually wider than time/depth.
-            ax.set_box_aspect((2.2, 1.2, 1.0))
-            fig.tight_layout()
+            ax.tick_params(axis="x", labelsize=16, pad=2)
+            ax.tick_params(axis="y", labelsize=16, pad=5)
+            ax.set_zticklabels([])
+            #ax.tick_params(axis="z", labelsize=16,)
+            time_min = float(np.min(times))
+            time_max = float(np.max(times))
+            ax.set_ylim(time_min, time_max,)
+            time_ticks = np.linspace(time_min, time_max, 6,)
+            set_yticks(time_ticks)
+            ax.grid(False)
+            # Grid only on the x-z plane at the back of the waterfall.
+            y_grid = np.max(times)
+            #x_ticks = ax.get_xticks()
+            z_ticks = np.linspace(0.0, 1.0, 6)
+            # Vertical grid lines: constant x, varying z.
+            #for x_tick in x_ticks:
+            #    ax.plot([x_tick, x_tick], [y_grid, y_grid], [0.0, 1.0], linewidth=0.5,alpha=0.3,color="grey",zorder=0,)
+            # Horizontal grid lines: varying x, constant z.
+            for z_tick in z_ticks:
+                ax.plot([np.min(x), np.max(x)], [y_grid, y_grid], [z_tick, z_tick], linewidth=0.5,
+                        alpha=0.3, color="grey", zorder=0,)
+            ax.xaxis.pane.fill = False
+            ax.yaxis.pane.fill = False
+            ax.zaxis.pane.fill = False
+            #ax.xaxis.pane.set_edgecolor("none")
+            #ax.yaxis.pane.set_edgecolor("none")
+            #ax.zaxis.pane.set_edgecolor("none")
+            ax.view_init(elev=20, azim=-91,)    # before 18, -90
+            ax.set_box_aspect((3.2, 2.6, 1.6))
+            scalar_map = cm.ScalarMappable(norm=colour_norm, cmap=cmap,)
+            scalar_map.set_array([])
+            colourbar = fig.colorbar(scalar_map, ax=ax, fraction=0.035, pad=0.01, shrink=0.7, aspect=25)
+            colourbar.set_label("Normalised IR intensity (a.u.)", fontsize=18, labelpad=5)
+            colourbar.ax.yaxis.set_label_position("left")
+            colourbar.ax.tick_params(labelsize=16,)
+            fig.subplots_adjust(left=0.12, right=0.90, bottom=0.12, top=0.95,)
+            #fig.tight_layout()
             fig.savefig(directory / f"{spectrum.phase}_{spectrum.temperature:g}K.svg", dpi=300, transparent=True,
-                        bbox_inches="tight",)
+                        bbox_inches=None)
             plt.close(fig)
 
     def plot_tpr_spectra(self):
@@ -1182,10 +1256,11 @@ class DiagnosticsReporter:
         ax.set_xlabel("Temperature (K)", fontsize=16,)
         ax.set_ylabel("Desorption Rate", fontsize=16,)
         ax.set_yticklabels([])
-        ax.tick_params(axis="x", labelsize=14, pad=2.5,)
-        ax.tick_params(axis="y", labelsize=14,)
+        ax.tick_params(axis="x", labelsize=16, pad=2.5,)
+        ax.tick_params(axis="y", labelsize=16,)
         ax.set_title(f"TPR spectrum from {result.gas} at {result.heating_rate:g} K/min", fontsize=18,)
         ax.margins(y=0.15)
+        ax.set_ylim(bottom=0.0, )  # Pressures cannot physically be negative.
         fig.tight_layout()
         fig.savefig(source_dir / "TPR_single.svg", dpi=300, transparent=True, bbox_inches="tight",)
         plt.close(fig)
@@ -1213,8 +1288,8 @@ class DiagnosticsReporter:
         ax.set_xlabel("Temperature ($K$)", fontsize=16,)
         ax.set_ylabel("Desorption Rate", fontsize=16,)
         ax.set_yticklabels([])
-        ax.tick_params(axis="x", labelsize=14, pad=2.5,)
-        ax.tick_params(axis="y", labelsize=14,)
+        ax.tick_params(axis="x", labelsize=16, pad=2.5,)
+        ax.tick_params(axis="y", labelsize=16,)
         heating_rates = {float(result.heating_rate) for result in tpr_results}
         if len(heating_rates) == 1:
             heating_rate = next(iter(heating_rates))
@@ -1223,6 +1298,7 @@ class DiagnosticsReporter:
             title = "Combined TPR spectra"
         ax.set_title(title, fontsize=18,)
         ax.margins(y=0.15)
+        ax.set_ylim(bottom=0.0,)        # Pressures cannot physically be negative.
         ax.legend(fontsize=16,)
         fig.tight_layout()
         fig.savefig(combined_dir / "TPR_combined.svg", dpi=300, transparent=True, bbox_inches="tight",)
@@ -1245,6 +1321,177 @@ class DiagnosticsReporter:
             ax.annotate(f"{chem_label(gas)}: {peak_temperature:.0f} K", xy=(peak_temperature, peak_rate),
                         xytext=(5, 5), textcoords="offset points", fontsize=14, color=icolour[i % len(icolour)],)
 
+    def plot_isothermal_species(self):
+        """  Plot the time evolution of: (a) all gas-phase species pressures (b) all adsorbate coverages
+         at three representative temperatures: lowest, midpoint, and highest available temperature
+        Time is displayed on a symmetric-logarithmic axis.   """
+        experiments = getattr(self.model, "experiments", None,)
+        if experiments is None:
+            return
+        result = getattr(experiments, "isothermal", None,)
+        if result is None:
+            return
+        values = np.asarray(result.values, dtype=float,)
+        if values.ndim != 2 or values.shape[0] == 0:
+            return
+        headers = list(result.headers)
+        if "Temperature" not in headers:
+            print("WARNING: isothermal data contain no Temperature column.", flush=True,)
+            return
+        if "time" not in headers:
+            print("WARNING: isothermal data contain no time column.", flush=True,)
+            return
+        temperature_column = headers.index("Temperature")
+        time_column = headers.index("time")
+
+        # result.species contains the dynamic variables: gas-phase molecules + adsorbates.
+        # Bare-surface coverages in result.surfaces are intentionally not included in the adsorbate figure.
+        dynamic_species = list(result.species)
+        gas_indices = list(result.metadata.get("gas_indices", [],))
+        adsorbates_by_surface = dict(result.metadata.get("adsorbates_by_surface", {},))
+        gas_species = [dynamic_species[index] for index in gas_indices]
+        adsorbate_indices = []
+        for indices in adsorbates_by_surface.values():
+            for index in indices:
+                if index not in adsorbate_indices:
+                    adsorbate_indices.append(index)
+        adsorbates = [dynamic_species[index] for index in adsorbate_indices]
+        if not gas_species and not adsorbates:
+            return
+        # Determine the available temperatures.
+        available_temperatures = np.unique(values[:, temperature_column])
+        available_temperatures = (available_temperatures[np.isfinite(available_temperatures)])
+        if available_temperatures.size == 0:
+            return
+        available_temperatures.sort()
+        minimum_temperature = float(available_temperatures[0])
+        maximum_temperature = float(available_temperatures[-1])
+        if available_temperatures.size == 1:
+            selected_temperatures = [minimum_temperature]
+        else:
+            target_mid_temperature = (minimum_temperature + maximum_temperature) / 2.0
+            middle_index = int(np.argmin(np.abs(available_temperatures - target_mid_temperature)))
+            middle_temperature = float(available_temperatures[middle_index])
+            selected_temperatures = [minimum_temperature, middle_temperature, maximum_temperature,]
+        # Remove duplicates while retaining the selected order.
+        selected_temperatures = list(dict.fromkeys(selected_temperatures))
+
+        directory = (self.root / "Isothermal")
+        directory.mkdir(parents=True, exist_ok=True,)
+        # Determine a sensible linear region for the symlog time axis.
+        # symlog is preferable to log because the integration normally contains t = 0.  The smallest strictly positive
+        # stored time is used to define the approximately linear region around zero.
+        for temperature in selected_temperatures:
+            temperature_mask = np.isclose(values[:, temperature_column], temperature, rtol=0.0, atol=1.0e-8,)
+            data = values[temperature_mask]
+            if data.shape[0] == 0:
+                continue
+            time_order = np.argsort(data[:, time_column])   # Ensure increasing time even if the table ordering changes.
+            data = data[time_order]
+            times = np.asarray(data[:, time_column], dtype=float,)
+            positive_times = times[np.isfinite(times) & (times > 0.0)]
+            if positive_times.size > 0:
+                time_linthresh = float(np.min(positive_times))
+            else:
+                time_linthresh = 1.0e-12
+                time_linthresh = max(time_linthresh, np.finfo(float).tiny,)
+
+            if gas_species:
+                fig, ax = plt.subplots(figsize=(10, 6), clear=True,)
+                plotted = False
+                for i, name in enumerate(gas_species):
+                    if name not in headers:
+                        continue
+                    column = headers.index(name)
+                    pressures = np.asarray(data[:, column], dtype=float,)
+                    if not np.any(np.isfinite(pressures)):
+                        continue
+                    plot_times, plot_pressures = (self.interpolate_for_symlog_plot(times, pressures,
+                                                                                points_per_decade=50,))
+                    ax.plot(plot_times, plot_pressures, linewidth=2, color=icolour[ i % len(icolour)],
+                            linestyle=iliner[i % len(iliner)], label=chem_label(name),)
+                    plotted = True
+                if plotted:
+                    ax.set_xscale("symlog", linthresh=time_linthresh,)
+                    ax.xaxis.set_major_locator(SymmetricalLogLocator(base=10, linthresh=time_linthresh,
+                                                                     subs=np.arange(1, 10),))
+                    ax.set_yscale("symlog", linthresh=1.0e-6,)
+                    ax.set_xlabel("Time ($s$)", fontsize=18,)
+                    ax.set_ylabel("Gas pressure ($Pa$)", fontsize=18,)
+                    ax.set_title(f"Gas-phase species at {temperature:g} K", fontsize=18,)
+                    ax.tick_params(axis="both", labelsize=16,)
+                    ax.set_ylim(bottom=0.0,)        # Pressures cannot physically be negative.
+                    ax.legend(fontsize=16,)
+                    ax.margins(x=0.02, y=0.08,)
+                    fig.tight_layout()
+                    fig.savefig(directory / f"Gas_{temperature:g}K.svg", dpi=300, transparent=True, bbox_inches="tight")
+                plt.close(fig)
+
+            if adsorbates:
+                fig, ax = plt.subplots(figsize=(10, 6), clear=True,)
+                plotted = False
+                for i, name in enumerate(adsorbates):
+                    if name not in headers:
+                        continue
+                    column = headers.index(name)
+                    coverages = np.asarray(data[:, column], dtype=float,)
+                    if not np.any(np.isfinite(coverages)):
+                        continue
+                    plot_times, plot_coverages = (self.interpolate_for_symlog_plot(times, coverages,
+                                                                                points_per_decade=50,))
+                    ax.plot(plot_times, plot_coverages, linewidth=2, color=icolour[i % len(icolour)],
+                            linestyle=iliner[i % len(iliner)], label=chem_label(name),)
+                    plotted = True
+                if plotted:
+                    ax.set_xscale("symlog", linthresh=time_linthresh,)
+                    ax.xaxis.set_major_locator(SymmetricalLogLocator(base=10, linthresh=time_linthresh,
+                                                                     subs=np.arange(1, 10),))
+                    ax.set_xlabel("Time ($s$)", fontsize=18)
+                    ax.set_ylabel("Coverage ($ML$)", fontsize=18,)
+                    ax.set_title(f"Adsorbed species at {temperature:g} K",fontsize=18,)
+                    ax.tick_params(axis="both", labelsize=16,)
+                    ax.set_ylim(bottom=0.0,)        # Coverages cannot physically be negative.
+                    ax.legend(fontsize=16,)
+                    ax.margins(x=0.02, y=0.08,)
+                    fig.tight_layout()
+                    fig.savefig(directory / f"Adsorbates_{temperature:g}K.svg", dpi=300, transparent=True,
+                                bbox_inches="tight",)
+                plt.close(fig)
+
+    def interpolate_for_symlog_plot(self, times, values, points_per_decade=50,):      # create a dense plotting grid
+        """Interpolate a trajectory for smooth display on a symlog time axis."""
+        times = np.asarray(times, dtype=float,)
+        values = np.asarray(values, dtype=float,)
+        finite = (np.isfinite(times) & np.isfinite(values))
+        times = times[finite]
+        values = values[finite]
+        if times.size == 0:
+            return times, values
+        plot_times = []
+        plot_values = []
+        # Preserve the calculated value at t = 0.
+        zero = times == 0.0
+        if np.any(zero):
+            plot_times.append(0.0)
+            plot_values.append(values[np.flatnonzero(zero)[0]])
+        # Positive times are interpolated in log10(time).
+        positive = times > 0.0
+        positive_times = times[positive]
+        positive_values = values[positive]
+        if positive_times.size < 3:
+            plot_times.extend(positive_times)
+            plot_values.extend(positive_values)
+            return (np.asarray(plot_times), np.asarray(plot_values),)
+        log_times = np.log10(positive_times)
+        decades = (log_times[-1] - log_times[0])
+        number_of_points = max(int(np.ceil(decades * points_per_decade)) + 1, len(positive_times),)
+        dense_log_times = np.linspace(log_times[0], log_times[-1], number_of_points,)
+        interpolation = PchipInterpolator(log_times, positive_values, extrapolate=False,)
+        dense_values = interpolation(dense_log_times)
+        dense_times = (10.0 ** dense_log_times)
+        plot_times.extend(dense_times)
+        plot_values.extend(dense_values)
+        return (np.asarray(plot_times), np.asarray(plot_values),)
 
 class Writer:
     """

@@ -24,5 +24,5 @@ pressure_std = sp.Float(101325.0)  # Pa, standard pressure
 
 def chem_label(s):	 # Turn digits into LaTeX subscripts
 	s = re.sub(r'(\d+)', r'_{\1}', s)
-	s = s.replace("ads", r"^{\#}") 	# Optional: make "ads" appear as text subscript
+	s = s.replace("ads", r"^{*}") 	# Optional: make "ads" appear as text subscript
 	return f"${s}$"

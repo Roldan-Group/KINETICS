@@ -551,7 +551,7 @@ class Diagnostics:
 		self.results.degree_of_rate_control = drc_data
 		self.results.degree_of_selectivity_control = dsc_data
 
-	def reaction_pathways(self, context, functions, flux_threshold: float = 1e-6):
+	def reaction_pathways(self, context, functions, flux_threshold: float = 1e-30):
 		""" The Reaction Pathway plot shows reaction connectivity, not exact atom-by-atom transformation
 		- Each node is one species appearing in your mechanism
 		- It tells you which pathways dominate under the current conditions for products formation
@@ -568,7 +568,7 @@ class Diagnostics:
 			edges: dict[tuple[str, str], float] = {}
 			for i, (forward, backward) in enumerate(functions["step_pairs"]):
 				flux = float(r_net[i])
-				if abs(flux) < flux_threshold:
+				if abs(flux) <= flux_threshold:
 					continue
 				pid = forward if flux >= 0 else backward
 				process = self.model.processes[pid]
@@ -582,7 +582,7 @@ class Diagnostics:
 			pathways.append(ReactionPathwayResult(temperature=temp_num, edges=ordered_edges))
 		self.results.reaction_pathways = pathways
 
-	def ir_evolution(self, context, *, freq_min=500.0, freq_max=4000.0, points=3000, sigma=8.0):
+	def ir_evolution(self, context, *, freq_min=500.0, freq_max=4500.0, points=3500, sigma=8.0):
 		spectra: list[IRSpectrumResult] = []
 		wavenumbers = np.linspace(freq_min, freq_max, points)
 		temperatures = context["temperatures"]
