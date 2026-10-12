@@ -33,6 +33,9 @@ class GlobalSettings:
     time: float | None = None
     ph: float | None = None
     electrochemical: float | None = None
+    tpr_run: bool = False
+    tpr_temperature: list[float] | None = None
+    tpr_heating_rate: float | None = None
 
 @dataclass
 class SpeciesCoefficient:
@@ -101,6 +104,9 @@ class DisplacedGeometry:
 # --- Parser
 def parse_global(line, globals_):
     key, value = remove_comment(line)
+    if key == "TPR_RUN":
+        globals_.tpr_run = value.strip().lower() in {"true", "t", "yes", "y", "1", ".true.",}
+        return
     values = [float(v) for v in value.split()]
     if key == "TEMPERATURE":
         globals_.temperature = values
@@ -110,6 +116,10 @@ def parse_global(line, globals_):
         globals_.ph = values
     elif key == "ELECTROCHEMICAL":
         globals_.electrochemical = values
+    elif key == "TPR_TEMPERATURE":
+        globals_.tpr_temperature = values
+    elif key == "TPR_HEATING_RATE":
+        globals_.tpr_heating_rate = float(values[0])
 
 def parse_process(line, next_pid):
     left, value = remove_comment(line)
@@ -206,6 +216,12 @@ def parse_input(path):
             elif line.startswith("PH"):
                 parse_global(line, globals_)
             elif line.startswith("ELECTROCHEMICAL"):
+                parse_global(line, globals_)
+            elif line.startswith("TPR_RUN"):
+                parse_global(line, globals_)
+            elif line.startswith("TPR_TEMPERATURE"):
+                parse_global(line, globals_)
+            elif line.startswith("TPR_HEATING_RATE"):
                 parse_global(line, globals_)
             elif line.startswith("PROCESS"):
                 new_process, next_pid = parse_process(line, next_pid)
@@ -391,13 +407,18 @@ class FHIAimsReader(BaseReader):
 # --- Writer
 def write_globals(fh, globals_):
     if globals_.temperature is not None:
-        fh.write("TEMPERATURE = " + " ".join(map(str, globals_.temperature)) + "\n")
+        fh.write("\nTEMPERATURE = " + " ".join(map(str, globals_.temperature)) + "\n")
     if globals_.time is not None:
         fh.write("TIME = " + " ".join(map(str, globals_.time)) + "\n")
-    if globals_.electrochemical is not None:
-        fh.write("ELECTROCHEMICAL = " + " ".join(map(str, globals_.electrochemical)) + "\n")
     if globals_.ph is not None:
         fh.write("PH = " + " ".join(map(str, globals_.ph)) + "\n")
+    if globals_.electrochemical is not None:
+        fh.write("ELECTROCHEMICAL = " + " ".join(map(str, globals_.electrochemical)) + "\n")
+    fh.write(f"TPR_RUN = {'yes' if globals_.tpr_run else 'no'}\n")
+    if globals_.tpr_temperature is not None:
+        fh.write("TPR_TEMPERATURE = " + " ".join(map(str, globals_.tpr_temperature)) + "\n")
+    if globals_.tpr_heating_rate is not None:
+        fh.write(f"TPR_HEATING_RATE = {globals_.tpr_heating_rate:g}\n")
     fh.write("\n")
 
 def write_processes(fh, reactions):
@@ -521,6 +542,12 @@ def process_expression(process):
     return (f"{reactants} > {products}")
 
 def molecular_data(atoms, tol=1e-3):
+    if len(atoms) == 1:        # Monatomic gas-phase species
+        masses = [float(atoms.get_masses()[0])]
+        natoms = [1]    # It has to be a list in agreement with other systems
+        linear = False
+        inertia = []
+        return masses, natoms, linear, inertia
     symbols = atoms.get_chemical_symbols()
     counts = Counter(symbols)
     masses = []

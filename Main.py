@@ -136,6 +136,7 @@ class Conditions:
     time: Scan | None = None
     potential: Scan | None = None
     ph: Scan | None = None
+    run_tpr: bool = False      # switch on/off the TPR experiment
     tpr: TPRConditions = field(default_factory=TPRConditions)
 
 @dataclass(slots=True)
@@ -370,9 +371,14 @@ def read_input(filename: str) -> MKModel:
         elif line.startswith("POTENTIAL") or line.startswith("ELECTROCHEMICAL"):
             _, value = split_keyword(line)
             model.conditions.potential = parse_scan(value)
+        elif line.startswith("TPR_RUN"):
+            _, value = split_keyword(line)
+            model.conditions.run_tpr = parse_bool(value)
         elif line.startswith("TPR_TEMPERATURE"):
             _, value = split_keyword(line)
             values = [float(x) for x in value.split()]
+            if len(values) != 3:
+                raise ValueError("TPR_TEMPERATURE expects: initial final step")
             model.conditions.tpr.temperature_initial = values[0]
             model.conditions.tpr.temperature_final = values[1]
             model.conditions.tpr.temperature_step = values[2]
@@ -432,9 +438,12 @@ def main():
     result, start = run_stage("Running microkinetics", Isothermal, model)
     ExperimentReporter(model, output_dir="./").write()
     timing(start)
-    result, start = run_stage("Running TPR/D", TPR, model)
-    ExperimentReporter(model, output_dir="./").write()
-    timing(start)
+    if model.conditions.run_tpr:
+        result, start = run_stage("Running TPR/D", TPR, model)
+        ExperimentReporter(model, output_dir="./").write()
+        timing(start)
+    else:
+        print("Skipping TPR/D.")
     result, start = run_stage("Diagnosis", Diagnostics, model)
     DiagnosticsReporter(model, output_dir="./").write_and_plot()
     timing(start)

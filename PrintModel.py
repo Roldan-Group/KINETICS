@@ -1179,7 +1179,11 @@ class DiagnosticsReporter:
                     ax.plot(x[j:j + 2], y[j:j + 2], z[j:j + 2], color=cmap(colour_norm(local_intensity)), linewidth=1.2)
 
             ax.set_xlim(np.max(x), np.min(x),)
-            ax.set_ylim(np.min(times), np.max(times),)
+            #time_min = float(np.min(times))
+            time_max = float(np.max(times))
+            ax.set_ylim(0.0, time_max,)
+            time_ticks = np.linspace(0.0, time_max, 6,)
+            ax.set_yticks(time_ticks)
             ax.set_zlim(0.0, 1.05,)
             ax.set_xlabel(r"Wavenumber ($cm^{-1}$)", fontsize=18, labelpad=15,)
             ax.set_ylabel("Time ($s$)", fontsize=18, labelpad=15,)
@@ -1191,11 +1195,7 @@ class DiagnosticsReporter:
             ax.tick_params(axis="y", labelsize=16, pad=5)
             ax.set_zticklabels([])
             #ax.tick_params(axis="z", labelsize=16,)
-            time_min = float(np.min(times))
-            time_max = float(np.max(times))
-            ax.set_ylim(time_min, time_max,)
-            time_ticks = np.linspace(time_min, time_max, 6,)
-            set_yticks(time_ticks)
+
             ax.grid(False)
             # Grid only on the x-z plane at the back of the waterfall.
             y_grid = np.max(times)
@@ -1214,7 +1214,7 @@ class DiagnosticsReporter:
             #ax.xaxis.pane.set_edgecolor("none")
             #ax.yaxis.pane.set_edgecolor("none")
             #ax.zaxis.pane.set_edgecolor("none")
-            ax.view_init(elev=20, azim=-91,)    # before 18, -90
+            ax.view_init(elev=20, azim=-90,)    # before 18, -90
             ax.set_box_aspect((3.2, 2.6, 1.6))
             scalar_map = cm.ScalarMappable(norm=colour_norm, cmap=cmap,)
             scalar_map.set_array([])

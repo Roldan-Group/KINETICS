@@ -208,13 +208,18 @@ class Diagnostics:
 	Analyse stored results from Isothermal and TPR.
 	The class stores all derived quantities in `model.diagnostics` and returns the same container in `self.results`.
 	"""
-	def __init__(self, model, *, analyse_isothermal=True, analyse_tpr=True,):
+	def __init__(self, model, *, analyse_isothermal=True, analyse_tpr=None,):
 		self.model = model
 		self.results = ensure_diagnostics_results(model)
+		if analyse_tpr is None:
+			conditions = getattr(model, "conditions", None)
+			analyse_tpr = bool(getattr(conditions, "run_tpr", False))
 		if analyse_isothermal:
 			self._safe(self.analyse_isothermal)
 		if analyse_tpr:
 			self._safe(self.analyse_tpr)
+		else:
+			self.results.tpr_peaks = []
 
 	def _safe(self, func):
 		try:
@@ -335,9 +340,12 @@ class Diagnostics:
 		r_backward_vec = sp.Matrix(r_backward_exprs)
 		r_forward_func = sp.lambdify(all_variables, r_forward_vec, "numpy")
 		r_backward_func = sp.lambdify(all_variables, r_backward_vec, "numpy")
-		beta_vec = sp.Matrix([r_backward_exprs[i] / (r_forward_exprs[i] + sp.Float("1e-300"))
-							  for i in range(len(step_pairs))])
-		r_net_vec = sp.Matrix([r_forward_exprs[i] * (1 - beta_vec[i]) for i in range(len(step_pairs))])
+
+		#beta_vec = sp.Matrix([r_backward_exprs[i] / (r_forward_exprs[i] + sp.Float("1e-300"))
+		#					  for i in range(len(step_pairs))])
+		#r_net_vec = sp.Matrix([r_forward_exprs[i] * (1 - beta_vec[i]) for i in range(len(step_pairs))])
+		r_net_vec = sp.Matrix([r_forward_exprs[i] - r_backward_exprs[i] for i in range(len(step_pairs))])
+
 		j_sym = f_vec.jacobian(concentration_vec)
 		df_dk_sym = f_vec.jacobian(k_sym_list)
 		dr_net_dk_sym = r_net_vec.jacobian(k_sym_list)
@@ -439,13 +447,36 @@ class Diagnostics:
 			dr_net_dtheta = np.asarray(derivatives["dr_net_dtheta"](*all_values), dtype=float)
 			dr_net_total = (functions["stoichi_pairs"] @ dr_net_dk) + (functions["stoichi_pairs"] @ dr_net_dtheta) @ dtheta_dk
 			dec = np.zeros(len(functions["step_pairs"]), dtype=float)
-			safe_r = np.where(np.abs(r_vec) < eps, np.nan, r_vec)
+
+			#safe_r = np.where(np.abs(r_vec) < eps, np.nan, r_vec)
+			#for j, (forward, backward) in enumerate(functions["step_pairs"]):
+			#	kf = k_values[functions["process_index"][forward]]
+			#	kb = k_values[functions["process_index"][backward]]
+			#	drc_f = np.nanmean((kf * dr_net_total[:, functions["process_index"][forward]]) / safe_r)
+			#	drc_b = np.nanmean((kb * dr_net_total[:, functions["process_index"][backward]]) / safe_r)
+			#	dec[j] = drc_f - drc_b
+			valid_rate = (np.isfinite(r_vec) & (np.abs(r_vec) >= eps))
 			for j, (forward, backward) in enumerate(functions["step_pairs"]):
-				kf = k_values[functions["process_index"][forward]]
-				kb = k_values[functions["process_index"][backward]]
-				drc_f = np.nanmean((kf * dr_net_total[:, functions["process_index"][forward]]) / safe_r)
-				drc_b = np.nanmean((kb * dr_net_total[:, functions["process_index"][backward]]) / safe_r)
-				dec[j] = drc_f - drc_b
+				forward_index = functions["process_index"][forward]
+				backward_index = functions["process_index"][backward]
+				kf = k_values[forward_index]
+				kb = k_values[backward_index]
+				numerator_f = (kf * dr_net_total[:, forward_index])
+				numerator_b = (kb * dr_net_total[:, backward_index])
+				valid_f = (valid_rate & np.isfinite(numerator_f))
+				valid_b = (valid_rate & np.isfinite(numerator_b))
+				if np.any(valid_f):
+					drc_f = np.mean(numerator_f[valid_f] / r_vec[valid_f])
+				else:
+					drc_f = np.nan
+				if np.any(valid_b):
+				    drc_b = np.mean(numerator_b[valid_b] / r_vec[valid_b])
+				else:
+					drc_b = np.nan
+				if np.isfinite(drc_f) and np.isfinite(drc_b):
+					dec[j] = drc_f - drc_b
+				else:
+					dec[j] = np.nan
 			table.rows.append([temp_num, *dec.tolist()])
 		return table
 
@@ -619,6 +650,9 @@ class Diagnostics:
 	# --- TPR analysis
 	def analyse_tpr(self):
 		experiments = getattr(self.model, "experiments", None)
+		if experiments is None:
+			self.results.tpr_peaks = []
+			return []
 		tpr_results = getattr(experiments, "tpr", None)
 		if not tpr_results:
 			return None
@@ -629,6 +663,9 @@ class Diagnostics:
 			for signal_gas, rates in result.spectra.items():
 				rates = np.asarray(rates, dtype=float)
 				if rates.size == 0 or np.max(rates) <= 0.0:
+					continue
+				maximum_rate = np.nanmax(rates)
+				if (not np.isfinite(maximum_rate) or maximum_rate <= 0.0):
 					continue
 				peak_indices, _ = find_peaks(rates, height=0.05 * np.max(rates))
 				if len(peak_indices) == 0:
